@@ -518,7 +518,7 @@ test('antifraude: pedido alto / 1ª compra chega no Telegram e no painel como RE
   const msg = tgSent.at(-1).text;
   assert.match(msg, /Pedido pago #/); assert.match(msg, /REVISAR/); assert.doesNotMatch(msg, /valor alto/); /* 200.000 Coins (R$339,90) fica abaixo do valor alto (R$340) */ assert.match(msg, /primeira compra/);
   const o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === id);
-  assert.ok(o.risk.length >= 2);
+  assert.ok(o.risk.some((r) => /primeira compra/.test(r))); // valor alto não dispara mais no 200.000 Coins
   // pedido pequeno de cliente normal não pede revisão
   const p2 = await (await pedir('c1000', '777778', 'ok@x.com')).json();
   await pagar(p2.token);
