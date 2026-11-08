@@ -1,0 +1,16 @@
+# segredos e dados — NUNCA versionar
+.env
+.env.*
+.fp_key
+.tg_user_session
+*.db
+*.db-*
+loja.db*
+backups/
+.health_state
+
+# dependências e lixo
+node_modules/
+*.bak.*
+old-public/
+*.log

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Backup diário do banco da loja CounterFlame com rotação (mantém 14 dias).
+# Usa a API .backup() do better-sqlite3 (snapshot consistente mesmo com o app escrevendo).
+# Não depende do CLI sqlite3 do sistema.
+set -euo pipefail
+
+APP_DIR="/home/ramos/cf-teste-deploy"
+DEST="$APP_DIR/backups"
+KEEP=14
+
+mkdir -p "$DEST"
+chmod 700 "$DEST"
+
+export BH_APP_DIR="$APP_DIR" BH_DEST="$DEST"
+
+# carrega o node do NVM
+export NVM_DIR="$HOME/.nvm"
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1
+
+cd "$APP_DIR"
+node -e '
+const Database = require("better-sqlite3");
+const fs = require("fs");
+const path = require("path");
+const appDir = process.env.BH_APP_DIR;
+const dest = process.env.BH_DEST;
+const dbPath = path.join(appDir, "loja.db");
+if (!fs.existsSync(dbPath)) { console.error("DB nao encontrado:", dbPath); process.exit(1); }
+const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+const out = path.join(dest, `loja-${stamp}.db`);
+const db = new Database(dbPath, { readonly: true });
+db.backup(out).then(() => {
+  db.close();
+  fs.chmodSync(out, 0o600);
+  console.log("backup ok:", out);
+}).catch((e) => { console.error("falha no backup:", e.message); process.exit(1); });
+'
+
+# empacota o mais recente junto com a chave das impressões (.fp_key: HMAC de conta/IP).
+# Sem a chave, um banco restaurado perde os bloqueios por conta/IP.
+# Restaurar: gpg -d arquivo.tar.gz.gpg | tar -xz   → loja-<data>.db e .fp_key
+LATEST=$(ls -t "$DEST"/loja-*.db 2>/dev/null | head -1 || true)
+if [ -n "$LATEST" ]; then
+  PKG="${LATEST%.db}.tar.gz"
+  (umask 077; tar -czf "$PKG" -C "$DEST" "$(basename "$LATEST")" $( [ -f "$APP_DIR/.fp_key" ] && echo "-C $APP_DIR .fp_key" ))
+  chmod 600 "$PKG"
+  rm -f "$LATEST"
+  LATEST="${PKG%.gz}"   # abaixo o script usa "$LATEST.gz"
+fi
+
+# ---- cópia fora da VPS: criptografa e envia pelo bot do Telegram ----
+# Ativa só se TG_BOT_TOKEN, TG_CHAT_ID e BACKUP_PASSPHRASE estiverem no .env.
+# Segredos lidos do .env sem `source` e nunca passados na linha de comando (não aparecem no `ps`).
+envval() { grep -m1 "^$1=" "$APP_DIR/.env" | cut -d= -f2- | sed -e 's/^["'\'']//' -e 's/["'\'']$//' || true; }
+TG_BOT_TOKEN=$(envval TG_BOT_TOKEN)
+TG_CHAT_ID=$(envval TG_CHAT_ID)
+BACKUP_PASSPHRASE=$(envval BACKUP_PASSPHRASE)
+if [ -n "${LATEST:-}" ] && [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ] && [ -n "$BACKUP_PASSPHRASE" ]; then
+  ENC="$LATEST.gz.gpg"
+  printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+    --symmetric --cipher-algo AES256 -o "$ENC" "$LATEST.gz"
+  chmod 600 "$ENC"
+  N_PED=$(BH_DB="$APP_DIR/loja.db" node -e 'const D=require("better-sqlite3");const d=new D(process.env.BH_DB,{readonly:true});console.log(d.prepare("SELECT COUNT(*) n FROM orders").get().n)' 2>/dev/null || echo "?")
+  RESP=$(printf 'url = "https://api.telegram.org/bot%s/sendDocument"\n' "$TG_BOT_TOKEN" | curl -sS --max-time 60 -K - \
+    -F "chat_id=$TG_CHAT_ID" -F "document=@$ENC" \
+    -F "caption=Backup loja.db $(date '+%d/%m %H:%M') · $N_PED pedidos · $(du -h "$ENC" | cut -f1)" || true)
+  rm -f "$ENC"
+  if printf '%s' "$RESP" | grep -q '"ok":true'; then
+    echo "[$(date -Is)] enviado ao Telegram"
+  else
+    echo "[$(date -Is)] FALHA ao enviar ao Telegram: $(printf '%s' "$RESP" | grep -o '"description":"[^"]*"' || echo sem resposta)"
+    UPLOAD_FAIL=1
+  fi
+else
+  echo "[$(date -Is)] envio externo desativado (faltam TG_BOT_TOKEN/TG_CHAT_ID/BACKUP_PASSPHRASE no .env)"
+fi
+
+# rotação: remove backups com mais de KEEP dias
+find "$DEST" \( -name 'loja-*.db.gz' -o -name 'loja-*.tar.gz' \) -mtime +$KEEP -delete
+
+echo "[$(date -Is)] backup concluido"
+exit "${UPLOAD_FAIL:-0}"

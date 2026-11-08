@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0e0e10">
+<meta name="format-detection" content="telephone=no">
+<meta name="format-detection" content="date=no,address=no,email=no">
+<title>Recarga Flame — recarga de CounterFlame por Pix</title>
+<meta name="description" content="Coins, passes e coleções do CounterFlame pagando por Pix. Entrega na sua conta pelo ID.">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<style>
+:root{
+  --bg:#0e0e10;--panel:#161618;--panel2:#1c1c1f;--line:#2a2a2e;
+  --txt:#f4f4f5;--mut:#9b9ba3;--dim:#6c6c74;
+  --orange:#ff5a1f;--green:#3fb950;--red:#f85149;--gold:#e3b341;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{font:16px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+a[href^="tel"]{color:inherit!important;text-decoration:none!important;pointer-events:none}
+.wrap{max-width:520px;margin:0 auto;padding:0 18px 56px}
+
+/* topo */
+.bar{display:flex;align-items:center;gap:10px;padding:18px 0 16px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.mark{width:30px;height:30px;border-radius:7px;flex-shrink:0;display:block}
+.bar b{font-size:16px;letter-spacing:-.01em}
+.bar b .fl{color:var(--orange);margin:0;font-size:inherit;text-align:left;line-height:inherit}
+.bar span{color:var(--dim);font-size:12.5px;margin-left:auto;text-align:right;line-height:1.3}
+
+/* passos */
+.steps{display:flex;gap:6px;margin-bottom:20px}
+.sdot{flex:1;height:3px;border-radius:2px;background:var(--line);transition:.25s}
+.sdot.on{background:var(--orange)}
+
+h2{font-size:15px;font-weight:700;margin:0 0 4px}
+.sub{font-size:13px;color:var(--mut);margin:0 0 16px}
+.muted{color:var(--mut)}
+
+/* conta confirmada (chip no topo das etapas 2+) */
+.chip{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:18px}
+.chip img{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#242428;flex-shrink:0}
+.chip .nk{font-weight:700;font-size:15px;line-height:1.2;word-break:break-word}
+.chip .id{font-size:12px;color:var(--mut);margin-top:2px}
+.chip .edit{margin-left:auto;flex-shrink:0;background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:7px;padding:7px 11px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+
+/* catálogo — cards menores, 3-4 por linha */
+.cat{margin-bottom:20px}
+.cat>span{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 8px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(min-width:440px){.grid{grid-template-columns:repeat(4,1fr)}}
+.prod{appearance:none;-webkit-appearance:none;text-align:left;background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:0;overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s;display:flex;flex-direction:column;color:var(--txt);font:inherit}
+.prod:active{transform:scale(.97)}
+.prod.sel{border-color:var(--orange)}
+.prod .thumb{width:100%;aspect-ratio:1/1;object-fit:cover;background:#101012;display:block}
+.prod .txt{padding:7px 8px 9px;display:flex;flex-direction:column;flex:1;gap:3px}
+.prod .n{font-weight:600;font-size:12px;line-height:1.2;color:var(--txt)}
+.prod .p{margin-top:auto;font-size:13px;font-weight:800;color:var(--txt)}
+.prod.sel .p{color:var(--orange)}
+
+label{display:block;font-size:12.5px;color:var(--mut);margin:18px 0 7px}
+input{width:100%;padding:13px 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font:inherit}
+input::placeholder{color:var(--dim)}
+input:focus{outline:0;border-color:#45454c}
+.btn{width:100%;padding:14px;margin-top:18px;border:0;border-radius:9px;font:inherit;font-weight:700;cursor:pointer;transition:background .12s,opacity .12s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-go{background:var(--orange);color:#160a04}
+.btn-go:not(:disabled):active{background:#e64d14}
+.btn-sec{background:transparent;border:1px solid var(--line);color:var(--mut);margin-top:9px}
+.back{display:inline-flex;align-items:center;gap:4px;background:transparent;border:0;padding:6px 0;margin:-6px 0 8px;color:var(--mut);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.back:active{color:var(--txt)}
+
+/* resumo confirmação */
+.box{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.line{display:flex;justify-content:space-between;align-items:center;padding:14px 16px}
+.line+.line{border-top:1px solid var(--line)}
+.line .k{font-size:13px;color:var(--mut);display:flex;align-items:center;gap:10px}
+.line .k img{width:38px;height:38px;object-fit:cover;border-radius:8px;background:#101012}
+.line .v{font-weight:800}
+.line .v.big{font-size:18px}
+
+/* pix */
+.stline{display:flex;align-items:center;gap:9px;padding:12px 14px;border-radius:9px;font-size:14px;font-weight:600;margin-bottom:18px;border:1px solid var(--line);background:var(--panel)}
+.stline i{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0}
+.stline.paid i,.stline.done i{background:var(--green)}
+.stline.bad i{background:var(--red)}
+.stline.paid,.stline.done{color:var(--green)}.stline.bad{color:var(--red)}
+.qr{background:#fff;padding:12px;border-radius:11px;width:max-content;margin:0 auto 14px}
+.qr img{width:216px;height:216px;display:block}
+.cp{display:flex;gap:8px;margin-top:10px}
+.cp input{font-size:12px}
+.cp button{flex-shrink:0;padding:0 15px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:9px;font-weight:600;cursor:pointer}
+.note{font-size:12.5px;color:var(--dim);margin-top:14px;text-align:center}
+.note.warnbox{color:var(--txt);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:11px 13px;text-align:left}
+.hint{font-size:12px;color:var(--dim);margin:6px 0 0}
+.cupbar{display:flex;align-items:center;gap:10px;background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);color:var(--green);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:14px}
+.cupbar b{color:var(--txt)}.cupbar button{margin-left:auto;background:transparent;border:0;color:var(--mut);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:2px 4px}
+.prod .p s{display:block;color:var(--dim);font-weight:500;font-size:10.5px;line-height:1.1;margin-bottom:1px}
+.cupwarn{display:flex;align-items:center;gap:10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--red);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:14px}
+.cupwarn button{margin-left:auto;background:transparent;border:0;color:var(--mut);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+#cupin2{margin:0 0 14px}
+.cupin{margin-top:16px;font-size:13px}.cupin summary{cursor:pointer;color:var(--mut);font-weight:600;list-style:none;padding:2px 0}
+.cupin summary::-webkit-details-marker{display:none}.cupin .cp{margin-top:8px}.cupin input{text-transform:uppercase}
+.help{margin-top:10px;font-size:13px;color:var(--mut)}
+.help summary{cursor:pointer;color:var(--orange);font-weight:600;list-style:none;padding:4px 0}
+.help summary::-webkit-details-marker{display:none}
+.help summary::before{content:"? ";display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;border-radius:50%;background:var(--panel2);color:var(--orange);font-size:12px;margin-right:6px}
+.help p{margin:8px 0;line-height:1.5}.help b{color:var(--txt)}
+.help img{width:100%;height:auto;border-radius:9px;border:1px solid var(--line);display:block}
+.prod.off{opacity:.45;filter:grayscale(.8)}
+.prod.off .p{text-decoration:line-through}
+.prod .tag{display:block;font-size:10.5px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.03em;margin-top:2px}
+.linkp{display:flex;gap:8px;align-items:center;margin-top:18px;padding:11px 13px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;color:var(--mut)}
+.linkp span{flex:1}
+.linkp button{flex-shrink:0;padding:8px 12px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.prazo{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-top:16px;font-size:13px;color:var(--mut);line-height:1.55}
+.prazo b{color:var(--txt)}.prazo ul{margin:6px 0;padding-left:18px}
+.sup{margin-top:22px;font-size:13px;color:var(--mut);text-align:center}
+.supb{display:flex;gap:8px;margin-top:9px}
+.supb a{flex:1;padding:11px;border-radius:9px;font-weight:700;text-decoration:none;text-align:center;color:#fff}
+.supb .wa{background:#1f8f4e}.supb .tg{background:#229ED9}
+.foot a{color:var(--mut)}
+.onum{font-size:14px;color:var(--mut);font-weight:600;margin-left:6px}
+.timer{font-size:13px;color:var(--mut);text-align:center;margin:12px 0 0}
+.timer b{color:var(--txt);font-family:ui-monospace,Menlo,Consolas,monospace}
+.timer.low b{color:var(--red)}
+
+.err{color:var(--red);font-size:13.5px;margin-top:12px;min-height:16px}
+.hide{display:none}
+.ld{display:inline-block;width:15px;height:15px;border:2px solid rgba(22,10,4,.35);border-top-color:#160a04;border-radius:50%;animation:r .7s linear infinite;vertical-align:-3px;margin-right:7px}
+@keyframes r{to{transform:rotate(360deg)}}
+.foot{margin-top:30px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--dim);line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <img class="mark" src="/img/brand-mark.png" alt="" width="30" height="30">
+    <b>Recarga <span class="fl">Flame</span></b>
+    <span>recarga de CounterFlame<br>por Pix · revenda independente</span>
+  </div>
+
+  <div class="cupwarn hide" id="cupwarn"><span id="cupwarntxt"></span><button id="cupwarnx" aria-label="Fechar">OK</button></div>
+  <div class="cupbar hide" id="cupbar"><span>Cupom <b id="cupcode"></b> aplicado · <span id="cuppct"></span>% de desconto</span><button id="cupx" aria-label="Remover cupom">Remover</button></div>
+  <div class="steps">
+    <div class="sdot on" id="d1"></div><div class="sdot" id="d2"></div>
+    <div class="sdot" id="d3"></div><div class="sdot" id="d4"></div>
+  </div>
+
+  <!-- 1: ID da conta -->
+  <section id="e1">
+    <h2>Informe sua conta</h2>
+    <p class="sub">Digite o ID da sua conta no CounterFlame para começar.</p>
+    <label for="gameId">ID no jogo</label>
+    <input id="gameId" inputmode="numeric" autocomplete="off" placeholder="ex.: 749125">
+    <details class="help">
+      <summary>Onde encontro meu ID?</summary>
+      <p>Abra o CounterFlame. Na <b>tela inicial</b>, o ID aparece no card do seu perfil, no topo, ao lado do botão Home — logo abaixo do seu nick. Digite só os números.</p>
+      <img src="/img/help-id.jpg" alt="Card do perfil na tela inicial do jogo, com o ID destacado abaixo do nick" width="1016" height="184" loading="lazy">
+    </details>
+    <button class="btn btn-go" id="buscar" disabled>Buscar conta</button>
+    <p class="err" id="err1"></p>
+  </section>
+
+  <!-- 2: escolher produto -->
+  <section id="e2" class="hide">
+    <button class="back" id="voltar2">← Voltar</button>
+    <h2>Escolha o produto</h2>
+    <p class="sub">O item será entregue na conta abaixo.</p>
+    <div class="chip">
+      <img id="av2" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2242%22 height=%2242%22><rect width=%2242%22 height=%2242%22 rx=%228%22 fill=%22%23242428%22/><text x=%2221%22 y=%2228%22 font-size=%2220%22 text-anchor=%22middle%22 fill=%22%236c6c74%22>?</text></svg>'">
+      <div><div class="nk" id="nick2"></div><div class="id">ID <span class="mono" id="pid2"></span></div></div>
+      <button class="edit" id="trocar">Trocar</button>
+    </div>
+    <details class="cupin" id="cupin2"><summary>Tem um cupom?</summary>
+      <div class="cp"><input id="cupinput2" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO" maxlength="20"><button id="cupok2">Aplicar</button></div>
+      <p class="err" id="cuperr2"></p>
+    </details>
+    <div id="cat"><p class="muted">Carregando produtos…</p></div>
+    <p class="err" id="err2"></p>
+  </section>
+
+  <!-- 3: confirmar + email -->
+  <section id="e3" class="hide">
+    <button class="back" id="voltar">← Voltar</button>
+    <h2>Confirme e pague</h2>
+    <p class="sub">Revise os dados antes de gerar o Pix.</p>
+    <div class="box">
+      <div class="line">
+        <span class="k"><img id="av3" alt=""><span><b id="nick3"></b><br><span class="mono" id="pid3" style="font-size:12px;color:var(--mut)"></span></span></span>
+      </div>
+      <div class="line">
+        <span class="k"><img id="rimg" alt=""><span id="rprod"></span></span>
+        <span class="v big mono" id="rpreco"></span>
+      </div>
+      <div class="line hide" id="rdesc"><span class="k">Cupom <b id="rdcode" style="color:var(--txt)"></b></span><span class="v mono" id="rdval" style="color:var(--green)"></span></div>
+    </div>
+    <details class="cupin" id="cupin"><summary>Tem um cupom?</summary>
+      <div class="cp"><input id="cupinput" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO" maxlength="20"><button id="cupok">Aplicar</button></div>
+      <p class="err" id="cuperr"></p>
+    </details>
+    <label for="email">Seu e-mail</label>
+    <input id="email" type="email" autocomplete="email" placeholder="voce@email.com">
+    <p class="hint">Exigido pelo Mercado Pago para gerar o Pix. Usamos só para falar com você caso haja algum problema com o pedido.</p>
+    <div class="prazo">
+      <b>Entrega em até 1 hora</b> após a confirmação do pagamento:
+      <ul><li>Segunda a sexta: das 7h às 23h</li><li>Sábados, domingos e feriados: das 11h às 23h</li></ul>
+      Pagamentos fora desses horários são entregues na manhã seguinte.
+    </div>
+    <button class="btn btn-go" id="pagar">Gerar Pix</button>
+    <p class="err" id="err3"></p>
+  </section>
+
+  <!-- 4: pagamento -->
+  <section id="e4" class="hide">
+    <h2>Pagamento <span class="onum mono" id="onum"></span></h2>
+    <div class="stline" id="st"><i></i><span id="sttxt">Aguardando pagamento</span></div>
+    <div id="pix">
+      <div class="qr"><img id="qr" alt="QR Code Pix"></div>
+      <div class="cp"><input id="cod" readonly><button id="copiar">Copiar</button></div>
+      <p class="timer" id="timer"></p>
+      <p class="note">Pague pelo app do banco lendo o QR ou colando o código Pix.<br>O pagamento é confirmado automaticamente — pode fechar esta página e voltar depois neste mesmo aparelho para acompanhar.</p>
+      <button class="btn btn-sec" id="cancelPix">Cancelar este Pix</button>
+      <p class="err" id="err4"></p>
+    </div>
+    <div id="after" class="hide">
+      <p class="note" id="afternote"></p>
+      <div id="prazoPago" class="hide"><div class="prazo">
+      <b>Entrega em até 1 hora</b> após a confirmação do pagamento:
+      <ul><li>Segunda a sexta: das 7h às 23h</li><li>Sábados, domingos e feriados: das 11h às 23h</li></ul>
+      Pagamentos fora desses horários são entregues na manhã seguinte.
+    </div></div>
+      <button class="btn btn-go hide" id="novoPix">Gerar novo Pix</button>
+      <button class="btn btn-sec hide" id="outro">Fazer outro pedido</button>
+    </div>
+    <div class="linkp"><span>Salve o link deste pedido para acompanhar de outro aparelho.</span><button id="copLink">Copiar link</button></div>
+    <div class="sup">Dúvida ou problema com o pedido? Fale com a gente:
+      <div class="supb"><a class="wa" id="supWa" href="https://wa.me/5511952997031" target="_blank" rel="noopener">WhatsApp</a><a class="tg" href="https://t.me/kazenn7" target="_blank" rel="noopener">Telegram</a></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    Suporte: <a href="https://wa.me/5511952997031" target="_blank" rel="noopener">WhatsApp +55 11 95299-7031</a> · <a href="https://t.me/kazenn7" target="_blank" rel="noopener">Telegram @kazenn7</a><br>
+    Entrega em até 1h · seg–sex 7h–23h · sáb, dom e feriados 11h–23h.<br><br>
+    Esta loja não tem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago.
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const brl=c=>(c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let produtos=[],sel=null,conta=null; // conta={id,nick,avatar}
+
+async function api(u,o){const r=await fetch(u,o);let j={};try{j=await r.json();}catch{}if(!r.ok){const e=new Error(j.error||'Algo deu errado. Tente de novo.');e.status=r.status;e.field=j.field;throw e;}return j;}
+function show(n){for(const i of[1,2,3,4])$('e'+i).classList.toggle('hide',i!==n);for(const i of[1,2,3,4])$('d'+i).classList.toggle('on',i<=n);scrollTo({top:0,behavior:'smooth'});}
+
+/* ---- persistência de estado (localStorage) ---- */
+const SAVE_KEY='cf_pedido';
+const MAX_AGE=36*3600*1000; // descarta estado com mais de 36h
+function saveState(extra){
+  try{
+    const prev=JSON.parse(localStorage.getItem(SAVE_KEY)||'{}');
+    localStorage.setItem(SAVE_KEY,JSON.stringify({
+      conta, selKey:sel?sel.key:null, order:prev.order||null, ts:Date.now(), ...extra,
+    }));
+  }catch{}
+}
+function clearOrder(){try{localStorage.removeItem(SAVE_KEY);}catch{}}
+
+/* ---- cupom: ?cupom=CODIGO no link ou digitado; preço final sempre vem do servidor ---- */
+const CUP_KEY='cf_cupom';let cupom=null; // {code,desconto_pct,prices}
+const finalCents=p=>cupom&&cupom.prices&&cupom.prices[p.key]!=null?cupom.prices[p.key]:p.cents;
+function priceHtml(p){const f=finalCents(p);return f<p.cents?'<s>'+brl(p.cents)+'</s>'+brl(f):brl(p.cents);}
+function fillPrice(){
+  if(!sel)return;const f=finalCents(sel);
+  $('rpreco').textContent=brl(f);
+  $('rdesc').classList.toggle('hide',!(f<sel.cents));
+  if(f<sel.cents){$('rdcode').textContent=cupom.code;$('rdval').textContent='−'+brl(sel.cents-f);}
+  $('cupin').classList.toggle('hide',!!cupom);
+}
+function syncCupFields(){for(const id of['cupin','cupin2'])$(id).classList.toggle('hide',!!cupom);}
+function setCupom(c){
+  cupom=c;
+  try{c?localStorage.setItem(CUP_KEY,JSON.stringify({code:c.code,ts:Date.now()})):localStorage.removeItem(CUP_KEY);}catch{}
+  $('cupbar').classList.toggle('hide',!c);
+  if(c){$('cupcode').textContent=c.code;$('cuppct').textContent=String(c.desconto_pct).replace('.',',');}
+  if(c)$('cupwarn').classList.add('hide');
+  syncCupFields();if(produtos.length)render();fillPrice();
+}
+async function loadCupom(code,errId,fromLink){
+  try{const c=await api('/api/coupon/'+encodeURIComponent(code));setCupom(c);return true;}
+  catch(e){
+    if(e.status===404)setCupom(null);
+    if(fromLink){$('cupwarntxt').textContent='O cupom '+String(code).toUpperCase().slice(0,20)+' não está disponível. Os preços abaixo estão sem desconto.';$('cupwarn').classList.remove('hide');}
+    else if(errId)$(errId).textContent=e.message;
+    return false;}
+}
+$('cupwarnx').onclick=()=>$('cupwarn').classList.add('hide');
+$('cupx').onclick=()=>setCupom(null);
+function wireCup(sfx){
+  const ok=$('cupok'+sfx),inp=$('cupinput'+sfx),err='cuperr'+sfx,box=$('cupin'+sfx);
+  ok.onclick=async()=>{$(err).textContent='';const v=inp.value.trim();if(!v)return;
+    ok.disabled=true;if(await loadCupom(v,err)){inp.value='';box.open=false;}ok.disabled=false;};
+  inp.onkeydown=e=>{if(e.key==='Enter')ok.click();};
+}
+wireCup('');wireCup('2');
+async function initCupom(){
+  const q=new URLSearchParams(location.search).get('cupom');
+  if(q){ // tira ?cupom= do endereço, mantém o #pedido
+    try{history.replaceState(null,'',location.pathname+location.hash);}catch{}
+    await loadCupom(q,null,true);return;
+  }
+  let s;try{s=JSON.parse(localStorage.getItem(CUP_KEY)||'null');}catch{}
+  if(s&&s.code&&Date.now()-s.ts<30*24*3600*1000)await loadCupom(s.code,null,false); // revalida (pode ter sido desativado)
+}
+
+/* etapa 1: validar conta */
+$('gameId').oninput=()=>{$('buscar').disabled=!$('gameId').value.trim();};
+$('gameId').onkeydown=e=>{if(e.key==='Enter'&&!$('buscar').disabled)$('buscar').click();};
+
+$('buscar').onclick=async()=>{
+  $('err1').textContent='';const b=$('buscar');b.disabled=true;b.innerHTML='<span class="ld"></span>Buscando';
+  try{
+    const id=$('gameId').value.trim();
+    const{nickname,avatar,blocked}=await api('/api/player/'+encodeURIComponent(id));
+    conta={id,nick:nickname,avatar,blocked:blocked||{}};
+    $('av2').src=avatar;$('nick2').textContent=nickname;$('pid2').textContent=id;
+    if(!produtos.length)await loadProds();else render();
+    sel=null;saveState();$('err2').textContent='';
+    show(2);
+  }catch(e){$('err1').textContent=e.message;}
+  finally{b.disabled=false;b.textContent='Buscar conta';}
+};
+
+$('trocar').onclick=()=>{sel=null;clearOrder();setLink(null);show(1);};
+$('voltar2').onclick=()=>$('trocar').click();
+
+/* etapa 2: catálogo */
+async function loadProds(){
+  try{produtos=await api('/api/products');render();}
+  catch(e){$('cat').innerHTML='<p class="err">'+e.message+'</p>';}
+}
+function render(){
+  const g={};for(const p of produtos)(g[p.cat]||=[]).push(p);
+  const ord=['Coins','Coleções','Passes','Níveis de Passe'];
+  const keys=Object.keys(g).sort((a,b)=>(ord.indexOf(a)+1||99)-(ord.indexOf(b)+1||99));
+  const bl=(conta&&conta.blocked)||{};
+  $('cat').innerHTML=keys.map(c=>`<div class="cat"><span>${esc(c)}</span><div class="grid">${g[c].map(p=>
+    `<button class="prod${bl[p.key]?' off':''}" data-k="${esc(p.key)}"><img class="thumb" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.style.display='none'"><span class="txt"><span class="n">${esc(p.nome)}</span><span class="p mono">${priceHtml(p)}</span>${bl[p.key]?'<span class="tag">Indisponível</span>':''}</span></button>`
+  ).join('')}</div></div>`).join('');
+  $('cat').querySelectorAll('.prod').forEach(el=>el.onclick=()=>{
+    const why=bl[el.dataset.k];
+    if(why){$('err2').textContent=why;$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
+    $('err2').textContent='';
+    sel=produtos.find(p=>p.key===el.dataset.k);
+    // seleciona produto e avança direto para confirmação
+    $('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
+    $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();
+    saveState();
+    show(3);
+  });
+}
+
+/* etapa 3: confirmar + pagar */
+$('voltar').onclick=()=>{$('err3').textContent='';show(2);};
+
+$('pagar').onclick=async()=>{
+  $('err3').textContent='';const b=$('pagar');b.disabled=true;b.innerHTML='<span class="ld"></span>Gerando Pix';
+  try{
+    const o=await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({product:sel.key,gameId:conta.id,email:$('email').value.trim(),coupon:cupom?cupom.code:undefined})});
+    const order={token:o.token,id:o.id,expiresAt:o.expiresAt,qr:o.qr,qrBase64:o.qrBase64};
+    saveState({order});
+    showPayment(order);
+  }catch(e){if(e.field==='coupon'){setCupom(null);fillPrice();}$('err3').textContent=e.message;}
+  finally{b.disabled=false;b.textContent='Gerar Pix';}
+};
+
+$('copiar').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('cod').value);$('copiar').textContent='Copiado';setTimeout(()=>$('copiar').textContent='Copiar',1800);}
+  catch{$('cod').select();}
+};
+
+/* etapa 4: pagamento + acompanhamento */
+const ST={pending:['','Aguardando pagamento'],paid:['paid','Pagamento confirmado — preparando entrega'],
+  delivered:['done','Entregue. Abra o jogo para conferir.'],cancelled:['bad','Pagamento cancelado ou expirado'],
+  reversed:['bad','Pagamento estornado'],expired:['bad','Pix expirado — não foi pago a tempo'],notfound:['bad','Pedido não encontrado']};
+let pollT=null,tickT=null,curTok=null;
+
+function showPayment(order){
+  curTok=order.token;$('err4').textContent='';setLink(order.token);
+  $('qr').src='data:image/png;base64,'+order.qrBase64;$('cod').value=order.qr;
+  $('onum').textContent=order.id?'#'+order.id:'';
+  $('supWa').href='https://wa.me/5511952997031?text='+encodeURIComponent('Olá! Preciso de ajuda com o pedido'+(order.id?' #'+order.id:'')+' (ID da conta '+(conta?conta.id:'')+').');
+  setStatus('pending');show(4);
+  startTimer(order.expiresAt);watch(order.token);
+}
+function stopAll(){clearInterval(pollT);clearInterval(tickT);pollT=tickT=null;}
+// link do pedido fica no #hash: não vai pro servidor nem pra logs/Referer
+function setLink(tk){try{history.replaceState(null,'',location.pathname+location.search+(tk?'#pedido='+tk:''));}catch{}}
+function linkToken(){const m=location.hash.match(/^#pedido=([0-9a-f-]{36})$/i);return m?m[1]:null;}
+$('copLink').onclick=async()=>{
+  const u=location.origin+location.pathname+'#pedido='+curTok;
+  try{await navigator.clipboard.writeText(u);$('copLink').textContent='Copiado';setTimeout(()=>$('copLink').textContent='Copiar link',1800);}
+  catch{prompt('Copie o link do pedido:',u);}
+};
+
+function startTimer(exp){
+  clearInterval(tickT);
+  if(!exp){$('timer').textContent='';return;}
+  const tick=()=>{
+    const s=Math.max(0,Math.round((exp-Date.now())/1000));
+    const mm=String(Math.floor(s/60)).padStart(2,'0'),ss=String(s%60).padStart(2,'0');
+    $('timer').className='timer'+(s<300?' low':'');
+    $('timer').innerHTML='Este Pix expira em <b>'+mm+':'+ss+'</b>';
+    // passou do prazo (+1 min de folga p/ o banco confirmar): confere uma última vez
+    if(s===0){$('timer').textContent='Prazo encerrado — verificando…';if(Date.now()>exp+60_000){clearInterval(tickT);checkOnce(true);}}
+  };
+  tick();tickT=setInterval(tick,1000);
+}
+
+function setStatus(status,entrega){
+  let[c,x]=ST[status]||['',status];
+  if(status==='paid'&&entrega==='auto')x='Pagamento confirmado — entregando automaticamente';
+  if(status==='paid'&&entrega==='manual')x='Pagamento confirmado — entrega pela nossa equipe';
+  $('st').className='stline '+c;$('sttxt').textContent=x;
+  const pending=status==='pending';
+  $('pix').classList.toggle('hide',!pending);
+  $('after').classList.toggle('hide',pending);
+  const retry=['cancelled','expired','notfound'].includes(status);
+  $('novoPix').classList.toggle('hide',!retry);
+  $('outro').classList.toggle('hide',pending);
+  $('prazoPago').classList.toggle('hide',status!=='paid'||entrega==='auto');
+  $('afternote').classList.toggle('warnbox',status==='paid'&&entrega==='manual');
+  $('afternote').textContent=
+    status==='paid'&&entrega==='auto'?'Seu pedido está sendo entregue automaticamente na conta informada. Costuma levar cerca de 1 minuto — esta página atualiza sozinha.':
+    status==='paid'&&entrega==='manual'?'Seu pagamento está confirmado, mas a entrega automática não pôde ser concluída agora. Nossa equipe vai entregar manualmente na conta informada dentro do prazo abaixo — você não precisa fazer nada. Se preferir, fale com o suporte.':
+    status==='paid'?'Recebemos seu pagamento. A entrega é feita manualmente na conta informada — você pode fechar esta página e voltar depois para acompanhar.':
+    status==='notfound'?'Este pedido não existe mais. Se você pagou por ele, fale com o suporte abaixo informando o horário do pagamento.':
+    retry?'Nenhum valor foi cobrado. Você pode gerar um novo Pix para o mesmo produto.':
+    status==='reversed'?'O pagamento foi estornado e o pedido foi cancelado.':'';
+}
+
+async function checkOnce(expiredLocal){
+  const tk=curTok;if(!tk)return;
+  try{
+    const{status,entrega}=await api('/api/orders/'+tk);
+    if(status==='pending'&&expiredLocal){finish('expired');return;}
+    if(status!=='pending')finish(status,entrega);
+  }catch(e){if(e.status===404)finish('notfound');} // rede/5xx: tenta de novo no próximo ciclo
+}
+function finish(status,entrega){
+  setStatus(status,entrega);
+  if(status==='paid')return; // segue acompanhando até entregar
+  stopAll();
+  // pedido encerrado: tira só o Pix do estado, mantém conta e produto p/ refazer rápido
+  try{saveState({order:null,selKey:status==='delivered'?null:(sel?sel.key:null)});}catch{}
+}
+
+function watch(tk){
+  clearInterval(pollT);
+  pollT=setInterval(()=>checkOnce(false),8000);
+}
+
+$('cancelPix').onclick=async()=>{
+  if(!curTok)return;
+  if(!confirm('Cancelar este Pix?\n\nO código atual deixa de funcionar e você pode escolher outro produto. Se você já pagou, não cancele — o pagamento será confirmado automaticamente.'))return;
+  const b=$('cancelPix');$('err4').textContent='';b.disabled=true;b.textContent='Cancelando…';
+  try{
+    const{status}=await api('/api/orders/'+curTok+'/cancel',{method:'POST'});
+    if(status==='cancelled'){finish('cancelled');stopAll();$('err3').textContent='';show(sel?3:2);}
+    else if(status==='pending')$('err4').textContent='Não foi possível cancelar agora. Tente de novo em instantes.';
+    else finish(status); // ex.: já estava pago — segue o fluxo normal
+  }catch(e){if(e.status===404)finish('notfound');else $('err4').textContent=e.message;}
+  finally{b.disabled=false;b.textContent='Cancelar este Pix';}
+};
+$('novoPix').onclick=()=>{
+  stopAll();setLink(null);
+  if(!conta){show(1);return;}
+  if(!sel){show(2);return;}
+  $('err3').textContent='';show(3);
+};
+$('outro').onclick=()=>{stopAll();setLink(null);sel=null;if(!conta){clearOrder();show(1);return;}saveState({order:null,selKey:null});show(2);};
+
+/* ---- restauração ao carregar a página ---- */
+async function restore(){
+  let s;try{s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');}catch{}
+  if(!s||!s.conta||!s.ts||Date.now()-s.ts>MAX_AGE){clearOrder();return false;}
+  conta=s.conta;
+  if(!produtos.length)await loadProds();
+  // bloqueios podem ter mudado desde que o estado foi salvo: atualiza em segundo plano
+  api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};render();saveState();}).catch(()=>{});
+  // preenche dados da conta nas telas
+  $('gameId').value=conta.id;$('buscar').disabled=false;
+  $('av2').src=conta.avatar;$('nick2').textContent=conta.nick;$('pid2').textContent=conta.id;
+  // pedido Pix em aberto -> volta direto pra etapa 4
+  if(s.order&&s.order.token){
+    if(s.selKey)sel=produtos.find(p=>p.key===s.selKey)||null;
+    if(sel){$('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
+      $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();}
+    showPayment(s.order);checkOnce(s.order.expiresAt&&Date.now()>s.order.expiresAt+60_000);return true;
+  }
+  // produto já escolhido -> etapa 3 (confirmação)
+  if(s.selKey){
+    sel=produtos.find(p=>p.key===s.selKey);
+    if(sel){
+      $('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
+      $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();
+      show(3);return true;
+    }
+  }
+  // só conta validada -> etapa 2 (catálogo)
+  show(2);return true;
+}
+
+/* ---- abrir pedido pelo link (#pedido=<token>) — vale em qualquer aparelho ---- */
+async function openFromLink(tk){
+  if(!produtos.length)await loadProds();
+  let o;
+  try{o=await api('/api/orders/'+tk+'?full=1');}
+  catch(e){
+    if(e.status!==404)return false; // falha de rede: cai no estado salvo
+    curTok=tk;show(4);$('onum').textContent='';finish('notfound');return true;
+  }
+  conta={id:o.gameId,nick:o.nick,avatar:o.avatar,blocked:{}};
+  $('gameId').value=conta.id;$('buscar').disabled=false;
+  $('av2').src=conta.avatar;$('nick2').textContent=conta.nick;$('pid2').textContent=conta.id;
+  sel=produtos.find(p=>p.key===o.product)||null;
+  if(sel){$('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
+    $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();}
+  const order={token:tk,id:o.id,expiresAt:o.expiresAt,qr:o.qr||'',qrBase64:o.qrBase64||''};
+  if(o.status==='pending'&&o.qr){saveState({order});showPayment(order);checkOnce(o.expiresAt&&Date.now()>o.expiresAt+60_000);}
+  else{showPayment(order);finish(o.status==='pending'?'expired':o.status,o.entrega);}
+  api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};render();}).catch(()=>{});
+  return true;
+}
+
+// init: link do pedido tem prioridade; senão restaura o estado salvo; senão etapa 1
+(async()=>{
+  await initCupom();
+  const tk=linkToken();
+  if(tk&&await openFromLink(tk))return;
+  const ok=await restore();
+  if(!ok&&!produtos.length)loadProds();
+})();
+</script>
+</body>
+</html>
