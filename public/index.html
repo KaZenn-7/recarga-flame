@@ -120,7 +120,8 @@ input:focus{outline:0;border-color:#45454c}
 .sup{margin-top:22px;font-size:13px;color:var(--mut);text-align:center}
 .supb{display:flex;gap:8px;margin-top:9px}
 .supb a{flex:1;padding:11px;border-radius:9px;font-weight:700;text-decoration:none;text-align:center;color:#fff}
-.supb .wa{background:#1f8f4e}.supb .tg{background:#229ED9}
+.supb .mail{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+.supaddr{margin-top:7px;font-size:12px;color:var(--dim)}
 .onum{font-size:14px;color:var(--mut);font-weight:600;margin-left:6px}
 .timer{font-size:13px;color:var(--mut);text-align:center;margin:12px 0 0}
 .timer b{color:var(--txt);font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -146,7 +147,9 @@ input:focus{outline:0;border-color:#45454c}
 .ft-card p{margin:0;font-size:12.5px;line-height:1.5}.ft-card p b{color:var(--txt)}
 .ft-sup{display:grid;gap:6px}
 .ft-sup a{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:8px;font-weight:700;font-size:13px;color:#fff;text-decoration:none}
-.ft-sup .wa{background:#1f8f4e}.ft-sup .tg{background:#229ED9}
+.ft-sup .mail{background:var(--orange);color:#160a04}
+.ft-addr{font-size:11.5px;color:var(--mut);text-align:center}
+.ft-legal a{color:var(--mut)}
 .ft-legal{font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 8px}
 .ft-copy{font-size:11.5px;color:var(--dim);margin:0}
 .ft-docs{font-size:12px;margin:0 0 8px}.ft-docs a{color:var(--mut)}
@@ -257,7 +260,8 @@ input:focus{outline:0;border-color:#45454c}
     </div>
     <div class="linkp"><span>Salve o link deste pedido para acompanhar de outro aparelho.</span><button id="copLink">Copiar link</button></div>
     <div class="sup">Dúvida ou problema com o pedido? Fale com a gente:
-      <div class="supb"><a class="wa" id="supWa" href="https://wa.me/5511952997031" target="_blank" rel="noopener">WhatsApp</a><a class="tg" href="https://t.me/kazenn7" target="_blank" rel="noopener">Telegram</a></div>
+      <div class="supb"><a class="mail" id="supMail" href="mailto:suporte@recargaflame.com.br">Enviar e-mail ao suporte</a></div>
+      <div class="supaddr">suporte@recargaflame.com.br · informe o número do pedido</div>
     </div>
   </section>
 
@@ -265,10 +269,10 @@ input:focus{outline:0;border-color:#45454c}
     <div class="ft-brand"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b>Recarga <span class="fl">Flame</span></b><span>recarga de CounterFlame<br>por Pix</span></div>
     <nav class="ft-links" aria-label="Páginas"><a href="/" aria-current="page">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
     <div class="ft-grid">
-      <div class="ft-card"><h4>Suporte</h4><div class="ft-sup"><a class="wa" href="https://wa.me/5511952997031" target="_blank" rel="noopener">WhatsApp</a><a class="tg" href="https://t.me/kazenn7" target="_blank" rel="noopener">Telegram</a></div></div>
+      <div class="ft-card"><h4>Suporte</h4><div class="ft-sup"><a class="mail" href="mailto:suporte@recargaflame.com.br">Enviar e-mail</a><span class="ft-addr">suporte@<wbr>recargaflame.com.br</span></div></div>
       <div class="ft-card"><h4>Entrega</h4><p><b>Automática:</b> ~1 min, a qualquer hora.<br><b>Pela equipe:</b> até 1h · seg–sex 7h–23h · sáb, dom e feriados 11h–23h.</p></div>
     </div>
-    <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago. Suporte: WhatsApp +55 11 95299-7031 · Telegram @kazenn7.</p>
+    <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago. Suporte: <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>.</p>
     <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a></p>
     <p class="ft-copy">© 2026 Recarga Flame</p>
   </footer>
@@ -420,7 +424,7 @@ function showPayment(order){
   curTok=order.token;$('err4').textContent='';setLink(order.token);
   $('qr').src='data:image/png;base64,'+order.qrBase64;$('cod').value=order.qr;
   $('onum').textContent=order.id?'#'+order.id:'';
-  $('supWa').href='https://wa.me/5511952997031?text='+encodeURIComponent('Olá! Preciso de ajuda com o pedido'+(order.id?' #'+order.id:'')+' (ID da conta '+(conta?conta.id:'')+').');
+  $('supMail').href='mailto:suporte@recargaflame.com.br?subject='+encodeURIComponent('Pedido'+(order.id?' #'+order.id:''))+'&body='+encodeURIComponent('Olá! Preciso de ajuda com o pedido'+(order.id?' #'+order.id:'')+' (ID da conta '+(conta?conta.id:'')+').\n\n');
   setStatus('pending');show(4);
   startTimer(order.expiresAt);watch(order.token);
 }

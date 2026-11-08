@@ -760,7 +760,7 @@ function deliveredEmail(o) {
     `Seu pedido #${o.id} (${nome}, ${valor}) foi entregue na conta ID ${o.game_id}.`,
     'Abra o CounterFlame para conferir.', '',
     `Acompanhar o pedido: ${link}`,
-    'Algum problema? Responda este e-mail ou fale no WhatsApp +55 11 95299-7031 / Telegram @kazenn7.', '',
+    'Algum problema? É só responder este e-mail (suporte@recargaflame.com.br).', '',
     'Recarga Flame — revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.',
   ].join('\n');
   const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#0e0e10;padding:24px 12px;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#f4f4f5">
@@ -777,8 +777,8 @@ function deliveredEmail(o) {
 <tr><td style="padding:12px 14px;color:#9b9ba3;border-top:1px solid #2a2a2e">Valor</td><td align="right" style="padding:12px 14px;font-weight:700;border-top:1px solid #2a2a2e">${valor}</td></tr>
 </table></td></tr>
 <tr><td style="padding:0 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">Ver pedido</a></td></tr>
-<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">Algum problema? Responda este e-mail ou fale com a gente no
-<a href="https://wa.me/5511952997031" style="color:#9b9ba3">WhatsApp</a> ou <a href="https://t.me/kazenn7" style="color:#9b9ba3">Telegram</a>.<br><br>
+<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">Algum problema? É só responder este e-mail ou escrever para
+<a href="mailto:suporte@recargaflame.com.br" style="color:#9b9ba3">suporte@recargaflame.com.br</a>.<br><br>
 Recarga Flame é uma revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.</td></tr>
 </table></td></tr></table></body></html>`;
   return { subject, html, text };
