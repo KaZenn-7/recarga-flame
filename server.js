@@ -178,7 +178,7 @@ const brlEnv = (v, d) => Math.round(Number(v ?? d) * 100);
 // RISK_DAY_BRL / LIMIT_DAY_BRL no .env fixam valores e desligam o cálculo automático.
 const maxPriceCents = () => Math.max(0, ...Object.values(PRODUCTS).filter((p) => p.ativo).map((p) => p.cents || 0));
 const RISK = {
-  review: brlEnv(env.RISK_REVIEW_BRL, 150), // pedido a partir disso → "revisar antes de entregar"
+  review: brlEnv(env.RISK_REVIEW_BRL, 340), // pedido a partir disso → "revisar" (acima do 200.000 Coins, R$ 339,90)
   first: brlEnv(env.RISK_FIRST_BRL, 50),    // 1ª compra do ID a partir disso → revisar
   pend: Number(env.MAX_PENDING_PIX ?? 3),   // Pix em aberto ao mesmo tempo por ID/e-mail
   _day: null, _cap: null,                   // sobrescritas (testes)
