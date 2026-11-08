@@ -8,6 +8,7 @@
 <meta name="format-detection" content="date=no,address=no,email=no">
 <title>Recarga Flame — recarga de CounterFlame por Pix</title>
 <meta name="description" content="Coins, passes e coleções do CounterFlame pagando por Pix. Entrega na sua conta pelo ID.">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Recarga Flame"><meta property="og:locale" content="pt_BR"><meta property="og:url" content="https://recargaflame.com.br/"><meta property="og:title" content="Recarga Flame — Coins e passes do CounterFlame no Pix"><meta property="og:description" content="Compre Coins, passes e coleções do CounterFlame pagando por Pix. Entrega automática em até 10 minutos, só com o ID da conta."><meta property="og:image" content="https://recargaflame.com.br/img/og.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Recarga Flame — Coins e passes do CounterFlame no Pix"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://recargaflame.com.br/">
 <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <style>
 :root{
@@ -299,6 +300,25 @@ function saveState(extra){
 }
 function clearOrder(){try{localStorage.removeItem(SAVE_KEY);}catch{}}
 
+/* ---- funil: etapas anônimas (aparelho = cookie aleatório; sem dados pessoais) ---- */
+const SRC=(function(){
+  const q=new URLSearchParams(location.search),u=(q.get('utm_source')||q.get('src')||'').toLowerCase();
+  const map={wa:'whatsapp',whatsapp:'whatsapp',yt:'youtube',youtube:'youtube',ig:'instagram',instagram:'instagram',tiktok:'tiktok',tt:'tiktok',
+    telegram:'telegram',tg:'telegram',google:'google',facebook:'facebook',fb:'facebook',discord:'discord',twitter:'twitter',x:'twitter'};
+  if(map[u])return map[u];
+  let h='';try{h=new URL(document.referrer).hostname;}catch{}
+  if(!h||/recargaflame/.test(h))return 'direto';
+  if(/whatsapp|wa\.me/.test(h))return 'whatsapp';if(/youtube|youtu\.be/.test(h))return 'youtube';
+  if(/instagram/.test(h))return 'instagram';if(/tiktok/.test(h))return 'tiktok';if(/t\.me|telegram/.test(h))return 'telegram';
+  if(/google\./.test(h))return 'google';if(/facebook|fb\./.test(h))return 'facebook';if(/discord/.test(h))return 'discord';
+  if(/twitter|x\.com|t\.co/.test(h))return 'twitter';return 'outro';
+})();
+function track(ev){
+  try{const b=JSON.stringify({ev:ev,src:SRC,coupon:(cupom&&cupom.code)||null});
+    if(!(navigator.sendBeacon&&navigator.sendBeacon('/api/ev',new Blob([b],{type:'application/json'}))))
+      fetch('/api/ev',{method:'POST',headers:{'Content-Type':'application/json'},body:b,keepalive:true});}catch{}
+}
+
 /* ---- cupom: ?cupom=CODIGO no link ou digitado; preço final sempre vem do servidor ---- */
 const CUP_KEY='cf_cupom';let cupom=null; // {code,desconto_pct,prices}
 const finalCents=p=>cupom&&cupom.prices&&cupom.prices[p.key]!=null?cupom.prices[p.key]:p.cents;
@@ -359,6 +379,7 @@ $('buscar').onclick=async()=>{
     $('av2').src=avatar;$('nick2').textContent=nickname;$('pid2').textContent=id;
     if(!produtos.length)await loadProds();else render();
     sel=null;saveState();$('err2').textContent='';
+    track('lookup');
     show(2);
   }catch(e){$('err1').textContent=e.message;}
   finally{b.disabled=false;b.textContent='Buscar conta';}
@@ -388,7 +409,7 @@ function render(){
     // seleciona produto e avança direto para confirmação
     $('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
     $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();
-    saveState();
+    saveState();track('select');
     show(3);
   });
 }
@@ -570,6 +591,7 @@ async function openFromLink(tk){
 // init: link do pedido tem prioridade; senão restaura o estado salvo; senão etapa 1
 (async()=>{
   await initCupom();
+  track('visit');
   const tk=linkToken();
   if(tk&&await openFromLink(tk))return;
   const ok=await restore();

@@ -334,3 +334,13 @@ Compras de Stars ficam em `stars_purchases` (Stars + R$ pagos) — SÓ para cust
 leitura do Telegram). Custo atual = custo EXATO do saldo: compras mais recentes primeiro, contando só a parte de cada uma
 que ainda está no saldo; congelado em cada
 pedido (`orders.star_cost`). Aviso 💱 no Telegram quando muda, com produtos no prejuízo. Painel → ★ → "+ Registrar compra".
+
+### Prévia de link, funil e lembretes de Pix ✅ (2026-11-08)
+- Open Graph em todas as páginas (imagem `public/img/og.jpg` 1200×630). Link de cupom (`/?cupom=X`, e o curto `/x`) tem
+  prévia própria: "5% OFF com o cupom X — Recarga Flame".
+- Funil próprio (tabela `events`): visit/lookup/select (página, `POST /api/ev`) + pix/paid/delivered (servidor).
+  Conta aparelhos distintos (cookie `cf_dev`); robôs/prévias ignorados (UA). Origem por utm_source/src/referrer
+  (whatsapp, youtube…; sem referrer = "direto"). Analytics → "Funil de compra" + tabelas por cupom e por origem.
+  Dica: links com `?src=yt` / `?src=wa` identificam a origem mesmo quando o app não manda referrer.
+- E-mails de Pix: lembrete 1x quando faltam ≤ 10 min (`remindPending`, a cada 1 min) e aviso 1x quando expira
+  (`expirePending`); nunca se o cliente já fez pedido mais novo (mesmo ID/e-mail). Política de privacidade atualizada.

@@ -772,8 +772,40 @@ async function loadAna(){
   body.appendChild(k);
   if(a.estornos){const w=el('div','ccard');w.appendChild(el('h4',null,'⚠ '+a.estornos+(a.estornos>1?' estornos':' estorno')+' no período'));
     w.appendChild(el('p','sub','Pedidos pagos que voltaram (MED/chargeback). Não entram nas vendas acima.'));body.appendChild(w);}
+  if(a.funil)body.appendChild(funnelCard(a.funil));
   body.appendChild(dayChart(a,r));
   body.appendChild(prodRank(a.produtos));
+}
+// funil de compra: aparelhos distintos por etapa (estatística própria da loja)
+function funnelCard(f){
+  const NOMES={visit:'Visitaram a loja',lookup:'Buscaram o ID',select:'Escolheram um item',pix:'Geraram o Pix',paid:'Pagaram',delivered:'Receberam'};
+  const card=el('div','ccard');card.appendChild(el('h4',null,'Funil de compra'));
+  const base=f.etapas[0].n;
+  card.appendChild(el('p','sub',base?'aparelhos distintos em cada etapa · % sobre quem visitou':'Sem visitas registradas no período (o funil começou a ser medido em 08/11/2026)'));
+  if(!base&&!f.etapas.some(function(e){return e.n;}))return card;
+  const box=el('div','rank');
+  f.etapas.forEach(function(e,i){
+    const r=el('div','rk'),t=el('div','top');
+    t.appendChild(el('span',null,NOMES[e.ev]));
+    const prev=i?f.etapas[i-1].n:0;
+    t.appendChild(el('span',null,e.n+(base?' · '+Math.round(e.n/base*100)+'%':'')+(i&&prev?' (de '+prev+': '+Math.round(e.n/prev*100)+'%)':'')));
+    r.appendChild(t);
+    const tr=el('div','track'),b=el('div','bar');b.style.width=(base?Math.max(1,e.n/base*100):0)+'%';tr.appendChild(b);r.appendChild(tr);
+    box.appendChild(r);
+  });
+  card.appendChild(box);
+  const tab=function(titulo,rows,rot){
+    const d=document.createElement('details');d.appendChild(el('summary',null,titulo));
+    const t=el('table','ttab'),h=document.createElement('tr');
+    [rot,'Visitas','Pix','Pagos','Conversão'].forEach(function(x){h.appendChild(el('th',null,x));});t.appendChild(h);
+    rows.forEach(function(x){const tr=document.createElement('tr');
+      [x.k==='—'?'(sem '+rot.toLowerCase()+')':x.k,String(x.visit),String(x.pix),String(x.paid),x.visit?Math.round(x.paid/x.visit*100)+'%':'—'].forEach(function(c){tr.appendChild(el('td',null,c));});
+      t.appendChild(tr);});
+    d.appendChild(t);return d;
+  };
+  card.appendChild(tab('Por cupom',f.cupons,'Cupom'));
+  card.appendChild(tab('Por origem',f.origens,'Origem'));
+  return card;
 }
 function fmtMin(m){return m<60?(m+' min'):(Math.floor(m/60)+'h'+(m%60?String(m%60).padStart(2,'0'):''));}
 function niceMax(v){if(v<=0)return 100;const p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p;}

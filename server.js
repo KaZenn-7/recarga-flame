@@ -139,6 +139,7 @@ const findOrder = db.prepare('SELECT * FROM orders WHERE token = ?');
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
 const safeEq = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
+const SITE_URL = 'https://recargaflame.com.br';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const validId = (id) => /^\d{1,12}$/.test(id);
 const limit = (max) => rateLimit({ windowMs: 60_000, limit: max, standardHeaders: true, legacyHeaders: false });
@@ -256,7 +257,7 @@ async function syncPayment(mpId) {
     const r = db.prepare("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP, payer_acct=? WHERE id=? AND status='pending'")
       .run(pp.acct, o.id);
     // só avisa na transição pending→paid (webhook + polling podem chegar juntos: changes evita aviso duplo)
-    if (r.changes) notifyPaid({ ...o, payer_acct: pp.acct });
+    if (r.changes) { orderEv(o, 'paid'); notifyPaid({ ...o, payer_acct: pp.acct }); }
   } else if (['cancelled', 'rejected', 'refunded', 'charged_back'].includes(pay.status)) {
     const before = o.status;
     const r = db.prepare(`UPDATE orders SET status = CASE status WHEN 'delivered' THEN 'reversed' ELSE 'cancelled' END
@@ -431,6 +432,7 @@ function markDelivered(id, via) {
   const r = db.prepare("UPDATE orders SET status='delivered', delivered_at=CURRENT_TIMESTAMP WHERE id=? AND status='paid'").run(id);
   if (!r.changes) return false;
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  orderEv(o, 'delivered');
   const m = deliveredEmail(o);
   sendMail(o.email, m.subject, m.html, m.text); // em segundo plano
   // desconta os Stars da entrega e avisa ao cruzar o limite de saldo baixo
@@ -710,6 +712,55 @@ function entregaState(o) {
 // Expiração automática: pendente com Pix vencido (+5 min de folga) é conferido no MP
 // uma última vez (pega pagamento atrasado) e, se seguir pendente, vira cancelled.
 // Pedidos antigos sem expires_at usam created_at + 35 min.
+// ---------- Lembretes de Pix (e-mail transacional sobre o próprio pedido) ----------
+// 1) faltando ≤ 10 min para vencer: "seu Pix vence em X min" (1x)  2) venceu sem pagar: "gere um novo Pix" (1x).
+// Nunca se o cliente já fez um pedido mais novo (mesmo ID ou e-mail) — ele já voltou por conta própria.
+for (const col of ['remind_at INTEGER', 'expired_mail INTEGER']) {
+  try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
+}
+const hasNewer = (o) => !!db.prepare('SELECT 1 FROM orders WHERE id > ? AND (game_id=? OR lower(email)=?)').get(o.id, o.game_id, lc(o.email));
+function pixMail(o, kind, mins) {
+  const nome = o.prod_nome || PRODUCTS[o.product]?.nome || o.product;
+  const valor = brlTxt(o.cents);
+  const link = `${env.PUBLIC_URL}/#pedido=${o.token}`;
+  const vence = kind === 'lembrete';
+  const subject = vence ? `Seu Pix vence em ${mins} min — pedido #${o.id}` : `Seu Pix expirou — pedido #${o.id}`;
+  const title = vence ? `Seu Pix vence em ${mins} minutos ⏳` : 'Seu Pix expirou';
+  const p1 = vence
+    ? `Seu pedido de <b style="color:#f4f4f5">${esc(nome)}</b> (${valor}) para <b style="color:#f4f4f5">${esc(o.nickname)}</b> ainda está aguardando o pagamento. Pague antes de vencer para receber em até 10 minutos.`
+    : `O Pix do pedido de <b style="color:#f4f4f5">${esc(nome)}</b> (${valor}) para <b style="color:#f4f4f5">${esc(o.nickname)}</b> venceu sem pagamento — nada foi cobrado. Se ainda quiser, gere um novo Pix em um toque.`;
+  const btn = vence ? 'Abrir o Pix' : 'Gerar novo Pix';
+  const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#0e0e10;padding:24px 12px;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#f4f4f5">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#161618;border:1px solid #2a2a2e;border-radius:14px">
+<tr><td style="padding:22px 22px 6px"><img src="${env.PUBLIC_URL}/img/brand-mark.png" width="36" height="36" alt="" style="border-radius:8px;vertical-align:middle">
+<span style="font-size:17px;font-weight:700;vertical-align:middle;margin-left:8px">Recarga <span style="color:#ff5a1f">Flame</span></span></td></tr>
+<tr><td style="padding:14px 22px 4px"><h1 style="margin:0 0 8px;font-size:20px">${title}</h1>
+<p style="margin:0;color:#9b9ba3;font-size:14px;line-height:1.55">${p1}</p></td></tr>
+<tr><td style="padding:18px 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">${btn}</a></td></tr>
+<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">${vence ? 'Se você já pagou, pode ignorar este e-mail — a confirmação é automática.<br><br>' : ''}Pedido #${o.id} · conta ID ${esc(o.game_id)}. Dúvidas? É só responder este e-mail.</td></tr>
+</table></td></tr></table></body></html>`;
+  const text = [`${title}`, '', vence ? `Seu pedido de ${nome} (${valor}) para ${o.nickname} ainda aguarda o pagamento.` : `O Pix do pedido de ${nome} (${valor}) venceu sem pagamento — nada foi cobrado.`,
+    `${btn}: ${link}`, vence ? 'Se já pagou, ignore este e-mail.' : '', `Pedido #${o.id} · ID ${o.game_id}`].join('\n');
+  return { subject, html, text };
+}
+async function remindPending() {
+  const now = Date.now();
+  const rows = db.prepare(`SELECT * FROM orders WHERE status='pending' AND mp_id IS NOT NULL AND remind_at IS NULL
+    AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ? LIMIT 30`).all(now + 60_000, now + 10 * 60_000);
+  let sent = 0;
+  for (const o of rows) {
+    db.prepare('UPDATE orders SET remind_at=? WHERE id=?').run(now, o.id); // marca antes: nunca repete
+    if (hasNewer(o) || !o.email) continue;
+    try { await syncPayment(o.mp_id); } catch { continue; }
+    if (db.prepare('SELECT status FROM orders WHERE id=?').get(o.id).status !== 'pending') continue;
+    const m = pixMail(o, 'lembrete', Math.max(1, Math.round((o.expires_at - now) / 60_000)));
+    if (await sendMail(o.email, m.subject, m.html, m.text)) sent++;
+  }
+  return sent;
+}
+if (env.NODE_ENV !== 'test') setInterval(() => remindPending().catch((e) => console.error('remindPending', e)), 60_000).unref();
+
 async function expirePending() {
   const now = Date.now();
   const rows = db.prepare(`SELECT * FROM orders WHERE status='pending' AND (
@@ -717,7 +768,13 @@ async function expirePending() {
       (expires_at IS NULL AND created_at < datetime('now','-35 minutes'))) LIMIT 50`).all(now - 5 * 60_000);
   for (const o of rows) {
     try { if (o.mp_id) await syncPayment(o.mp_id); } catch (e) { console.error('expirePending sync', o.id, e.message); continue; }
-    db.prepare("UPDATE orders SET status='cancelled' WHERE id=? AND status='pending'").run(o.id);
+    const r = db.prepare("UPDATE orders SET status='cancelled' WHERE id=? AND status='pending'").run(o.id);
+    // venceu sem pagar (não foi o cliente que cancelou): avisa 1x, se ele não voltou por conta própria
+    if (r.changes && o.mp_id && o.email && !o.expired_mail && !hasNewer(o)) {
+      db.prepare('UPDATE orders SET expired_mail=1 WHERE id=?').run(o.id);
+      const m = pixMail(o, 'expirou');
+      sendMail(o.email, m.subject, m.html, m.text);
+    }
   }
   return rows.length;
 }
@@ -906,6 +963,19 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '10kb' }));
+// Prévia do link (WhatsApp/Telegram) personalizada no link de cupom: /?cupom=AQUILA (o /aquila redireciona para cá).
+const INDEX_HTML = fs.readFileSync(path.join('public', 'index.html'), 'utf8');
+app.get('/', (req, res, next) => {
+  const c = req.query.cupom ? getCoupon(req.query.cupom) : null;
+  if (!c) return next();
+  const t = c.desconto_pct > 0 ? `${String(c.desconto_pct).replace('.', ',')}% OFF com o cupom ${c.code} — Recarga Flame` : `Cupom ${c.code} — Recarga Flame`;
+  const d = `Coins e passes do CounterFlame no Pix com o cupom ${c.code}. Entrega automática em até 10 minutos, só com o ID da conta.`;
+  const html = INDEX_HTML
+    .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${esc(t)}">`)
+    .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${esc(d)}">`)
+    .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${SITE_URL}/?cupom=${encodeURIComponent(c.code)}">`);
+  res.type('html').set('Cache-Control', 'no-cache').send(html);
+});
 app.use(express.static('public'));
 // páginas institucionais (também em /como-funciona.html e /perguntas-frequentes.html)
 app.get('/como-funciona', (req, res) => res.sendFile('como-funciona.html', { root: 'public' }));
@@ -1029,6 +1099,7 @@ app.post('/api/orders', limit(5), async (req, res) => {
 
   db.prepare('UPDATE orders SET mp_id=?, qr=?, qr_b64=?, expires_at=? WHERE token=?')
     .run(String(pay.id), tx.qr_code, tx.qr_code_base64, expiresAt, token);
+  orderEv({ id: Number(ins.lastInsertRowid), device, coupon: coupon?.code || null }, 'pix');
   res.json({ token, id: Number(ins.lastInsertRowid), expiresAt, cents: finalCents, coupon: coupon?.code || null, qr: tx.qr_code, qrBase64: tx.qr_code_base64 });
 });
 
@@ -1052,6 +1123,38 @@ app.get('/api/orders/:token', async (req, res) => {
     expiresAt: o.expires_at || null,
     qr: pending ? o.qr || null : null, qrBase64: pending ? o.qr_b64 || null : null,
   });
+});
+
+// ---------- Funil (estatística própria, sem serviço externo) ----------
+// Etapas: visit → lookup (ID buscado) → select (item escolhido) → pix → paid → delivered.
+// Contamos APARELHOS distintos (cookie aleatório cf_dev; sem cookie, IP embaralhado). Robôs/prévias de link não
+// rodam o JS da página, e agentes conhecidos de robô são ignorados.
+db.exec(`CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT CURRENT_TIMESTAMP,
+  dev TEXT NOT NULL, ev TEXT NOT NULL, coupon TEXT, src TEXT, order_id INTEGER
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS events_ts ON events(ts)');
+const EV_CLIENT = new Set(['visit', 'lookup', 'select']);
+const SRCS = new Set(['whatsapp', 'youtube', 'instagram', 'tiktok', 'telegram', 'google', 'facebook', 'discord', 'twitter', 'outro', 'direto']);
+const BOT_UA = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|discord|headless|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|monitor|lighthouse/i;
+const devKey = (req) => devOf(req) || 'ip:' + fp('ip:' + req.ip);
+function logEv(dev, ev, { coupon = null, src = null, orderId = null } = {}) {
+  try {
+    if (!src && ev !== 'visit') src = db.prepare("SELECT src FROM events WHERE dev=? AND ev='visit' ORDER BY id DESC LIMIT 1").get(dev)?.src || null;
+    db.prepare('INSERT INTO events (dev, ev, coupon, src, order_id) VALUES (?,?,?,?,?)').run(dev, ev, coupon, src, orderId);
+  } catch (e) { console.error('evento', ev, e.message); }
+}
+// evento de pedido (servidor): usa o aparelho do pedido
+const orderEv = (o, ev) => logEv(o.device || `pedido:${o.id}`, ev, { coupon: o.coupon || null, orderId: o.id });
+app.post('/api/ev', limit(60), (req, res) => {
+  const b = req.body ?? {};
+  if (!EV_CLIENT.has(b.ev) || BOT_UA.test(req.get('user-agent') || '')) return res.sendStatus(204);
+  const coupon = b.coupon ? normCode(b.coupon) : null;
+  logEv(devKey(req), b.ev, {
+    coupon: coupon && validCode(coupon) ? coupon : null,
+    src: SRCS.has(b.src) ? b.src : b.ev === 'visit' ? 'outro' : null,
+  });
+  res.sendStatus(204);
 });
 
 // ---------- Suporte: formulário → e-mail para suporte@ (Responder vai ao cliente) + aviso no Telegram ----------
@@ -1614,8 +1717,21 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     .map((o) => (new Date(o.delivered_at.replace(' ', 'T') + 'Z') - new Date(o.paid_at.replace(' ', 'T') + 'Z')) / 60000)
     .sort((x, y) => x - y);
   const mediana = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null;
+  // funil: aparelhos distintos por etapa no período; e quebras por cupom e por origem
+  const ETAPAS = ['visit', 'lookup', 'select', 'pix', 'paid', 'delivered'];
+  const evRows = db.prepare(`SELECT ev, COALESCE(coupon,'') coupon, COALESCE(src,'') src, dev FROM events
+    WHERE date(ts, '-3 hours') BETWEEN ? AND ?`).all(from, to);
+  const uniq = (rows, ev) => new Set(rows.filter((r) => r.ev === ev).map((r) => r.dev)).size;
+  const etapas = ETAPAS.map((ev) => ({ ev, n: uniq(evRows, ev) }));
+  const grupo = (key) => {
+    const g = {};
+    for (const r of evRows) (g[r[key] || '—'] ||= []).push(r);
+    return Object.entries(g).map(([k, rs]) => ({ k, visit: uniq(rs, 'visit'), pix: uniq(rs, 'pix'), paid: uniq(rs, 'paid') }))
+      .sort((x, y) => y.visit - x.visit || y.paid - x.paid);
+  };
+  const funil = { etapas, cupons: grupo('coupon'), origens: grupo('src') };
   res.json({
-    from, to,
+    from, to, funil,
     vendas: ok.length, faturado, ticket: ok.length ? Math.round(faturado / ok.length) : 0,
     lucro: Math.round(lucro - comissao), comissao: Math.round(comissao), stars, comCupom,
     estornos: sold.length - ok.length,
@@ -1652,4 +1768,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, remindPending, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

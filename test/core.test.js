@@ -89,7 +89,7 @@ globalThis.fetch = async (url, opts) => {
   return realFetch(url, opts); // localhost e demais
 };
 
-let app, loadProducts, server, base, adminFails, expirePending, db, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
+let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
 let COOKIE = '';
 async function login() {
   const post = (u, b) => fetch(base + u, { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
@@ -104,7 +104,7 @@ const freshIP = () => ({ 'X-Forwarded-For': `10.0.${(ipSeq >> 8) & 255}.${ipSeq+
 
 before(async () => {
   const mod = await import('../server.js?test=' + Date.now());
-  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
+  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}`;
   process.env.PUBLIC_URL = base; // para checagens same-origin
@@ -1160,4 +1160,77 @@ test('tetos do pagamento automático editáveis no painel', async () => {
     const s = await (await adm('GET', '/api/admin/stars')).json();
     assert.equal(s.autopay.max, 20); assert.equal(s.autopay.dia, 30);
   } finally { _setInvoiceChecker(null); await lim({ max: 1000, dia: 4000 }); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+});
+
+// ---------- prévia do link, funil e lembretes de Pix ----------
+test('prévia do link: tags Open Graph; link de cupom ativo mostra o desconto', async () => {
+  const h = await (await fetch(base + '/')).text();
+  assert.match(h, /<meta property="og:image" content="https:\/\/recargaflame\.com\.br\/img\/og\.jpg">/);
+  assert.match(h, /og:title" content="Recarga Flame — Coins e passes/);
+  const c = await (await fetch(base + '/?cupom=aquila')).text();
+  assert.match(c, /og:title" content="5% OFF com o cupom AQUILA — Recarga Flame"/);
+  assert.match(c, /og:url" content="https:\/\/recargaflame\.com\.br\/\?cupom=AQUILA"/);
+  const off = await (await fetch(base + '/?cupom=OFF1')).text(); // desativado → prévia padrão
+  assert.match(off, /og:title" content="Recarga Flame — Coins e passes/);
+  for (const p of ['/como-funciona', '/perguntas-frequentes', '/suporte', '/termos-de-uso', '/politica-de-privacidade'])
+    assert.match(await (await fetch(base + p)).text(), /og:image/, p);
+});
+
+test('funil: etapas do cliente + pedido entram no analytics por aparelho, cupom e origem; robô ignorado', async () => {
+  const dev = 'cf_dev=FUNILaaaaaaaaaaaaaaaaa';
+  const ua = { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) Mobile Safari', Cookie: dev };
+  const ev = (b, h = ua) => fetch(base + '/api/ev', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP(), ...h }, body: JSON.stringify(b) });
+  assert.equal((await ev({ ev: 'visit', src: 'youtube', coupon: 'aquila' })).status, 204);
+  await ev({ ev: 'visit', src: 'youtube', coupon: 'aquila' }); // mesmo aparelho: conta 1
+  await ev({ ev: 'lookup', coupon: 'AQUILA' });
+  await ev({ ev: 'select', coupon: 'AQUILA' });
+  await ev({ ev: 'hack' }); // etapa inválida: ignorada
+  await ev({ ev: 'visit', src: 'google' }, { 'User-Agent': 'WhatsApp/2.23 Android', Cookie: 'cf_dev=BOTbbbbbbbbbbbbbbbbbbb' }); // prévia de link
+  // pedido do mesmo aparelho → pix/pago
+  mpShouldApprove = true;
+  const r = await fetch(base + '/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP(), Cookie: dev },
+    body: JSON.stringify({ product: 'c1000', gameId: '202021', email: 'fun@x.com', coupon: 'AQUILA' }) });
+  const { token } = await r.json();
+  await pagar(token);
+  const a = await (await adm('GET', '/api/admin/analytics')).json();
+  const n = Object.fromEntries(a.funil.etapas.map((e) => [e.ev, e.n]));
+  assert.ok(n.visit >= 1 && n.lookup >= 1 && n.select >= 1 && n.pix >= 1 && n.paid >= 1);
+  const yt = a.funil.origens.find((o) => o.k === 'youtube');
+  assert.ok(yt && yt.visit >= 1 && yt.pix >= 1 && yt.paid >= 1, JSON.stringify(a.funil.origens)); // pix/pago herdam a origem da visita
+  assert.ok(!a.funil.origens.some((o) => o.k === 'google')); // robô não contou
+  const aq = a.funil.cupons.find((c) => c.k === 'AQUILA');
+  assert.ok(aq && aq.paid >= 1);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM events WHERE dev='FUNILaaaaaaaaaaaaaaaaa' AND ev='visit'").get().n, 2);
+});
+
+test('lembretes de Pix: avisa 1x quando falta ≤ 10 min e 1x quando expira; não avisa se já fez pedido novo', async () => {
+  mpShouldApprove = false;
+  const novo = async (gid, email) => (await postJ('/api/orders', { product: 'c1000', gameId: gid, email })).json();
+  const a = await novo('212121', 'lemb@x.com');
+  db.prepare('UPDATE orders SET expires_at=? WHERE id=?').run(Date.now() + 8 * 60_000, a.id);
+  const m0 = mailSent.length;
+  await remindPending();
+  assert.equal(mailSent.length, m0 + 1);
+  assert.match(mailSent.at(-1).subject, new RegExp(`Seu Pix vence em \\d+ min — pedido #${a.id}`));
+  assert.deepEqual(mailSent.at(-1).to, ['lemb@x.com']);
+  assert.ok(mailSent.at(-1).html.includes('#pedido=' + a.token));
+  await remindPending(); // não repete
+  assert.equal(mailSent.length, m0 + 1);
+  // venceu → e-mail de expirado, 1x
+  db.prepare('UPDATE orders SET expires_at=? WHERE id=?').run(Date.now() - 10 * 60_000, a.id);
+  await expirePending();
+  assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(a.id).status, 'cancelled');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(mailSent.at(-1).subject, new RegExp(`Seu Pix expirou — pedido #${a.id}`));
+  const m1 = mailSent.length;
+  await expirePending();
+  assert.equal(mailSent.length, m1);
+  // cliente já gerou outro pedido → nenhum lembrete para o antigo
+  const b = await novo('212122', 'lemb2@x.com');
+  await novo('212122', 'lemb2@x.com');
+  db.prepare('UPDATE orders SET expires_at=? WHERE id=?').run(Date.now() + 8 * 60_000, b.id);
+  const m2 = mailSent.length;
+  await remindPending();
+  assert.ok(!mailSent.slice(m2).some((m) => m.subject.includes('#' + b.id)));
+  mpShouldApprove = true;
 });
