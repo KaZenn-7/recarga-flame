@@ -322,3 +322,9 @@ da fatura é gravado em `autopay_info.invMsgId` ANTES de cobrar; paga = fatura t
 - 45 cópias soltas (*.bak.*, loja.db.pre-*) movidas para `~/cf-teste-deploy-archive/2026-11-07/` (700; nada apagado).
 - `contexto.md`: exemplo de .env tinha o usuário/senha REAIS do painel → trocado por marcadores (original no arquivo).
 - HTML do login e do painel saíram do server.js para `views/login.js` e `views/painel.js` (saída idêntica byte a byte).
+
+### Revisão de segurança da VPS (2026-11-07)
+Aplicado: SSH `PermitRootLogin no` (`/etc/ssh/sshd_config.d/10-no-root-login.conf`); ramos/mateus seguem com senha
+(testado). Mantidos por decisão do operador: login por senha, `sudo` NOPASSWD do ramos (loja e Hermes rodam como ramos),
+senha atual do painel, reboot do kernel pendente, apps internos escutando em 0.0.0.0 (bloqueados pelo UFW).
+OK: UFW deny-by-default, fail2ban (sshd), unattended-upgrades, TLS 1.2/1.3, server_tokens off, segredos 600, npm audit 0.
