@@ -1335,3 +1335,22 @@ test('previsão de Stars: ritmo, até quando e quanto comprar', async () => {
   assert.match(dailySummary(), /🛒 Compre ~\d+★ \(≈ R\$/);
   db.exec("DELETE FROM stars_ledger WHERE order_id=999001");
 });
+
+test('analytics: horários/dias de pico e clientes (novos, voltaram, recompra, intervalo, top)', async () => {
+  const get = async (q = '') => (await fetch(base + '/api/admin/analytics' + q, { headers: { Cookie: COOKIE, 'x-painel': '1', ...freshIP() } })).json();
+  // cliente com 2 compras: uma há 10 dias (antes do período) e uma hoje
+  const mk = (gid, when, cents) => db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, star_cost)
+    VALUES (?, 'c1000', ?, ?, 'volta', 'v@x.com', 'delivered', datetime('now', ?), datetime('now', ?), '1.000 Coins', 26, 0.0875)`).run('t' + gid + when, cents, gid, when, when);
+  mk('242401', '-10 days', 390); mk('242401', '-1 minutes', 390);
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const a = await get(`?from=${hoje}&to=${hoje}`);
+  assert.equal(a.porHora.length, 24); assert.equal(a.porSemana.length, 7);
+  assert.equal(a.porHora.reduce((s, h) => s + h.n, 0), a.vendas);
+  assert.equal(a.porSemana.reduce((s, d) => s + d.n, 0), a.vendas);
+  const c = a.clientes;
+  assert.equal(c.total, c.novos + c.voltaram);
+  const v = c.top.find((x) => x.id === '242401');
+  assert.ok(v && v.compras === 1 && v.comprasTotal === 2);
+  assert.ok(c.voltaram >= 1); // 242401 já tinha comprado antes do período
+  assert.ok(c.intervaloDias !== null); // mediana entre todos os clientes do período (outros testes compram várias vezes no mesmo minuto)
+});

@@ -1832,8 +1832,37 @@ app.get('/api/admin/analytics', admin, (req, res) => {
   const mc = {};
   for (const o of entregues.filter((x) => tipoDe(x) !== 'auto')) { const k = motivoCat(o.manual_motivo); mc[k] = (mc[k] || 0) + 1; }
   const motivos = Object.entries(mc).map(([motivo, n]) => ({ motivo, n })).sort((x, y) => y.n - x.n);
+  // horários e dias de pico (horário de Brasília)
+  const porHora = Array.from({ length: 24 }, (_, h) => ({ h, n: 0, cents: 0 }));
+  const porSemana = Array.from({ length: 7 }, (_, d) => ({ d, n: 0, cents: 0 }));
+  for (const o of ok) {
+    const t = new Date(Date.parse(o.paid_at.replace(' ', 'T') + 'Z') - 3 * 3600_000);
+    const ph = porHora[t.getUTCHours()], pd = porSemana[t.getUTCDay()];
+    ph.n++; ph.cents += o.cents; pd.n++; pd.cents += o.cents;
+  }
+  // clientes (pelo ID do jogo): novos × que voltaram, recompra, intervalo entre compras, melhores clientes
+  const hist = {};
+  for (const o of db.prepare(`SELECT game_id, nickname, cents, paid_at FROM orders WHERE paid_at IS NOT NULL
+      AND status IN ('paid','delivered') AND ${local('paid_at')} <= ? ORDER BY paid_at`).all(to)) {
+    (hist[o.game_id] ||= []).push({ t: Date.parse(o.paid_at.replace(' ', 'T') + 'Z'), cents: o.cents, nick: o.nickname });
+  }
+  const noPer = {};
+  for (const o of ok) { const c = (noPer[o.game_id] ||= { id: o.game_id, compras: 0, total: 0 }); c.compras++; c.total += o.cents; }
+  const ids = Object.keys(noPer);
+  const dayOf = (t) => new Date(t - 3 * 3600_000).toISOString().slice(0, 10);
+  const novos = ids.filter((id) => dayOf(hist[id][0].t) >= from).length;
+  const gaps = [];
+  for (const id of ids) for (let i = 1; i < hist[id].length; i++) gaps.push((hist[id][i].t - hist[id][i - 1].t) / 86_400_000);
+  gaps.sort((x, y) => x - y);
+  const clientes = {
+    total: ids.length, novos, voltaram: ids.length - novos,
+    recompra: ids.length ? ids.filter((id) => hist[id].length >= 2).length / ids.length : null,
+    intervaloDias: gaps.length ? Math.round(gaps[Math.floor((gaps.length - 1) / 2)] * 10) / 10 : null,
+    top: ids.map((id) => ({ ...noPer[id], nick: hist[id].at(-1).nick, comprasTotal: hist[id].length, ultima: dayOf(hist[id].at(-1).t) }))
+      .sort((x, y) => y.total - x.total || y.compras - x.compras).slice(0, 10),
+  };
   res.json({
-    from, to, funil, entregaTipos, motivos,
+    from, to, funil, entregaTipos, motivos, porHora, porSemana, clientes,
     vendas: ok.length, faturado, ticket: ok.length ? Math.round(faturado / ok.length) : 0,
     lucro: Math.round(lucro - comissao), comissao: Math.round(comissao), stars, comCupom,
     estornos: sold.length - ok.length,

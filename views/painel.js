@@ -811,8 +811,72 @@ async function loadAna(){
     w.appendChild(el('p','sub','Pedidos pagos que voltaram (MED/chargeback). Não entram nas vendas acima.'));body.appendChild(w);}
   if(a.funil)body.appendChild(funnelCard(a.funil));
   if(a.entregaTipos)body.appendChild(entregaCard(a));
+  if(a.porHora)body.appendChild(picoCard(a));
+  if(a.clientes)body.appendChild(clientesCard(a.clientes));
   body.appendChild(dayChart(a,r));
   body.appendChild(prodRank(a.produtos));
+}
+// horários e dias de pico: colunas por hora (vendas) + barras por dia da semana
+function picoCard(a){
+  const DIAS=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const card=el('div','ccard');card.style.position='relative';card.appendChild(el('h4',null,'Horários e dias de pico'));
+  const tot=a.porHora.reduce(function(s,h){return s+h.n;},0);
+  if(!tot){card.appendChild(el('p','sub','Sem vendas no período'));return card;}
+  let hMax=a.porHora[0];a.porHora.forEach(function(h){if(h.n>hMax.n)hMax=h;});
+  let dMax=a.porSemana[0];a.porSemana.forEach(function(d){if(d.n>dMax.n)dMax=d;});
+  card.appendChild(el('p','sub','Pico às '+hMax.h+'h ('+hMax.n+(hMax.n===1?' venda':' vendas')+') · melhor dia: '+DIAS[dMax.d].toLowerCase()+' · horário de Brasília'));
+  // colunas por hora
+  const wrap=el('div','chart');card.appendChild(wrap);const tip=el('div','tip');card.appendChild(tip);
+  const W=Math.max(260,($$('anaBody').clientWidth||560)-26),H=140,L=8,B=20,T=16,pw=W-L-8,ph=H-B-T;
+  const max=Math.max(1,hMax.n);
+  const NS='http://www.w3.org/2000/svg';const svg=document.createElementNS(NS,'svg');svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('role','img');svg.setAttribute('aria-label','Vendas por hora do dia');
+  function sv(tag,at){const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);return e;}
+  svg.appendChild(sv('line',{x1:L,x2:L+pw,y1:T+ph,y2:T+ph,class:'grid'}));
+  const slot=pw/24,bw=Math.min(24,Math.max(3,slot-3));
+  a.porHora.forEach(function(d,i){
+    const x=L+slot*i+(slot-bw)/2,h=d.n?Math.max(2,ph*d.n/max):0,y=T+ph-h,r4=Math.min(4,h,bw/2);
+    const hit=sv('rect',{x:L+slot*i,y:T,width:slot,height:ph,class:'hit',tabindex:'0'});hit.setAttribute('aria-label',d.h+'h: '+d.n+' vendas');svg.appendChild(hit);
+    svg.appendChild(sv('path',{class:'col',d:h?('M'+x+','+(T+ph)+'V'+(y+r4)+'Q'+x+','+y+' '+(x+r4)+','+y+'H'+(x+bw-r4)+'Q'+(x+bw)+','+y+' '+(x+bw)+','+(y+r4)+'V'+(T+ph)+'Z'):''}));
+    if(i%3===0){const t=sv('text',{x:x+bw/2,y:H-5,'text-anchor':'middle'});t.textContent=d.h+'h';svg.appendChild(t);}
+    if(d===hMax){const t=sv('text',{x:x+bw/2,y:y-4,'text-anchor':'middle',class:'lbl'});t.textContent=String(d.n);svg.appendChild(t);}
+    function show(){tip.textContent='';tip.appendChild(el('b',null,d.n+(d.n===1?' venda':' vendas')));tip.appendChild(el('span',null,d.h+'h–'+(d.h+1)+'h · '+brlC(d.cents)));
+      tip.style.display='block';const cx=(x+bw/2)/W*wrap.clientWidth+12;tip.style.left=Math.min(cx,card.clientWidth-tip.offsetWidth-8)+'px';tip.style.top='34px';}
+    hit.addEventListener('pointermove',show);hit.addEventListener('focus',show);
+    hit.addEventListener('pointerleave',function(){tip.style.display='none';});hit.addEventListener('blur',function(){tip.style.display='none';});
+  });
+  wrap.appendChild(svg);
+  // dias da semana
+  const dm=Math.max(1,dMax.n),box=el('div','rank');box.style.marginTop='12px';
+  [1,2,3,4,5,6,0].forEach(function(i){const d=a.porSemana[i];
+    const r=el('div','rk'),t=el('div','top');t.appendChild(el('span',null,DIAS[i]));
+    t.appendChild(el('span',null,d.n+(d.n===1?' venda':' vendas')+(d.n?' · '+brlC(d.cents):'')));r.appendChild(t);
+    const tr=el('div','track'),b=el('div','bar');b.style.width=(d.n?Math.max(1,d.n/dm*100):0)+'%';tr.appendChild(b);r.appendChild(tr);box.appendChild(r);});
+  card.appendChild(box);
+  const det=el('details');det.appendChild(el('summary',null,'Ver tabela por hora'));const tb=el('table','ttab');
+  const hr=el('tr');['Hora','Vendas','Faturado'].forEach(function(x){hr.appendChild(el('th',null,x));});tb.appendChild(hr);
+  a.porHora.filter(function(d){return d.n;}).forEach(function(d){const tr=el('tr');[d.h+'h–'+(d.h+1)+'h',String(d.n),brlC(d.cents)].forEach(function(c){tr.appendChild(el('td',null,c));});tb.appendChild(tr);});
+  det.appendChild(tb);card.appendChild(det);
+  return card;
+}
+// clientes pelo ID do jogo
+function clientesCard(c){
+  const card=el('div','ccard');card.appendChild(el('h4',null,'Clientes'));
+  if(!c.total){card.appendChild(el('p','sub','Sem vendas no período'));return card;}
+  card.appendChild(el('p','sub','contados pelo ID do jogo · "voltaram" = já tinham comprado antes do período'));
+  const k=el('div','kpis');k.style.marginBottom='8px';
+  k.appendChild(kpi('Clientes',String(c.total),c.novos+' novos · '+c.voltaram+' voltaram'));
+  k.appendChild(kpi('Compraram 2+ vezes',c.recompra==null?'—':Math.round(c.recompra*100)+'%','no histórico todo'));
+  k.appendChild(kpi('Intervalo entre compras',c.intervaloDias==null?'—':(c.intervaloDias<1?'< 1 dia':String(c.intervaloDias).replace('.',',')+' dias'),'mediana'));
+  card.appendChild(k);
+  const det=el('details');det.appendChild(el('summary',null,'Melhores clientes do período'));const tb=el('table','ttab');
+  const hr=el('tr');['Cliente','Compras','Total','Última'].forEach(function(x){hr.appendChild(el('th',null,x));});tb.appendChild(hr);
+  c.top.forEach(function(x){const tr=el('tr');
+    const td=el('td');td.appendChild(el('div',null,x.nick));const sm=el('div',null,'ID '+x.id);sm.style.color='var(--dim)';sm.style.fontSize='11px';td.appendChild(sm);tr.appendChild(td);
+    [x.compras+(x.comprasTotal>x.compras?' ('+x.comprasTotal+' no total)':''),brlC(x.total),x.ultima.split('-').reverse().slice(0,2).join('/')].forEach(function(v){tr.appendChild(el('td',null,v));});
+    tb.appendChild(tr);});
+  det.appendChild(tb);card.appendChild(det);
+  return card;
 }
 // como os pedidos foram entregues e por que não foram automáticos
 function entregaCard(a){
