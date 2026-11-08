@@ -546,10 +546,13 @@ const _setInvoiceChecker = (fn) => { invoiceChecker = fn || checkInvoice; };
 // pedido sem REVISAR, teto por pedido e por 24h, saldo suficiente. Estados em orders.autopay:
 // null → paying → sent | erro (falha ANTES de cobrar: pode tentar de novo) | incerto (falha depois: nunca repete).
 db.exec('CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)');
-const AUTOPAY_MAX = Number(env.AUTOPAY_MAX_STARS ?? 1000);   // ★ por pedido
-const AUTOPAY_DAY = Number(env.AUTOPAY_DAY_STARS ?? 4000);   // ★ em 24h
+// tetos do pagamento automático: editáveis no painel (settings); o .env é só o padrão inicial
+const AUTOPAY_MAX_DEF = Number(env.AUTOPAY_MAX_STARS ?? 1000);   // ★ por pedido
+const AUTOPAY_DAY_DEF = Number(env.AUTOPAY_DAY_STARS ?? 4000);   // ★ em 24h
 const getSetting = (k, d) => db.prepare('SELECT v FROM settings WHERE k=?').get(k)?.v ?? d;
 const setSetting = (k, v) => db.prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v').run(k, String(v));
+const autopayMax = () => Number(getSetting('autopay_max', AUTOPAY_MAX_DEF));
+const autopayDay = () => Number(getSetting('autopay_day', AUTOPAY_DAY_DEF));
 let invoicePayer = payInvoice;               // trocável nos testes
 let receiptChecker = invoicePaid;            // trocável nos testes
 const _setReceiptChecker = (fn) => { receiptChecker = fn || invoicePaid; };
@@ -571,8 +574,9 @@ function canAutopay(o) {
   const risk = riskOf(o);
   if (risk.length) return { ok: false, why: 'pedido em REVISAR — pague na mão' };
   const st = starsOf(o);
-  if (st > AUTOPAY_MAX) return { ok: false, why: `acima do teto por pedido (${AUTOPAY_MAX}★)` };
-  if (autopay24() + st > AUTOPAY_DAY) return { ok: false, why: `teto de ${AUTOPAY_DAY}★ em 24h atingido` };
+  const max = autopayMax(), dia = autopayDay();
+  if (st > max) return { ok: false, why: `acima do teto por pedido (${max}★)` };
+  if (autopay24() + st > dia) return { ok: false, why: `teto de ${dia}★ em 24h atingido` };
   const sal = starsEff();
   if (sal.n && sal.s < st) return { ok: false, why: `saldo insuficiente (${sal.s}★)` };
   return { ok: true };
@@ -1230,7 +1234,7 @@ function starsInfo() {
   return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
     custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, custoFonte: STAR_INFO.fonte, compras,
     real: realOn() ? { ativo: real, at: REAL.at || null, err: REAL.err, manual: starsSaldo().s } : null,
-    autopay: chkOn() ? { on: autopayOn(), mode: autopayMode(), max: AUTOPAY_MAX, dia: AUTOPAY_DAY, usado24h: autopay24() } : null };
+    autopay: chkOn() ? { on: autopayOn(), mode: autopayMode(), max: autopayMax(), dia: autopayDay(), usado24h: autopay24() } : null };
 }
 app.get('/api/admin/stars', admin, async (req, res) => {
   if (realOn() && !realFresh()) await syncStarsReal(); // lê se a última leitura envelheceu
@@ -1380,6 +1384,14 @@ app.post('/api/admin/orders/:id/resolve', admin, (req, res) => {
     db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=?").run(JSON.stringify({ ...info, erro: 'verificado: sem cobrança — pode pagar de novo' }), id);
   } else return res.status(400).json({ error: 'Ação inválida.' });
   res.json({ ok: true });
+});
+app.post('/api/admin/autopay/limites', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const max = Number(req.body?.max), dia = Number(req.body?.dia);
+  if (!Number.isInteger(max) || max < 1 || max > 100_000) return res.status(400).json({ error: 'Máximo por pedido: de 1 a 100.000★.' });
+  if (!Number.isInteger(dia) || dia < max || dia > 1_000_000) return res.status(400).json({ error: 'Máximo em 24h: precisa ser pelo menos o máximo por pedido (até 1.000.000★).' });
+  setSetting('autopay_max', max); setSetting('autopay_day', dia);
+  res.json({ ok: true, max, dia });
 });
 app.post('/api/admin/autopay', admin, (req, res) => {
   if (!guard(req, res)) return;

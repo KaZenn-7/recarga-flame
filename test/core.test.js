@@ -1142,3 +1142,22 @@ test('custo da Star exato: conta só a parte de cada compra que ainda está no s
   assert.ok(Math.abs(s.custoAtual - (0.09 + 1999 * 0.092) / 2000) < 1e-9, String(s.custoAtual));
   for (const c of s.compras.filter((c) => [2000, 2500, 1].includes(c.stars))) await adm('DELETE', '/api/admin/stars/compras/' + c.id);
 });
+
+test('tetos do pagamento automático editáveis no painel', async () => {
+  const lim = (b) => fetch(base + '/api/admin/autopay/limites', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: JSON.stringify(b) });
+  assert.equal((await fetch(base + '/api/admin/autopay/limites', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-painel': '1' }, body: '{"max":5,"dia":10}' })).status, 401);
+  assert.equal((await lim({ max: 0, dia: 10 })).status, 400);
+  assert.equal((await lim({ max: 500, dia: 100 })).status, 400); // diário menor que por pedido
+  assert.equal((await lim({ max: 20, dia: 30 })).status, 200);
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '', msgId: 1 }));
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 1 });
+    mpShouldApprove = true;
+    const j = await (await postJ('/api/orders', { product: 'c1000', gameId: '191911', email: 'lim@x.com' })).json();
+    await pagar(j.token); await new Promise((r) => setTimeout(r, 40));
+    const o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === j.id);
+    assert.match(o.canPay.why, /acima do teto por pedido \(20★\)/); // 26★ > 20★
+    const s = await (await adm('GET', '/api/admin/stars')).json();
+    assert.equal(s.autopay.max, 20); assert.equal(s.autopay.dia, 30);
+  } finally { _setInvoiceChecker(null); await lim({ max: 1000, dia: 4000 }); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+});

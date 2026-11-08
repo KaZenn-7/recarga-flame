@@ -119,6 +119,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .chk.diverge{background:rgba(248,81,73,.1);border-color:rgba(248,81,73,.4);color:var(--txt)}
 .chk.erro{background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.4);color:var(--txt)}
 .a-pay{background:var(--gold);color:#160a04}
+.lims{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+.lims label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--mut);font-weight:600}
+.lims input{width:100%;padding:9px 10px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:8px;font:inherit;font-size:14px}
+.lims button{grid-column:1/-1;padding:10px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
 .seg{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:3px}
 .seg button{flex:1;border:0;background:none;color:var(--mut);font:inherit;font-size:13px;font-weight:700;padding:8px 4px;border-radius:7px;cursor:pointer}
 .seg button.on{background:var(--txt);color:var(--bg)}
@@ -362,7 +366,18 @@ function renderStars(){
       seg.appendChild(bt);
     });
     row.style.flexDirection='column';row.style.alignItems='stretch';
-    row.appendChild(tx);row.appendChild(seg);B.appendChild(row);
+    row.appendChild(tx);row.appendChild(seg);
+    // tetos editáveis
+    const lims=el('div','lims');
+    const fld=function(lbl,val){const w=el('label',null,lbl);const i=document.createElement('input');i.inputMode='numeric';i.value=String(val);w.appendChild(i);lims.appendChild(w);return i;};
+    const iMax=fld('Máximo por pedido (★)',A.max),iDia=fld('Máximo em 24h (★)',A.dia);
+    const sv=el('button',null,'Salvar limites');
+    sv.onclick=async function(){
+      const num=function(i){return parseInt(String(i.value).replace(/[^0-9]/g,''),10);};
+      try{await api('/api/admin/autopay/limites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max:num(iMax),dia:num(iDia)})});await loadStars();refreshOrders(false);}
+      catch(e){alert(e.message);}
+    };
+    lims.appendChild(sv);row.appendChild(lims);B.appendChild(row);
   }
   const a=el('div','sacts');
   const b1=el('button','pri','+ Registrar compra');b1.onclick=addRecarga;
