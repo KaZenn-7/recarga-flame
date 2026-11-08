@@ -608,11 +608,15 @@ test('antifraude: aparelho (cookie), conta/CPF do pagador e IP após estorno', a
   await pagar(b.token);
   assert.match(tgSent.at(-1).text, /mesmo IP/);
   assert.doesNotMatch(tgSent.at(-1).text, /conta bancária/);
-  // outro aparelho e IP, mas paga com a MESMA conta: não dá para recusar antes, então REVISAR no aviso
+  // outro aparelho e IP, mas paga com a MESMA conta: não dá para recusar antes do Pix → BLOQUEIO imediato ao pagar
   mpPayer = pagadorX;
   const c = await (await comprar('444444', 'g4@x.com', null, '10.6.6.6')).json();
   await pagar(c.token);
-  assert.match(tgSent.at(-1).text, /conta bancária que pagou já teve estorno/);
+  assert.match(tgSent.at(-1).text, /🚫 Pedido #\d+ BLOQUEADO automaticamente: a conta bancária que pagou já teve estorno/);
+  assert.match(tgSent.at(-1).text, /devolva R\$/);
+  assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(c.id).status, 'cancelled');
+  assert.equal((await (await fetch(base + '/api/orders/' + c.token, { headers: freshIP() })).json()).status, 'refund');
+  assert.equal((await comprar('444444', 'g4b@x.com', null, '10.4.4.4')).status, 403); // ID do pedido bloqueado também ficou bloqueado
   mpPayer = null;
   // desbloquear libera o aparelho também
   assert.equal((await adm('POST', '/api/admin/orders/' + id + '/unblock')).status, 200);

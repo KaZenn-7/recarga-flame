@@ -356,3 +356,9 @@ pedido (`orders.star_cost`). Aviso 💱 no Telegram quando muda, com produtos no
 Por ID ou e-mail, em 24h: REVISAR quando o total pago chega a 3× o produto mais caro ativo (hoje 200.000 Coins,
 R$ 339,90 → R$ 1.019,70 = a 3ª compra dele); RECUSA no checkout acima de 4× (R$ 1.359,60 = a 5ª é recusada).
 Recalcula sozinho se os preços mudarem; `RISK_DAY_BRL`/`LIMIT_DAY_BRL` no .env fixariam valores.
+
+### Prazo 24h e bloqueio imediato por sinal de estorno (2026-11-08)
+- Pedido em revisão ou entrega manual: prazo de até 24 h (Termos e tela do pedido).
+- Pago com sinal de estorno (conta bancária que pagou ou aparelho já bloqueados) → NÃO vai para revisão: cancela na hora,
+  bloqueia ID/e-mail do pedido, aviso 🚫 no Telegram para DEVOLVER o valor no app do MP (reembolso é manual).
+  Cliente vê "Pedido cancelado — o valor será devolvido" (status 'refund' na API). IP de estorno segue só como alerta.

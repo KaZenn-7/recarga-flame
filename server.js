@@ -243,8 +243,6 @@ function riskOf(o) {
   const why = [];
   const ck = chkOf(o);
   if (ck?.status === 'diverge') why.push('conferência no bot do CF não bateu: ' + ck.motivo);
-  if (blockedIn('acct', o.payer_acct)) why.push('conta bancária que pagou já teve estorno — NÃO entregue sem checar');
-  if (blockedIn('device', o.device)) why.push('aparelho ligado a um estorno');
   if (blockedIn('ip', o.ip_h)) why.push('mesmo IP de um pedido estornado (só alerta: IP de 4G é compartilhado)');
   if (o.cents >= RISK.review) why.push(`valor alto (${brlTxt(o.cents)})`);
   const prev = db.prepare("SELECT COUNT(*) n FROM orders WHERE game_id=? AND id<? AND status='delivered'").get(o.game_id, o.id).n;
@@ -252,6 +250,24 @@ function riskOf(o) {
   const day = paid24(o.game_id, o.email);
   if (day >= RISK.day) why.push(`${brlTxt(day)} pagos em 24h por este ID/e-mail`);
   return why;
+}
+
+// Sinal de estorno anterior (conta bancária que pagou ou aparelho) → NÃO entrega: cancela na hora, bloqueia o
+// cliente e avisa o operador para devolver o valor (Termos: pedido não entregue = reembolso integral).
+// IP de estorno NÃO entra aqui (4G/CGNAT é compartilhado): continua só como alerta em riskOf.
+function estornoSinal(o) {
+  if (blockedIn('acct', o.payer_acct)) return 'a conta bancária que pagou já teve estorno';
+  if (blockedIn('device', o.device)) return 'o aparelho está ligado a um estorno';
+  return null;
+}
+function bloquearPedido(o, motivo) {
+  const r = db.prepare("UPDATE orders SET status='cancelled', manual_motivo=? WHERE id=? AND status='paid'").run('bloqueado: ' + motivo, o.id);
+  if (!r.changes) return;
+  blockClient(o, 'bloqueio automático (sinal de estorno)');
+  const v = brlTxt(o.cents);
+  tgSend(`🚫 Pedido #${o.id} BLOQUEADO automaticamente: ${motivo}.\n${o.prod_nome || o.product} · ${v} · ${o.nickname} · ID ${o.game_id}\n`
+    + `NÃO foi entregue. O cliente PAGOU: devolva ${v} pelo app do Mercado Pago (Termos: não entregue = reembolso integral).\n`
+    + 'ID e e-mail deste pedido também foram bloqueados. Se for engano, desbloqueie no card do pedido (aba Cancelados).');
 }
 
 async function syncPayment(mpId) {
@@ -266,7 +282,12 @@ async function syncPayment(mpId) {
     const r = db.prepare("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP, payer_acct=? WHERE id=? AND status='pending'")
       .run(pp.acct, o.id);
     // só avisa na transição pending→paid (webhook + polling podem chegar juntos: changes evita aviso duplo)
-    if (r.changes) { orderEv(o, 'paid'); notifyPaid({ ...o, payer_acct: pp.acct }); }
+    if (r.changes) {
+      orderEv(o, 'paid');
+      const oo = { ...o, payer_acct: pp.acct };
+      const sinal = estornoSinal(oo);
+      if (sinal) bloquearPedido(oo, sinal); else notifyPaid(oo);
+    }
   } else if (['cancelled', 'rejected', 'refunded', 'charged_back'].includes(pay.status)) {
     const before = o.status;
     const r = db.prepare(`UPDATE orders SET status = CASE status WHEN 'delivered' THEN 'reversed' ELSE 'cancelled' END
@@ -1175,12 +1196,13 @@ app.get('/api/orders/:token', async (req, res) => {
     o = findOrder.get(req.params.token);
   }
   const entrega = entregaState(o);
-  if (req.query.full !== '1') return res.json({ status: o.status, entrega });
+  const st = o.status === 'cancelled' && o.paid_at ? 'refund' : o.status; // pago e cancelado antes da entrega
+  if (req.query.full !== '1') return res.json({ status: st, entrega });
   // Dados para reabrir o pedido pelo link (quem tem o token = dono do pedido).
   // Nunca devolve e-mail. QR só enquanto o Pix pode ser pago.
   const pending = o.status === 'pending';
   res.json({
-    status: o.status, entrega, id: o.id, product: o.product, nome: o.prod_nome || PRODUCTS[o.product]?.nome || o.product,
+    status: st, entrega, id: o.id, product: o.product, nome: o.prod_nome || PRODUCTS[o.product]?.nome || o.product,
     cents: o.cents, gameId: o.game_id, nick: o.nickname,
     avatar: `/api/player/${encodeURIComponent(o.game_id)}/avatar`,
     img: PRODUCTS[o.product]?.img || `/img/${o.product}.jpg`,
