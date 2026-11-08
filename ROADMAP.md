@@ -344,3 +344,10 @@ pedido (`orders.star_cost`). Aviso 💱 no Telegram quando muda, com produtos no
   Dica: links com `?src=yt` / `?src=wa` identificam a origem mesmo quando o app não manda referrer.
 - E-mails de Pix: lembrete 1x quando faltam ≤ 10 min (`remindPending`, a cada 1 min) e aviso 1x quando expira
   (`expirePending`); nunca se o cliente já fez pedido mais novo (mesmo ID/e-mail). Política de privacidade atualizada.
+
+### Ajustes de plataforma (2026-11-08)
+- Avatar: conta sem foto → SVG padrão com cache de 6 h; servidor lembra "sem avatar" por 6 h (acabou o 404 repetido).
+- `public/robots.txt` (bloqueia /painel, /login, /api/) e `public/sitemap.xml` (6 páginas públicas).
+- Robô 204.168.229.164 (Hetzner HEL1, monitor de página) bloqueado no nginx (`deny` nos blocos da loja e do cf-teste).
+- Loja: sugestão de e-mail digitado errado ("Você quis dizer …@gmail.com?") por distância de edição a domínios comuns.
+- PM2: módulo `pm2-logrotate@3.0.0` (3.0.1 era de 4 dias atrás) — 10 MB, 7 arquivos, compactado, diário às 3h.
