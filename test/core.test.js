@@ -1043,3 +1043,15 @@ test('página "Como funciona": responde em /como-funciona e a loja aponta para e
     assert.ok(p.includes(`href="${cur}" aria-current="page"`));
   }
 });
+
+test('termos de uso e política de privacidade: no ar, linkados no rodapé e no aceite do Pix', async () => {
+  const t = await (await fetch(base + '/termos-de-uso')).text();
+  assert.match(t, /<h1>Termos de uso<\/h1>/);
+  assert.match(t, /reembolso só é possível quando o item não foi entregue/);
+  assert.match(t, /inclusive se o ID foi digitado errado/);
+  const p = await (await fetch(base + '/politica-de-privacidade')).text();
+  assert.match(p, /<h1>Política de privacidade<\/h1>/); assert.match(p, /LGPD/);
+  const loja = await (await fetch(base + '/')).text();
+  assert.match(loja, /class="terms">Ao gerar o Pix você concorda/);
+  for (const pg of [loja, t, p]) assert.match(pg, /class="ft-docs"><a href="\/termos-de-uso">/);
+});

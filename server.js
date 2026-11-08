@@ -854,6 +854,8 @@ app.use(express.static('public'));
 // páginas institucionais (também em /como-funciona.html e /perguntas-frequentes.html)
 app.get('/como-funciona', (req, res) => res.sendFile('como-funciona.html', { root: 'public' }));
 app.get('/perguntas-frequentes', (req, res) => res.sendFile('perguntas-frequentes.html', { root: 'public' }));
+app.get('/termos-de-uso', (req, res) => res.sendFile('termos-de-uso.html', { root: 'public' }));
+app.get('/politica-de-privacidade', (req, res) => res.sendFile('politica-de-privacidade.html', { root: 'public' }));
 app.use('/api', limit(120));
 
 app.get('/api/products', (req, res) => {

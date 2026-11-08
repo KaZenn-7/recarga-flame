@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0e0e10">
+<meta name="format-detection" content="telephone=no">
+<title>Política de privacidade — Recarga Flame</title>
+<meta name="description" content="Política de privacidade da Recarga Flame (LGPD): dados coletados, uso, compartilhamento, cookies e seus direitos.">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<style>
+:root{
+  --bg:#0e0e10;--panel:#161618;--panel2:#1c1c1f;--line:#2a2a2e;
+  --txt:#f4f4f5;--mut:#9b9ba3;--dim:#6c6c74;
+  --orange:#ff5a1f;--green:#3fb950;--gold:#e3b341;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{font:16px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
+a{color:var(--orange)}
+.wrap{max-width:520px;margin:0 auto;padding:0 18px 56px}
+.bar{display:flex;align-items:center;gap:10px;padding:18px 0 16px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.bar a.home{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
+.mark{width:30px;height:30px;border-radius:7px;flex-shrink:0;display:block}
+.bar b{font-size:16px;letter-spacing:-.01em}.bar .fl{color:var(--orange)}
+.bar .back{margin-left:auto;font-size:13px;color:var(--mut);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+h1{font-size:24px;line-height:1.2;margin:0 0 8px;letter-spacing:-.02em}
+.lead{color:var(--mut);margin:0 0 22px;font-size:15px}
+h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:s}
+.steps li{display:flex;gap:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.steps li::before{counter-increment:s;content:counter(s);flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--orange);color:#160a04;font-weight:800;display:grid;place-items:center;font-size:14px}
+.steps b{display:block;font-size:15px}.steps span{color:var(--mut);font-size:14px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;font-size:14.5px;color:var(--mut)}
+.box b{color:var(--txt)}.box ul{margin:8px 0;padding-left:20px}.box p{margin:0 0 8px}.box p:last-child{margin:0}
+.box.ok{border-color:rgba(63,185,80,.4);background:rgba(63,185,80,.07)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;padding:14px 28px 14px 0;font-weight:600;font-size:15px;position:relative}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";position:absolute;right:4px;top:12px;color:var(--orange);font-size:20px;font-weight:400}
+.faq details[open] summary::after{content:"−"}
+.faq .a{padding:0 0 15px;color:var(--mut);font-size:14.5px}.faq .a p{margin:0 0 8px}.faq .a b{color:var(--txt)}
+.faq img{width:100%;height:auto;border-radius:9px;border:1px solid var(--line);display:block;margin-top:6px}
+.cta{display:block;text-align:center;background:var(--orange);color:#160a04;font-weight:800;text-decoration:none;padding:15px;border-radius:10px;margin-top:26px}
+.next{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding:14px 15px;background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--txt);text-decoration:none;font-weight:600;font-size:15px}
+.next span{color:var(--mut);font-weight:400;font-size:13px;display:block}.next i{color:var(--orange);font-style:normal;font-size:20px}
+/* rodapé (igual em todas as páginas) */
+.ft{margin-top:36px;padding:20px 0 6px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+.ft-brand{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.ft-brand .mark{width:26px;height:26px;border-radius:6px;display:block}
+.ft-brand b{font-size:15px;color:var(--txt);letter-spacing:-.01em}.ft-brand .fl{color:var(--orange)}
+.ft-brand>span{margin-left:auto;font-size:11.5px;color:var(--dim);text-align:right;line-height:1.3}
+.ft-links{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px}
+.ft-links a{font-size:12px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:8px 4px;white-space:nowrap;text-align:center}
+.ft-links a[aria-current]{border-color:var(--orange);color:var(--orange)}
+.ft-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+@media(max-width:380px){.ft-grid{grid-template-columns:1fr}}
+.ft-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 13px}
+.ft-card h4{margin:0 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.ft-card p{margin:0;font-size:12.5px;line-height:1.5}.ft-card p b{color:var(--txt)}
+.ft-sup{display:grid;gap:6px}
+.ft-sup a{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:8px;font-weight:700;font-size:13px;color:#fff;text-decoration:none}
+.ft-sup .wa{background:#1f8f4e}.ft-sup .tg{background:#229ED9}
+.ft-legal{font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 8px}
+.ft-copy{font-size:11.5px;color:var(--dim);margin:0}
+.doc h2{font-size:16px;margin:26px 0 8px}
+.doc p,.doc li{color:var(--mut);font-size:14.5px;line-height:1.6}.doc p{margin:0 0 10px}
+.doc ul{margin:0 0 10px;padding-left:20px}.doc li{margin-bottom:5px}.doc b{color:var(--txt)}
+.doc .upd{font-size:12.5px;color:var(--dim);margin:0 0 18px}
+.doc .key{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:10px;padding:12px 14px;margin:0 0 12px}
+.doc .key p{margin:0;color:var(--txt)}
+.toc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 15px;margin:0 0 6px;font-size:14px}
+.toc ol{margin:0;padding-left:20px}.toc li{margin:3px 0}.toc a{color:var(--txt);text-decoration:none}
+.ft-docs{font-size:12px;margin:0 0 8px}.ft-docs a{color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <a class="home" href="/"><img class="mark" src="/img/brand-mark.png" alt="" width="30" height="30"><b>Recarga <span class="fl">Flame</span></b></a>
+    <a class="back" href="/">Fazer pedido</a>
+  </div>
+
+  <article class="doc">
+  <h1>Política de privacidade</h1>
+  <p class="upd">Última atualização: 7 de novembro de 2026</p>
+  <nav class="toc" aria-label="Seções"><ol><li><a href="#dados">Quais dados coletamos</a></li><li><a href="#uso">Para que usamos</a></li><li><a href="#compartilhamento">Com quem compartilhamos</a></li><li><a href="#cookies">Cookies e armazenamento no aparelho</a></li><li><a href="#guarda">Por quanto tempo guardamos</a></li><li><a href="#direitos">Seus direitos</a></li><li><a href="#seguranca">Segurança</a></li><li><a href="#alteracoes">Alterações e contato</a></li></ol></nav>
+
+  <h2 id="dados">Quais dados coletamos</h2>
+  <ul>
+    <li><b>ID da conta do jogo</b>, e o <b>nick</b> e a foto que o jogo mostra para esse ID — para encontrar a conta e entregar o item.</li>
+    <li><b>E-mail</b> — exigido pelo Mercado Pago para gerar o Pix, e usado para avisar sobre o seu pedido (por exemplo, a confirmação de entrega).</li>
+    <li><b>Dados do pedido</b>: item, valor, cupom, datas de criação, pagamento e entrega.</li>
+    <li><b>Dados técnicos de segurança</b>: endereço IP e um identificador aleatório do aparelho (cookie). O IP é guardado apenas de forma <b>embaralhada</b> (hash), não em texto legível.</li>
+    <li><b>Conta bancária de origem do Pix</b> (banco, agência e conta), informada pelo Mercado Pago após o pagamento — também guardada só de forma embaralhada, para prevenção a fraudes.</li>
+  </ul>
+  <p>Não pedimos nem guardamos senha do jogo, CPF ou dados de cartão. O pagamento é feito dentro do Mercado Pago.</p>
+
+  <h2 id="uso">Para que usamos</h2>
+  <ul>
+    <li>Processar o pagamento, entregar o item e mostrar o andamento do pedido.</li>
+    <li>Falar com você sobre o pedido (e-mail e suporte).</li>
+    <li>Prevenir fraudes e contestações indevidas de pagamento, incluindo o bloqueio de quem contestar uma compra já entregue.</li>
+    <li>Cumprir obrigações legais e manter registros de vendas.</li>
+  </ul>
+  <p>As bases legais (LGPD, art. 7º) são a <b>execução do contrato</b> da compra, o <b>cumprimento de obrigação legal</b> e o <b>legítimo interesse</b> em prevenir fraudes. Não vendemos seus dados e não enviamos propaganda.</p>
+
+  <h2 id="compartilhamento">Com quem compartilhamos</h2>
+  <ul>
+    <li><b>Mercado Pago</b> — processamento do Pix (recebe seu e-mail e o valor).</li>
+    <li><b>CounterFlame</b> — consulta da conta pelo ID e compra do item pelo canal oficial de doações do jogo (recebe o ID).</li>
+    <li><b>Telegram</b> — usado para realizar a compra do item no canal oficial do jogo e para avisar nossa equipe sobre pedidos (ID, nick e item; nunca seu e-mail).</li>
+    <li><b>Provedor de e-mail</b> — envio das mensagens sobre o seu pedido.</li>
+    <li><b>Provedor de hospedagem</b> — o servidor onde a loja funciona.</li>
+    <li>Autoridades, quando exigido por lei ou ordem judicial.</li>
+  </ul>
+
+  <h2 id="cookies">Cookies e armazenamento no aparelho</h2>
+  <ul>
+    <li><b>Identificador do aparelho</b> (cookie, até 2 anos): número aleatório, sem dados pessoais, usado para segurança e prevenção a fraudes.</li>
+    <li><b>Pedido em andamento</b> (armazenamento local do navegador): permite reabrir seu pedido ao voltar à loja.</li>
+    <li><b>Cupom</b> (armazenamento local, 30 dias): mantém o desconto de um link de cupom.</li>
+  </ul>
+  <p>Não usamos cookies de publicidade nem de rastreamento de terceiros. Limpar os dados do navegador apaga esses itens.</p>
+
+  <h2 id="guarda">Por quanto tempo guardamos</h2>
+  <p>Os dados dos pedidos ficam guardados enquanto forem necessários para registrar a venda, cumprir obrigações legais e prevenir fraudes — contestações de Pix podem ocorrer meses depois da compra. Cópias de segurança são criptografadas. Bloqueios por fraude ficam ativos até serem revistos.</p>
+
+  <h2 id="direitos">Seus direitos</h2>
+  <p>Pela LGPD você pode pedir: confirmação de que tratamos seus dados, acesso, correção, anonimização ou exclusão de dados desnecessários, informação sobre compartilhamento e revisão de bloqueios. Alguns dados podem ser mantidos quando a lei exigir ou para prevenir fraudes.</p>
+  <p>Para exercer seus direitos, escreva para <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>, WhatsApp <a href="https://wa.me/5511952997031">+55 11 95299-7031</a> ou Telegram <a href="https://t.me/kazenn7">@kazenn7</a>, informando o número do pedido ou o ID da conta. Respondemos em até 15 dias.</p>
+
+  <h2 id="seguranca">Segurança</h2>
+  <p>A loja usa conexão criptografada (HTTPS), guarda IP e conta bancária só de forma embaralhada, restringe o acesso aos dados à equipe e mantém cópias de segurança criptografadas. Nenhum sistema é 100% seguro; se houver um incidente que possa trazer risco a você, avisaremos.</p>
+
+  <h2 id="alteracoes">Alterações e contato</h2>
+  <p>Esta política pode ser atualizada; a data no topo mostra a versão em vigor. Responsável pelo tratamento dos dados: <b>Recarga Flame</b> — contato <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>, WhatsApp <a href="https://wa.me/5511952997031">+55 11 95299-7031</a> ou Telegram <a href="https://t.me/kazenn7">@kazenn7</a>.</p>
+
+  </article>
+  <a class="next" href="/termos-de-uso"><div>Termos de uso<span>Entrega, pagamento e reembolso</span></div><i>›</i></a>
+  <footer class="ft">
+    <div class="ft-brand"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b>Recarga <span class="fl">Flame</span></b><span>recarga de CounterFlame<br>por Pix</span></div>
+    <nav class="ft-links" aria-label="Páginas"><a href="/">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
+    <div class="ft-grid">
+      <div class="ft-card"><h4>Suporte</h4><div class="ft-sup"><a class="wa" href="https://wa.me/5511952997031" target="_blank" rel="noopener">WhatsApp</a><a class="tg" href="https://t.me/kazenn7" target="_blank" rel="noopener">Telegram</a></div></div>
+      <div class="ft-card"><h4>Entrega</h4><p><b>Automática:</b> ~1 min, a qualquer hora.<br><b>Pela equipe:</b> até 1h · seg–sex 7h–23h · sáb, dom e feriados 11h–23h.</p></div>
+    </div>
+    <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago. Suporte: WhatsApp +55 11 95299-7031 · Telegram @kazenn7.</p>
+    <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a></p>
+    <p class="ft-copy">© 2026 Recarga Flame</p>
+  </footer>
+</div>
+</body>
+</html>
