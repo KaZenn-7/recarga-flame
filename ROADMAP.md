@@ -351,3 +351,8 @@ pedido (`orders.star_cost`). Aviso 💱 no Telegram quando muda, com produtos no
 - Robô 204.168.229.164 (Hetzner HEL1, monitor de página) bloqueado no nginx (`deny` nos blocos da loja e do cf-teste).
 - Loja: sugestão de e-mail digitado errado ("Você quis dizer …@gmail.com?") por distância de edição a domínios comuns.
 - PM2: módulo `pm2-logrotate@3.0.0` (3.0.1 era de 4 dias atrás) — 10 MB, 7 arquivos, compactado, diário às 3h.
+
+### Limites em 24h pelo produto mais caro (2026-11-08)
+Por ID ou e-mail, em 24h: REVISAR quando o total pago chega a 3× o produto mais caro ativo (hoje 200.000 Coins,
+R$ 339,90 → R$ 1.019,70 = a 3ª compra dele); RECUSA no checkout acima de 4× (R$ 1.359,60 = a 5ª é recusada).
+Recalcula sozinho se os preços mudarem; `RISK_DAY_BRL`/`LIMIT_DAY_BRL` no .env fixariam valores.

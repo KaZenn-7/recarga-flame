@@ -173,12 +173,19 @@ function blockReason(p, d) {
 // ---------- Antifraude (Pix/MED) ----------
 // Valores em R$ no .env; padrões pensados para o catálogo atual (maior item R$339,90).
 const brlEnv = (v, d) => Math.round(Number(v ?? d) * 100);
+// Limites em 24h (por ID ou e-mail) acompanham o PRODUTO MAIS CARO ativo:
+//   revisar quando o total pago chega a 3× ele (a 3ª compra dele); recusar no checkout acima de 4× (a 5ª é recusada).
+// RISK_DAY_BRL / LIMIT_DAY_BRL no .env fixam valores e desligam o cálculo automático.
+const maxPriceCents = () => Math.max(0, ...Object.values(PRODUCTS).filter((p) => p.ativo).map((p) => p.cents || 0));
 const RISK = {
   review: brlEnv(env.RISK_REVIEW_BRL, 150), // pedido a partir disso → "revisar antes de entregar"
   first: brlEnv(env.RISK_FIRST_BRL, 50),    // 1ª compra do ID a partir disso → revisar
-  day: brlEnv(env.RISK_DAY_BRL, 300),       // soma paga em 24h (ID ou e-mail) a partir disso → revisar
-  cap: brlEnv(env.LIMIT_DAY_BRL, 700),      // teto em 24h por ID/e-mail: checkout recusa acima
   pend: Number(env.MAX_PENDING_PIX ?? 3),   // Pix em aberto ao mesmo tempo por ID/e-mail
+  _day: null, _cap: null,                   // sobrescritas (testes)
+  get day() { return this._day ?? (env.RISK_DAY_BRL ? brlEnv(env.RISK_DAY_BRL) : 3 * maxPriceCents() || 30000); },
+  set day(v) { this._day = v; },
+  get cap() { return this._cap ?? (env.LIMIT_DAY_BRL ? brlEnv(env.LIMIT_DAY_BRL) : 4 * maxPriceCents() || 70000); },
+  set cap(v) { this._cap = v; },
 };
 db.exec(`CREATE TABLE IF NOT EXISTS blocked (
   kind TEXT NOT NULL, value TEXT NOT NULL, reason TEXT DEFAULT '', order_id INTEGER,
@@ -1912,4 +1919,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, remindPending, starsForecast, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

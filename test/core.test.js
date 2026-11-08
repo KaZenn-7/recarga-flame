@@ -92,7 +92,7 @@ globalThis.fetch = async (url, opts) => {
   return realFetch(url, opts); // localhost e demais
 };
 
-let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
+let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, riskOf, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
 let COOKIE = '';
 async function login() {
   const post = (u, b) => fetch(base + u, { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
@@ -107,7 +107,7 @@ const freshIP = () => ({ 'X-Forwarded-For': `10.0.${(ipSeq >> 8) & 255}.${ipSeq+
 
 before(async () => {
   const mod = await import('../server.js?test=' + Date.now());
-  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
+  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; riskOf = mod.riskOf; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}`;
   process.env.PUBLIC_URL = base; // para checagens same-origin
@@ -1378,4 +1378,25 @@ test('robots.txt e sitemap.xml', async () => {
   const x = await s.text();
   for (const p of ['/como-funciona', '/perguntas-frequentes', '/termos-de-uso']) assert.ok(x.includes('https://recargaflame.com.br' + p));
   assert.ok(!x.includes('/painel'));
+});
+
+test('limites em 24h seguem o produto mais caro: 3ª compra dele → revisar; 5ª → recusada', async () => {
+  const prods = await (await fetch(base + '/api/products', { headers: freshIP() })).json();
+  const top = prods.reduce((a, b) => (b.cents > a.cents ? b : a));
+  const max = top.cents;
+  assert.equal(RISK.day, 3 * max); assert.equal(RISK.cap, 4 * max);
+  const ins = (gid, n, status = 'delivered') => { for (let i = 0; i < n; i++) db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars)
+    VALUES (?, ?, ?, ?, 'baleia', ?, ?, datetime('now'), datetime('now'), 'top', 10)`).run(gid + '-' + i + status, top.key, max, gid, gid + '@x.com', status); };
+  // 4 pagas hoje → a 5ª é recusada no checkout
+  ins('252501', 4);
+  const r = await postJ('/api/orders', { product: top.key, gameId: '252501', email: 'outro5@x.com' });
+  assert.equal(r.status, 409); assert.match((await r.json()).error, /Limite diário/);
+  // 2ª compra (2 no dia, contando ela): não pede revisão por "muito em 24h"; 3ª: pede
+  ins('252502', 1); ins('252502', 1, 'paid');
+  let o = db.prepare("SELECT * FROM orders WHERE game_id='252502' AND status='paid'").get();
+  assert.ok(!riskOf(o).some((x) => /pagos em 24h/.test(x)));
+  ins('252503', 2); ins('252503', 1, 'paid');
+  o = db.prepare("SELECT * FROM orders WHERE game_id='252503' AND status='paid'").get();
+  assert.ok(riskOf(o).some((x) => /pagos em 24h/.test(x)));
+  db.exec("DELETE FROM orders WHERE game_id IN ('252501','252502','252503')");
 });
