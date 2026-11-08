@@ -1469,3 +1469,10 @@ test('reembolso: só pago e não entregue; 1 vez; cliente vê "valor devolvido";
     assert.equal(o.refund, 'done'); assert.equal(o.refundable, false);
   } finally { _setRefundCaller(null); }
 });
+
+test('link curto de cupom mantém a origem (?src=wa) e descarta lixo', async () => {
+  const r = await fetch(base + '/aquila?src=wa', { redirect: 'manual' });
+  assert.equal(r.headers.get('location'), '/?cupom=AQUILA&src=wa');
+  const x = await fetch(base + '/aquila?src=%3Cscript%3E', { redirect: 'manual' });
+  assert.equal(x.headers.get('location'), '/?cupom=AQUILA');
+});

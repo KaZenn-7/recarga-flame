@@ -1982,7 +1982,10 @@ app.get('/api/admin/analytics', admin, (req, res) => {
 app.get('/:code', (req, res, next) => {
   const c = normCode(req.params.code);
   if (!validCode(c) || !getCoupon(c)) return next();
-  res.redirect(302, '/?cupom=' + encodeURIComponent(c));
+  // mantém a origem da divulgação (ex.: /aquila?src=wa) para o funil
+  const extra = ['src', 'utm_source'].filter((k) => /^[a-z0-9_-]{1,20}$/i.test(String(req.query[k] || '')))
+    .map((k) => `&${k}=${encodeURIComponent(req.query[k])}`).join('');
+  res.redirect(302, '/?cupom=' + encodeURIComponent(c) + extra);
 });
 
 app.use((err, req, res, next) => {
