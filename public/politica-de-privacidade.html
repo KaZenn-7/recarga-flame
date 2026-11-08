@@ -75,6 +75,8 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
 .doc .key p{margin:0;color:var(--txt)}
 .toc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 15px;margin:0 0 6px;font-size:14px}
 .toc ol{margin:0;padding-left:20px}.toc li{margin:3px 0}.toc a{color:var(--txt);text-decoration:none}
+.ft-btn{display:block;text-align:center;padding:10px;border-radius:9px;font-weight:700;font-size:14px;background:var(--orange);color:#160a04;text-decoration:none}
+.ft-more{display:block;margin-top:9px;font-size:12px;color:var(--mut);text-decoration:none}
 .ft-docs{font-size:12px;margin:0 0 8px}.ft-docs a{color:var(--mut)}
 </style>
 </head>
@@ -95,6 +97,7 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
     <li><b>ID da conta do jogo</b>, e o <b>nick</b> e a foto que o jogo mostra para esse ID — para encontrar a conta e entregar o item.</li>
     <li><b>E-mail</b> — exigido pelo Mercado Pago para gerar o Pix, e usado para avisar sobre o seu pedido (por exemplo, a confirmação de entrega).</li>
     <li><b>Dados do pedido</b>: item, valor, cupom, datas de criação, pagamento e entrega.</li>
+    <li><b>Mensagens de suporte</b>: o e-mail, o assunto e o texto que você envia pela página de suporte.</li>
     <li><b>Dados técnicos de segurança</b>: endereço IP e um identificador aleatório do aparelho (cookie). O IP é guardado apenas de forma <b>embaralhada</b> (hash), não em texto legível.</li>
     <li><b>Conta bancária de origem do Pix</b> (banco, agência e conta), informada pelo Mercado Pago após o pagamento — também guardada só de forma embaralhada, para prevenção a fraudes.</li>
   </ul>
@@ -114,7 +117,7 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
     <li><b>Mercado Pago</b> — processamento do Pix (recebe seu e-mail e o valor).</li>
     <li><b>CounterFlame</b> — consulta da conta pelo ID e compra do item pelo canal oficial de doações do jogo (recebe o ID).</li>
     <li><b>Telegram</b> — usado para realizar a compra do item no canal oficial do jogo e para avisar nossa equipe sobre pedidos (ID, nick e item; nunca seu e-mail).</li>
-    <li><b>Provedor de e-mail</b> — envio das mensagens sobre o seu pedido.</li>
+    <li><b>Provedor de e-mail</b> — envio das mensagens sobre o seu pedido e das mensagens de suporte.</li>
     <li><b>Provedor de hospedagem</b> — o servidor onde a loja funciona.</li>
     <li>Autoridades, quando exigido por lei ou ordem judicial.</li>
   </ul>
@@ -132,7 +135,7 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
 
   <h2 id="direitos">Seus direitos</h2>
   <p>Pela LGPD você pode pedir: confirmação de que tratamos seus dados, acesso, correção, anonimização ou exclusão de dados desnecessários, informação sobre compartilhamento e revisão de bloqueios. Alguns dados podem ser mantidos quando a lei exigir ou para prevenir fraudes.</p>
-  <p>Para exercer seus direitos, escreva para <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>, informando o número do pedido ou o ID da conta. Respondemos em até 15 dias.</p>
+  <p>Para exercer seus direitos, use a <a href="/suporte">página de suporte</a> ou escreva para <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>, informando o número do pedido ou o ID da conta. Respondemos em até 15 dias.</p>
 
   <h2 id="seguranca">Segurança</h2>
   <p>A loja usa conexão criptografada (HTTPS), guarda IP e conta bancária só de forma embaralhada, restringe o acesso aos dados à equipe e mantém cópias de segurança criptografadas. Nenhum sistema é 100% seguro; se houver um incidente que possa trazer risco a você, avisaremos.</p>
@@ -146,11 +149,11 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
     <div class="ft-brand"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b>Recarga <span class="fl">Flame</span></b><span>recarga de CounterFlame<br>por Pix</span></div>
     <nav class="ft-links" aria-label="Páginas"><a href="/">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
     <div class="ft-grid">
-      <div class="ft-card"><h4>Suporte</h4><div class="ft-sup"><a class="mail" href="mailto:suporte@recargaflame.com.br">Enviar e-mail</a><span class="ft-addr">suporte@recargaflame.com.br</span></div></div>
-      <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática</span><b>~1 min, 24h</b></li><li><span>Pela equipe</span><b>até 1 hora</b></li><li><span>Seg a sex</span><b>7h às 23h</b></li><li><span>Sáb, dom e feriados</span><b>11h às 23h</b></li></ul></div>
+      <div class="ft-card"><h4>Suporte</h4><a class="ft-btn" href="/suporte">Falar com o suporte</a></div>
+      <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática</span><b>~1 min, 24h</b></li></ul><a class="ft-more" href="/termos-de-uso#entrega">Prazos e exceções nos Termos de uso ›</a></div>
     </div>
-    <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago. Suporte: <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>.</p>
-    <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a></p>
+    <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago.</p>
+    <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a> · <a href="/suporte">Suporte</a></p>
     <p class="ft-copy">© 2026 Recarga Flame</p>
   </footer>
 </div>

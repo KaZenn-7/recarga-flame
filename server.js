@@ -733,14 +733,14 @@ async function tgSend(text) {
 // Remetente: MAIL_FROM (padrão pedidos@recargaflame.com.br); respostas vão para MAIL_REPLY_TO (suporte@…).
 const MAIL_FROM = env.MAIL_FROM || 'pedidos@recargaflame.com.br';
 const MAIL_REPLY_TO = env.MAIL_REPLY_TO || 'suporte@recargaflame.com.br';
-async function sendMail(to, subject, html, text) {
+async function sendMail(to, subject, html, text, replyTo = MAIL_REPLY_TO) {
   if (!env.RESEND_API_KEY) return false;
   try {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST', signal: AbortSignal.timeout(10000),
       headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `Recarga Flame <${MAIL_FROM}>`, reply_to: MAIL_REPLY_TO,
+        from: `Recarga Flame <${MAIL_FROM}>`, reply_to: replyTo,
         to: [to], subject, html, text,
       }),
     });
@@ -854,6 +854,7 @@ app.use(express.static('public'));
 // páginas institucionais (também em /como-funciona.html e /perguntas-frequentes.html)
 app.get('/como-funciona', (req, res) => res.sendFile('como-funciona.html', { root: 'public' }));
 app.get('/perguntas-frequentes', (req, res) => res.sendFile('perguntas-frequentes.html', { root: 'public' }));
+app.get('/suporte', (req, res) => res.sendFile('suporte.html', { root: 'public' }));
 app.get('/termos-de-uso', (req, res) => res.sendFile('termos-de-uso.html', { root: 'public' }));
 app.get('/politica-de-privacidade', (req, res) => res.sendFile('politica-de-privacidade.html', { root: 'public' }));
 app.use('/api', limit(120));
@@ -995,6 +996,59 @@ app.get('/api/orders/:token', async (req, res) => {
     expiresAt: o.expires_at || null,
     qr: pending ? o.qr || null : null, qrBase64: pending ? o.qr_b64 || null : null,
   });
+});
+
+// ---------- Suporte: formulário → e-mail para suporte@ (Responder vai ao cliente) + aviso no Telegram ----------
+db.exec(`CREATE TABLE IF NOT EXISTS support_tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  email TEXT, assunto TEXT, msg TEXT, order_id INTEGER, game_id TEXT, ip_h TEXT, mail_ok INTEGER, tg_ok INTEGER
+)`);
+const SUPPORT_TO = env.SUPPORT_TO || 'suporte@recargaflame.com.br';
+const ASSUNTOS = {
+  naochegou: 'Meu pedido não chegou', pagamento: 'Problema com o pagamento', iderrado: 'Informei o ID errado',
+  reembolso: 'Reembolso', duvida: 'Dúvida antes de comprar', outro: 'Outro assunto',
+};
+const STATUS_TXT = { pending: 'aguardando pagamento', paid: 'pago, aguardando entrega', delivered: 'entregue', cancelled: 'cancelado', reversed: 'estornado' };
+const supportLimit = rateLimit({ windowMs: 3600_000, limit: 5, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Muitas mensagens em pouco tempo. Tente de novo mais tarde.' } });
+app.post('/api/suporte', supportLimit, async (req, res) => {
+  const b = req.body ?? {};
+  if (b.site) return res.json({ ok: true, id: 0 }); // campo invisível preenchido = robô
+  const email = String(b.email || '').trim().slice(0, 120);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Informe um e-mail válido para a resposta.', field: 'email' });
+  if (!ASSUNTOS[b.assunto]) return res.status(400).json({ error: 'Escolha o assunto.', field: 'assunto' });
+  const msg = String(b.msg || '').trim();
+  if (msg.length < 10) return res.status(400).json({ error: 'Conte um pouco mais (pelo menos 10 caracteres).', field: 'msg' });
+  if (msg.length > 2000) return res.status(400).json({ error: 'Mensagem muito longa (máximo 2000 caracteres).', field: 'msg' });
+  // pedido: pelo link (token, verificado) ou só o número informado (não verificado)
+  const o = typeof b.token === 'string' && /^[A-Za-z0-9-]{10,64}$/.test(b.token) ? findOrder.get(b.token) || null : null;
+  const num = String(b.pedido || '').replace(/\D/g, '');
+  const pedidoNum = o ? o.id : /^\d{1,7}$/.test(num) ? Number(num) : null;
+  const gidIn = String(b.gameId || '').trim();
+  const gid = o ? o.game_id : validId(gidIn) ? gidIn : null;
+  const assunto = ASSUNTOS[b.assunto];
+  const tid = Number(db.prepare('INSERT INTO support_tickets (email, assunto, msg, order_id, game_id, ip_h) VALUES (?,?,?,?,?,?)')
+    .run(email, assunto, msg, pedidoNum, gid, fp('ip:' + req.ip)).lastInsertRowid);
+  const pedLine = o
+    ? `Pedido #${o.id} (verificado) · ${o.prod_nome || o.product} · ${brlTxt(o.cents)} · ${STATUS_TXT[o.status] || o.status} · ${o.nickname} (ID ${o.game_id})`
+      + (lc(o.email) !== lc(email) ? ' · ⚠ e-mail diferente do usado no pedido' : '')
+    : pedidoNum ? `Pedido informado: #${pedidoNum} (não verificado)` : 'Sem pedido informado';
+  const lines = [`Chamado #${tid} — ${assunto}`, `De: ${email}`, pedLine, !o && gid ? `ID informado: ${gid}` : null].filter(Boolean);
+  const subject = `[Suporte #${tid}] ${assunto}${pedidoNum ? ` — pedido #${pedidoNum}` : ''}`;
+  const html = `<div style="font-family:Segoe UI,Roboto,Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">
+${lines.map((l) => `<div>${esc(l)}</div>`).join('')}
+<hr style="border:0;border-top:1px solid #ddd;margin:14px 0">
+<div style="white-space:pre-wrap">${esc(msg)}</div>
+<hr style="border:0;border-top:1px solid #ddd;margin:14px 0">
+<div style="color:#777;font-size:12px">Responder este e-mail envia a resposta direto para ${esc(email)}.</div></div>`;
+  const text = `${lines.join('\n')}\n\n${msg}\n\n— Responder este e-mail envia a resposta direto para ${email}.`;
+  const [mailOk, tgOk] = await Promise.all([
+    sendMail(SUPPORT_TO, subject, html, text, email),
+    tgSend(`📩 Suporte #${tid} — ${assunto}\nDe: ${email}\n${pedLine}\n\n${msg.slice(0, 600)}${msg.length > 600 ? '…' : ''}\n\nResponda pelo e-mail (Gmail).`),
+  ]);
+  db.prepare('UPDATE support_tickets SET mail_ok=?, tg_ok=? WHERE id=?').run(mailOk ? 1 : 0, tgOk ? 1 : 0, tid);
+  if (!mailOk && !tgOk) return res.status(502).json({ error: `Não conseguimos enviar agora. Tente de novo em instantes ou escreva para ${SUPPORT_TO}.` });
+  res.json({ ok: true, id: tid });
 });
 
 // Cliente cancela o próprio Pix pendente (só quem tem o token do pedido).

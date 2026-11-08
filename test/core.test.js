@@ -1055,3 +1055,34 @@ test('termos de uso e política de privacidade: no ar, linkados no rodapé e no 
   assert.match(loja, /class="terms">Ao gerar o Pix você concorda/);
   for (const pg of [loja, t, p]) assert.match(pg, /class="ft-docs"><a href="\/termos-de-uso">/);
 });
+
+test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Responder → cliente) + Telegram', async () => {
+  const sup = (b) => fetch(base + '/api/suporte', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
+  assert.equal((await fetch(base + '/suporte')).status, 200);
+  assert.equal((await sup({ email: 'x', assunto: 'outro', msg: 'mensagem longa o bastante' })).status, 400);
+  assert.equal((await sup({ email: 'a@b.com', assunto: 'hack', msg: 'mensagem longa o bastante' })).status, 400);
+  assert.equal((await sup({ email: 'a@b.com', assunto: 'outro', msg: 'curta' })).status, 400);
+  // robô (campo invisível): finge sucesso e não envia nada
+  const m0 = mailSent.length;
+  assert.equal((await sup({ email: 'a@b.com', assunto: 'outro', msg: 'mensagem de robô aqui', site: 'x' })).status, 200);
+  assert.equal(mailSent.length, m0);
+  // com o link do pedido: pedido verificado, status e alerta de e-mail diferente
+  mpShouldApprove = true;
+  const p = await (await postJ('/api/orders', { product: 'c1000', gameId: '171711', email: 'dono@x.com' })).json();
+  await pagar(p.token);
+  const r = await sup({ email: 'outro@x.com', assunto: 'naochegou', msg: 'Paguei e <b>não</b> chegou ainda.', token: p.token, pedido: '999', gameId: '1' });
+  assert.equal(r.status, 200);
+  const { id } = await r.json();
+  const m = mailSent.at(-1);
+  assert.deepEqual(m.to, ['suporte@recargaflame.com.br']);
+  assert.equal(m.reply_to, 'outro@x.com');
+  assert.match(m.subject, new RegExp(`\\[Suporte #${id}\\] Meu pedido não chegou — pedido #${p.id}`));
+  assert.match(m.text, new RegExp(`Pedido #${p.id} \\(verificado\\).*ID 171711`));
+  assert.match(m.text, /e-mail diferente do usado no pedido/);
+  assert.ok(m.html.includes('&#60;b&#62;não&#60;/b&#62;')); // HTML do cliente escapado
+  assert.ok(tgSent.some((t) => t.text.includes(`📩 Suporte #${id}`)));
+  // sem link: número informado não é tratado como verificado
+  await sup({ email: 'c@d.com', assunto: 'duvida', msg: 'Vocês vendem passe de batalha?', pedido: '#55' });
+  assert.match(mailSent.at(-1).text, /Pedido informado: #55 \(não verificado\)/);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM support_tickets').get().n, 2);
+});

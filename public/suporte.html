@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0e0e10">
+<meta name="format-detection" content="telephone=no">
+<title>Suporte — Recarga Flame</title>
+<meta name="description" content="Fale com o suporte da Recarga Flame. Respondemos por e-mail.">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<style>
+:root{
+  --bg:#0e0e10;--panel:#161618;--panel2:#1c1c1f;--line:#2a2a2e;
+  --txt:#f4f4f5;--mut:#9b9ba3;--dim:#6c6c74;
+  --orange:#ff5a1f;--green:#3fb950;--gold:#e3b341;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{font:16px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
+a{color:var(--orange)}
+.wrap{max-width:520px;margin:0 auto;padding:0 18px 56px}
+.bar{display:flex;align-items:center;gap:10px;padding:18px 0 16px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.bar a.home{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
+.mark{width:30px;height:30px;border-radius:7px;flex-shrink:0;display:block}
+.bar b{font-size:16px;letter-spacing:-.01em}.bar .fl{color:var(--orange)}
+.bar .back{margin-left:auto;font-size:13px;color:var(--mut);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+h1{font-size:24px;line-height:1.2;margin:0 0 8px;letter-spacing:-.02em}
+.lead{color:var(--mut);margin:0 0 22px;font-size:15px}
+h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:s}
+.steps li{display:flex;gap:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.steps li::before{counter-increment:s;content:counter(s);flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--orange);color:#160a04;font-weight:800;display:grid;place-items:center;font-size:14px}
+.steps b{display:block;font-size:15px}.steps span{color:var(--mut);font-size:14px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;font-size:14.5px;color:var(--mut)}
+.box b{color:var(--txt)}.box ul{margin:8px 0;padding-left:20px}.box p{margin:0 0 8px}.box p:last-child{margin:0}
+.box.ok{border-color:rgba(63,185,80,.4);background:rgba(63,185,80,.07)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;padding:14px 28px 14px 0;font-weight:600;font-size:15px;position:relative}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";position:absolute;right:4px;top:12px;color:var(--orange);font-size:20px;font-weight:400}
+.faq details[open] summary::after{content:"−"}
+.faq .a{padding:0 0 15px;color:var(--mut);font-size:14.5px}.faq .a p{margin:0 0 8px}.faq .a b{color:var(--txt)}
+.faq img{width:100%;height:auto;border-radius:9px;border:1px solid var(--line);display:block;margin-top:6px}
+.cta{display:block;text-align:center;background:var(--orange);color:#160a04;font-weight:800;text-decoration:none;padding:15px;border-radius:10px;margin-top:26px}
+.next{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding:14px 15px;background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--txt);text-decoration:none;font-weight:600;font-size:15px}
+.next span{color:var(--mut);font-weight:400;font-size:13px;display:block}.next i{color:var(--orange);font-style:normal;font-size:20px}
+/* rodapé (igual em todas as páginas) */
+.ft{margin-top:36px;padding:20px 0 6px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+.ft-brand{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.ft-brand .mark{width:26px;height:26px;border-radius:6px;display:block}
+.ft-brand b{font-size:15px;color:var(--txt);letter-spacing:-.01em}.ft-brand .fl{color:var(--orange)}
+.ft-brand>span{margin-left:auto;font-size:11.5px;color:var(--dim);text-align:right;line-height:1.3}
+.ft-links{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px}
+.ft-links a{font-size:12px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:8px 4px;white-space:nowrap;text-align:center}
+.ft-links a[aria-current]{border-color:var(--orange);color:var(--orange)}
+.ft-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-bottom:16px}
+.ft-rows{list-style:none;margin:0;padding:0;font-size:13px}
+.ft-rows li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line);white-space:nowrap}
+.ft-rows li:first-child{border-top:0;padding-top:0}.ft-rows span{color:var(--mut)}.ft-rows b{color:var(--txt);font-weight:600}
+.ft-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 13px}
+.ft-card h4{margin:0 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.ft-card p{margin:0;font-size:12.5px;line-height:1.5}.ft-card p b{color:var(--txt)}
+.ft-sup{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.ft-sup a{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;flex-shrink:0;white-space:nowrap;border-radius:8px;font-weight:700;font-size:13px;color:#fff;text-decoration:none}
+.ft-sup .mail{background:var(--orange);color:#160a04}
+.ft-addr{font-size:13px;color:var(--mut);white-space:nowrap}
+.ft-legal a{color:var(--mut)}
+.ft-legal{font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 8px}
+.ft-copy{font-size:11.5px;color:var(--dim);margin:0}
+.ft-btn{display:block;text-align:center;padding:10px;border-radius:9px;font-weight:700;font-size:14px;background:var(--orange);color:#160a04;text-decoration:none}
+.ft-more{display:block;margin-top:9px;font-size:12px;color:var(--mut);text-decoration:none}
+.ft-docs{font-size:12px;margin:0 0 8px}.ft-docs a{color:var(--mut)}
+.form label{display:block;font-size:13px;color:var(--mut);margin:14px 0 6px;font-weight:600}
+.form input,.form select,.form textarea{width:100%;padding:12px 13px;border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:9px;font:inherit;font-size:15px}
+.form textarea{min-height:130px;resize:vertical;line-height:1.5}
+.form input:focus,.form select:focus,.form textarea:focus{outline:0;border-color:#45454c}
+.form input[readonly]{color:var(--mut)}
+.form .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.form .row label{margin-top:14px}
+.form .hint{font-size:12px;color:var(--dim);margin-top:5px}
+.form .err{color:#f85149;font-size:13px;min-height:18px;margin:10px 0 0;text-align:center}
+.form button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:10px;background:var(--orange);color:#160a04;font:inherit;font-weight:800;cursor:pointer}
+.form button:disabled{opacity:.6}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.ord{display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;color:var(--mut);margin-bottom:4px}
+.ord b{color:var(--txt)}
+.done{display:none;background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.4);border-radius:12px;padding:16px;font-size:14.5px;color:var(--mut)}
+.done b{color:var(--txt)}.done h2{margin:0 0 6px;color:var(--txt);font-size:17px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <a class="home" href="/"><img class="mark" src="/img/brand-mark.png" alt="" width="30" height="30"><b>Recarga <span class="fl">Flame</span></b></a>
+    <a class="back" href="/">Fazer pedido</a>
+  </div>
+
+  <h1>Suporte</h1>
+  <p class="lead">Conte o que aconteceu e respondemos no seu e-mail. Antes, vale olhar as <a href="/perguntas-frequentes">perguntas frequentes</a>.</p>
+
+  <div class="ord" id="ord"></div>
+  <form class="form" id="f" novalidate>
+    <label for="email">Seu e-mail</label>
+    <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="voce@email.com" maxlength="120" required>
+    <div class="hint">Use o mesmo e-mail do pedido, se tiver um.</div>
+    <label for="assunto">Assunto</label>
+    <select id="assunto" required><option value="">Escolha…</option><option value="naochegou">Meu pedido não chegou</option><option value="pagamento">Problema com o pagamento</option><option value="iderrado">Informei o ID errado</option><option value="reembolso">Reembolso</option><option value="duvida">Dúvida antes de comprar</option><option value="outro">Outro assunto</option></select>
+    <div class="row">
+      <div><label for="pedido">Nº do pedido <span style="font-weight:400">(se tiver)</span></label><input id="pedido" inputmode="numeric" placeholder="ex.: 123" maxlength="8"></div>
+      <div><label for="gameId">ID da conta <span style="font-weight:400">(se tiver)</span></label><input id="gameId" inputmode="numeric" placeholder="ex.: 749125" maxlength="12"></div>
+    </div>
+    <label for="msg">Mensagem</label>
+    <textarea id="msg" maxlength="2000" placeholder="Descreva o problema ou a dúvida." required></textarea>
+    <div class="hp" aria-hidden="true"><label for="site">Não preencha</label><input id="site" tabindex="-1" autocomplete="off"></div>
+    <button id="send" type="submit">Enviar mensagem</button>
+    <p class="err" id="err" role="alert"></p>
+  </form>
+  <div class="done" id="done" role="status"><h2>Mensagem enviada ✅</h2><p id="donetxt"></p><p style="margin:10px 0 0"><a href="/">Voltar à loja</a></p></div>
+
+  <footer class="ft">
+    <div class="ft-brand"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b>Recarga <span class="fl">Flame</span></b><span>recarga de CounterFlame<br>por Pix</span></div>
+    <nav class="ft-links" aria-label="Páginas"><a href="/">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
+    <div class="ft-grid">
+      <div class="ft-card"><h4>Suporte</h4><a class="ft-btn" href="/suporte">Falar com o suporte</a></div>
+      <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática</span><b>~1 min, 24h</b></li></ul><a class="ft-more" href="/termos-de-uso#entrega">Prazos e exceções nos Termos de uso ›</a></div>
+    </div>
+    <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago.</p>
+    <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a> · <a href="/suporte">Suporte</a></p>
+    <p class="ft-copy">© 2026 Recarga Flame</p>
+  </footer>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const tk=(location.hash.match(/pedido=([A-Za-z0-9-]{10,64})/)||[])[1]||null;
+if(tk){
+  fetch('/api/orders/'+tk+'?full=1').then(r=>r.ok?r.json():null).then(o=>{
+    if(!o)return;
+    $('pedido').value=String(o.id);$('gameId').value=o.gameId;$('pedido').readOnly=$('gameId').readOnly=true;
+    const ST={pending:'aguardando pagamento',paid:'pago, aguardando entrega',delivered:'entregue',cancelled:'cancelado',reversed:'estornado'};
+    const b=document.createElement('b');b.textContent='Pedido #'+o.id;
+    $('ord').textContent='';$('ord').append(b,' · '+o.nome+' · '+o.nick+' · '+(ST[o.status]||o.status));$('ord').style.display='block';
+    if(o.status==='paid')$('assunto').value='naochegou';
+  }).catch(()=>{});
+}
+$('f').onsubmit=async e=>{
+  e.preventDefault();$('err').textContent='';
+  const body={email:$('email').value.trim(),assunto:$('assunto').value,msg:$('msg').value.trim(),pedido:$('pedido').value,gameId:$('gameId').value,token:tk,site:$('site').value};
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)){$('err').textContent='Informe um e-mail válido para a resposta.';$('email').focus();return;}
+  if(!body.assunto){$('err').textContent='Escolha o assunto.';$('assunto').focus();return;}
+  if(body.msg.length<10){$('err').textContent='Conte um pouco mais (pelo menos 10 caracteres).';$('msg').focus();return;}
+  const b=$('send');b.disabled=true;b.textContent='Enviando…';
+  try{
+    const r=await fetch('/api/suporte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Não foi possível enviar. Tente de novo.');
+    $('f').style.display='none';$('ord').style.display='none';
+    $('donetxt').textContent='Recebemos sua mensagem'+(j.id?' (chamado #'+j.id+')':'')+'. Vamos responder no e-mail '+body.email+' — confira também a caixa de spam.';
+    $('done').style.display='block';
+  }catch(err){$('err').textContent=err.message;}
+  finally{b.disabled=false;b.textContent='Enviar mensagem';}
+};
+</script>
+</body>
+</html>
