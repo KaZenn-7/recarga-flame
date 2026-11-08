@@ -1273,3 +1273,20 @@ test('aprovar e pagar: pedido em REVISAR só paga com aprovação do operador (p
     assert.ok(tgSent.some((m) => m.text.includes(`Pedido #${b} aprovado por você, pago no bot (771★)`)));
   } finally { _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
+
+test('margem por produto, ranking por lucro e desempenho de cupom (visitas/conversão/lucro da loja)', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  const prods = await (await adm('GET', '/api/admin/products')).json();
+  const c1 = prods.find((p) => p.key === 'c1000');
+  const s = await (await adm('GET', '/api/admin/stars')).json();
+  const esperado = c1.cents - c1.stars * s.custoAtual * 100 - c1.cents * s.taxaMP;
+  assert.equal(c1.lucro, Math.round(esperado)); assert.ok(Math.abs(c1.margem - esperado / c1.cents) < 1e-9);
+  const a = await (await adm('GET', '/api/admin/analytics')).json();
+  assert.ok(a.produtos.length > 0 && 'lucro' in a.produtos[0] && 'margem' in a.produtos[0]);
+  for (let i = 1; i < a.produtos.length; i++) assert.ok(a.produtos[i - 1].lucro >= a.produtos[i].lucro); // ordenado por lucro
+  const rep = await (await adm('GET', '/api/admin/coupons/report')).json();
+  const aq = rep.cupons.find((c) => c.code === 'AQUILA');
+  assert.ok(aq.visitas >= 1); // visitas do teste do funil
+  assert.equal(aq.conversao, aq.pedidos / aq.visitas);
+  assert.equal(aq.lucroLoja, aq.lucro - aq.comissao);
+});

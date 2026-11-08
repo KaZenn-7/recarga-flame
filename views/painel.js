@@ -60,6 +60,8 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .prow .ops button{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:7px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .prow .ops .del{color:var(--red);border-color:rgba(248,81,73,.3)}
 .pinact{opacity:.55}
+.prow .mg{font-size:12px;color:var(--green);margin-top:-4px;font-weight:600;white-space:nowrap}.prow .mg.low{color:var(--gold)}.prow .mg.neg{color:var(--red)}
+.mgprev{font-size:12.5px;color:var(--green);margin:-4px 0 12px;font-weight:600;min-height:16px}.mgprev.low{color:var(--gold)}.mgprev.neg{color:var(--red)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .chips button{flex-shrink:0;border:1px solid var(--line);background:var(--panel);color:var(--mut);font:inherit;font-size:13px;font-weight:600;padding:7px 11px;border-radius:99px;cursor:pointer}
 .chips button.on{background:var(--txt);color:var(--bg);border-color:var(--txt)}
@@ -228,6 +230,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="fg"><label>Preço (R$)</label><input id="f_preco" inputmode="decimal" placeholder="3,50" autocomplete="off"></div>
       <div class="fg"><label>Stars (interno)</label><input id="f_stars" inputmode="numeric" placeholder="26" autocomplete="off"></div>
     </div>
+    <div class="mgprev" id="f_mg"></div>
     <div class="fg"><label>Código do link Telegram</label><input id="f_code" placeholder="ex.: c_1000" autocomplete="off"><div class="hint">Vira s_&lt;código&gt;_&lt;ID&gt; no link do bot.</div></div>
     <div class="frow">
       <div class="fg"><label>Tipo (regra de bloqueio)</label><select id="f_tipo">
@@ -593,6 +596,7 @@ function renderProds(){
       </div>
       <div class="rt">
         <div class="pr">\${brlFromCents(p.cents)}</div>
+        <div class="mg \${p.margem<0?'neg':p.margem<0.15?'low':''}" title="lucro por venda e margem, com o custo atual da Star">lucro \${brlFromCents(p.lucro)} · \${Math.round(p.margem*100)}%\${p.margem<0?' · PREJUÍZO':''}</div>
         <button class="sw \${p.ativo?'on':''}" title="Ativo na loja" onclick="toggle('\${esc(p.key)}')"></button>
         <div class="ops"><button onclick="openForm('\${esc(p.key)}')">Editar</button><button class="del" onclick="delProd('\${esc(p.key)}','\${esc(p.nome)}')">Excluir</button></div>
       </div>
@@ -621,9 +625,20 @@ function openForm(key){
   $$('f_img').value=p?(p.img||''):'';
   $$('f_ativo').classList.toggle('on',p?!!p.ativo:true);
   $$('merr').textContent='';
+  mgPrev();
   $$('modal').classList.add('on');
 }
 function closeForm(){$$('modal').classList.remove('on');}
+// prévia do lucro/margem enquanto edita preço ou Stars (custo atual da Star + taxa do MP)
+function mgPrev(){
+  const cents=Math.round(parseFloat(($$('f_preco').value||'').replace('.','').replace(',','.'))*100),st=parseInt($$('f_stars').value||'0',10);
+  const box=$$('f_mg');
+  if(!(cents>0)||!STARS){box.textContent='';box.className='mgprev';return;}
+  const cost=STARS.custoAtual,fee=STARS.taxaMP||0.0099,l=cents-st*cost*100-cents*fee,m=l/cents;
+  box.className='mgprev '+(m<0?'neg':m<0.15?'low':'');
+  box.textContent='Lucro '+brlFromCents(Math.round(l))+' · margem '+Math.round(m*100)+'%'+(m<0?' · PREJUÍZO':'')+' · Star R$ '+cost.toFixed(4).replace('.',',');
+}
+$$('f_preco').addEventListener('input',mgPrev);$$('f_stars').addEventListener('input',mgPrev);
 $$('modal').onclick=e=>{if(e.target.id==='modal')closeForm();};
 async function saveForm(){
   $$('merr').textContent=''; const btn=$$('msave'); btn.disabled=true;
@@ -689,9 +704,11 @@ async function loadRep(){
           '<td><button class="undo" data-undo="'+p.id+'" data-v="'+esc(brlFromCents(p.cents))+'">desfazer</button></td></tr>';
       }).join('');
       return '<div class="rep"><div class="top"><span class="mono">'+esc(c.code)+'</span>'+st+'</div>'+
-        '<div class="nums"><span><b>'+c.pedidos+'</b> vendas</span><span>faturado <b>'+brlFromCents(c.faturado)+'</b></span>'+
+        '<div class="nums"><span><b>'+c.visitas+'</b> visitas pelo link</span><span><b>'+c.pedidos+'</b> vendas</span>'+
+        '<span>conversão <b>'+(c.conversao==null?'—':Math.round(c.conversao*100)+'%')+'</b></span></div>'+
+        '<div class="nums"><span>faturado <b>'+brlFromCents(c.faturado)+'</b></span>'+
         '<span>descontos <b>'+brlFromCents(c.desconto)+'</b></span><span>lucro <b>'+brlFromCents(c.lucro)+'</b></span>'+
-        '<span>comissão <b>'+brlFromCents(c.comissao)+'</b></span></div>'+
+        '<span>comissão <b>'+brlFromCents(c.comissao)+'</b></span><span>fica para a loja <b>'+brlFromCents(c.lucroLoja)+'</b></span></div>'+
         '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>hoje '+pct(c.comissao_pct)+' do lucro</span></div>'+
         '<div class="ops"><button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button></div>'+
         (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
@@ -871,13 +888,19 @@ function lbl(d){return d.date.length===7?(d.date.slice(5,7)+'/'+d.date.slice(0,4
 function short(d){return d.date.length===7?d.date.slice(5,7)+'/'+d.date.slice(2,4):d.date.slice(8,10)+'/'+d.date.slice(5,7);}
 function compactBRL(c){const v=c/100;return v>=1000?('R$'+(v/1000).toFixed(v>=10000?0:1).replace('.',',')+'k'):('R$'+Math.round(v));}
 function prodRank(list){
-  const card=el('div','ccard');card.appendChild(el('h4',null,'Produtos mais vendidos'));
-  card.appendChild(el('p','sub','por faturamento no período'));
+  const card=el('div','ccard');card.appendChild(el('h4',null,'Produtos que mais dão lucro'));
+  card.appendChild(el('p','sub','lucro no período (após Stars, taxa do MP e comissão de cupom) · margem = lucro ÷ faturado'));
   if(!list.length){card.appendChild(el('p','sub','Sem vendas no período'));return card;}
-  const top=list.slice(0,8),max=top[0].cents||1,box=el('div','rank');
+  const top=list.slice(0,8),max=Math.max(1,top[0].lucro),box=el('div','rank');
   top.forEach(function(p){const r=el('div','rk'),t=el('div','top');t.appendChild(el('span',null,p.nome));
-    t.appendChild(el('span',null,brlC(p.cents)+' · '+p.n+(p.n===1?' venda':' vendas')));r.appendChild(t);
-    const tr=el('div','track'),b=el('div','bar');b.style.width=Math.max(1,p.cents/max*100)+'%';tr.appendChild(b);r.appendChild(tr);box.appendChild(r);});
+    t.appendChild(el('span',null,brlC(p.lucro)+' · '+Math.round(p.margem*100)+'% · '+p.n+(p.n===1?' venda':' vendas')));r.appendChild(t);
+    const tr=el('div','track'),b=el('div','bar');b.style.width=Math.max(1,Math.max(0,p.lucro)/max*100)+'%';tr.appendChild(b);r.appendChild(tr);box.appendChild(r);});
+  const d=document.createElement('details');d.appendChild(el('summary',null,'Ver tabela'));
+  const tb=el('table','ttab'),h=document.createElement('tr');
+  ['Produto','Vendas','Faturado','Lucro','Margem'].forEach(function(x){h.appendChild(el('th',null,x));});tb.appendChild(h);
+  list.forEach(function(p){const tr=document.createElement('tr');
+    [p.nome,String(p.n),brlC(p.cents),brlC(p.lucro),Math.round(p.margem*100)+'%'].forEach(function(c){tr.appendChild(el('td',null,c));});tb.appendChild(tr);});
+  d.appendChild(tb);card.appendChild(d);
   card.appendChild(box);
   if(list.length>8)card.appendChild(el('p','sub','+ '+(list.length-8)+' outros produtos'));
   return card;

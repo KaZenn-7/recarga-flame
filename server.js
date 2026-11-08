@@ -1354,7 +1354,7 @@ function starsInfo() {
   const compras = db.prepare('SELECT * FROM stars_purchases ORDER BY created_at DESC, id DESC LIMIT 20').all()
     .map((p) => ({ id: p.id, stars: p.stars, cents: p.cents, nota: p.nota || '', data: fmtD(p.created_at), unit: p.cents / p.stars / 100 }));
   return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
-    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, custoFonte: STAR_INFO.fonte, compras,
+    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, taxaMP: MP_FEE, custoFonte: STAR_INFO.fonte, compras,
     real: realOn() ? { ativo: real, at: REAL.at || null, err: REAL.err, manual: starsSaldo().s } : null,
     autopay: chkOn() ? { on: autopayOn(), mode: autopayMode(), max: autopayMax(), dia: autopayDay(), usado24h: autopay24() } : null };
 }
@@ -1581,7 +1581,10 @@ function parseProduct(b) {
 
 app.get('/api/admin/products', admin, (req, res) => {
   const list = db.prepare('SELECT * FROM products ORDER BY sort, rowid').all()
-    .map((r) => ({ ...r, ativo: !!r.ativo, img: r.img || `/img/${r.key}.jpg` }));
+    .map((r) => {
+      const l = profitCents(r.cents, r.stars || 0); // com o custo ATUAL da Star
+      return { ...r, ativo: !!r.ativo, img: r.img || `/img/${r.key}.jpg`, lucro: Math.round(l), margem: r.cents ? l / r.cents : 0 };
+    });
   res.json(list);
 });
 
@@ -1683,6 +1686,11 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
     r.pedidos++; r.faturado += o.cents; r.desconto += o.discount_cents || 0;
     r.lucro += orderProfit(o); r.comissao += c;
   }
+  // visitas pelo link do cupom no período (funil: aparelhos distintos) — também aparece cupom ainda sem venda
+  for (const v of db.prepare(`SELECT coupon, COUNT(DISTINCT dev) n FROM events WHERE ev='visit' AND coupon IS NOT NULL
+      AND date(ts, '-3 hours') BETWEEN ? AND ? GROUP BY coupon`).all(from, to)) {
+    if (pctNow[v.coupon] !== undefined) get(v.coupon).visitas = v.n;
+  }
   for (const p of db.prepare('SELECT * FROM coupon_payouts ORDER BY paid_at DESC, id DESC').all()) {
     const r = get(p.code);
     r.pago += p.cents;
@@ -1690,7 +1698,9 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
   }
   const list = Object.values(by).map((r) => {
     const total = Math.round(r.total);
-    return { ...r, lucro: Math.round(r.lucro), comissao: Math.round(r.comissao), total, saldo: total - r.pago };
+    const lucro = Math.round(r.lucro), comissao = Math.round(r.comissao);
+    return { ...r, lucro, comissao, lucroLoja: lucro - comissao, visitas: r.visitas || 0,
+      conversao: r.visitas ? r.pedidos / r.visitas : null, total, saldo: total - r.pago };
   });
   res.json({ from, to, cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
 });
@@ -1732,7 +1742,7 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     const d = new Date(new Date(o.paid_at.replace(' ', 'T') + 'Z').getTime() - 3 * 3600_000).toISOString().slice(0, 10);
     const day = (byDay[d] ||= { date: d, n: 0, cents: 0 }); day.n++; day.cents += o.cents;
     const nome = o.prod_nome || o.product;
-    const pr = (byProd[nome] ||= { nome, n: 0, cents: 0 }); pr.n++; pr.cents += o.cents;
+    const pr = (byProd[nome] ||= { nome, n: 0, cents: 0, lucro: 0 }); pr.n++; pr.cents += o.cents; pr.lucro += l - c;
   }
   const gen = db.prepare(`SELECT COUNT(*) n, SUM(paid_at IS NOT NULL) pagos FROM orders
     WHERE mp_id IS NOT NULL AND ${local('created_at')} BETWEEN ? AND ?`).get(from, to);
@@ -1763,7 +1773,9 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     entregas: mins.length, entregaMedianaMin: mediana == null ? null : Math.round(mediana),
     entregaAte1h: mins.length ? mins.filter((m) => m <= 60).length / mins.length : null,
     porDia: Object.values(byDay).sort((x, y) => x.date.localeCompare(y.date)),
-    produtos: Object.values(byProd).sort((x, y) => y.cents - x.cents),
+    // ordenado por LUCRO (após Stars, taxa MP e comissão de cupom); margem = lucro ÷ faturado
+    produtos: Object.values(byProd).map((p) => ({ ...p, lucro: Math.round(p.lucro), margem: p.cents ? p.lucro / p.cents : 0 }))
+      .sort((x, y) => y.lucro - x.lucro || y.cents - x.cents),
   });
 });
 
