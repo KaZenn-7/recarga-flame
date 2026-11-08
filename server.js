@@ -328,7 +328,8 @@ db.prepare('UPDATE orders SET star_cost=? WHERE star_cost IS NULL').run(STAR_COS
 // Custo atual = custo exato das Stars que estão na conta agora: média ponderada das compras mais recentes,
 // contando só a parte de cada uma que ainda compõe o saldo. Sem compra registrada: STAR_COST_BRL.
 function calcStarCost(saldo) {
-  const recs = db.prepare('SELECT stars, cents FROM stars_purchases WHERE cents > 0 AND stars > 0 ORDER BY id DESC').all();
+  // ordem pela DATA da compra (o "estoque inicial" pode ser lançado depois, com data antiga)
+  const recs = db.prepare('SELECT stars, cents FROM stars_purchases WHERE cents > 0 AND stars > 0 ORDER BY created_at DESC, id DESC').all();
   if (!recs.length) return { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
   // exato: da mais nova para a mais antiga, conta só a PARTE de cada compra que ainda está no saldo
   // (ex.: saldo 3.000 = 2.500 da última + 500 da anterior). Saldo maior que tudo registrado: usa todas as compras.
@@ -1224,7 +1225,7 @@ function starsInfo() {
   // custo médio de TODAS as compras (histórico); o custo usado nos pedidos é custoAtual
   const c = db.prepare('SELECT SUM(stars) st, SUM(cents) c FROM stars_purchases').get();
   const fmtD = (t) => new Date(t.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit' });
-  const compras = db.prepare('SELECT * FROM stars_purchases ORDER BY id DESC LIMIT 20').all()
+  const compras = db.prepare('SELECT * FROM stars_purchases ORDER BY created_at DESC, id DESC LIMIT 20').all()
     .map((p) => ({ id: p.id, stars: p.stars, cents: p.cents, nota: p.nota || '', data: fmtD(p.created_at), unit: p.cents / p.stars / 100 }));
   return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
     custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, custoFonte: STAR_INFO.fonte, compras,
