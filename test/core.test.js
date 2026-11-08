@@ -1026,3 +1026,11 @@ test('resumo diário: números do dia, autonomia de Stars e envio 1x por dia', a
   assert.equal(tgSent.length, n + 1);
   assert.match(tgSent.at(-1).text, /Resumo de 07\/11\/2026/);
 });
+
+test('página "Como funciona": responde em /como-funciona e a loja aponta para ela', async () => {
+  const r = await fetch(base + '/como-funciona');
+  assert.equal(r.status, 200);
+  const h = await r.text();
+  assert.match(h, /<h1>Como funciona<\/h1>/); assert.match(h, /FAQPage/);
+  assert.match(await (await fetch(base + '/')).text(), /href="\/como-funciona"/);
+});

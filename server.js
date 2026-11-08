@@ -851,6 +851,8 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '10kb' }));
 app.use(express.static('public'));
+// página "Como funciona e perguntas frequentes" (também em /como-funciona.html)
+app.get('/como-funciona', (req, res) => res.sendFile('como-funciona.html', { root: 'public' }));
 app.use('/api', limit(120));
 
 app.get('/api/products', (req, res) => {
