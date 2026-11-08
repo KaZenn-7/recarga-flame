@@ -140,15 +140,17 @@ input:focus{outline:0;border-color:#45454c}
 .ft-links{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px}
 .ft-links a{font-size:12px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:8px 4px;white-space:nowrap;text-align:center}
 .ft-links a[aria-current]{border-color:var(--orange);color:var(--orange)}
-.ft-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
-@media(max-width:380px){.ft-grid{grid-template-columns:1fr}}
+.ft-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-bottom:16px}
+.ft-rows{list-style:none;margin:0;padding:0;font-size:13px}
+.ft-rows li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line);white-space:nowrap}
+.ft-rows li:first-child{border-top:0;padding-top:0}.ft-rows span{color:var(--mut)}.ft-rows b{color:var(--txt);font-weight:600}
 .ft-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 13px}
 .ft-card h4{margin:0 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
 .ft-card p{margin:0;font-size:12.5px;line-height:1.5}.ft-card p b{color:var(--txt)}
-.ft-sup{display:grid;gap:6px}
-.ft-sup a{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:8px;font-weight:700;font-size:13px;color:#fff;text-decoration:none}
+.ft-sup{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.ft-sup a{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;flex-shrink:0;white-space:nowrap;border-radius:8px;font-weight:700;font-size:13px;color:#fff;text-decoration:none}
 .ft-sup .mail{background:var(--orange);color:#160a04}
-.ft-addr{font-size:11.5px;color:var(--mut);text-align:center}
+.ft-addr{font-size:13px;color:var(--mut);white-space:nowrap}
 .ft-legal a{color:var(--mut)}
 .ft-legal{font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 8px}
 .ft-copy{font-size:11.5px;color:var(--dim);margin:0}
@@ -269,8 +271,8 @@ input:focus{outline:0;border-color:#45454c}
     <div class="ft-brand"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b>Recarga <span class="fl">Flame</span></b><span>recarga de CounterFlame<br>por Pix</span></div>
     <nav class="ft-links" aria-label="Páginas"><a href="/" aria-current="page">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
     <div class="ft-grid">
-      <div class="ft-card"><h4>Suporte</h4><div class="ft-sup"><a class="mail" href="mailto:suporte@recargaflame.com.br">Enviar e-mail</a><span class="ft-addr">suporte@<wbr>recargaflame.com.br</span></div></div>
-      <div class="ft-card"><h4>Entrega</h4><p><b>Automática:</b> ~1 min, a qualquer hora.<br><b>Pela equipe:</b> até 1h · seg–sex 7h–23h · sáb, dom e feriados 11h–23h.</p></div>
+      <div class="ft-card"><h4>Suporte</h4><div class="ft-sup"><a class="mail" href="mailto:suporte@recargaflame.com.br">Enviar e-mail</a><span class="ft-addr">suporte@recargaflame.com.br</span></div></div>
+      <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática</span><b>~1 min, 24h</b></li><li><span>Pela equipe</span><b>até 1 hora</b></li><li><span>Seg a sex</span><b>7h às 23h</b></li><li><span>Sáb, dom e feriados</span><b>11h às 23h</b></li></ul></div>
     </div>
     <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago. Suporte: <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a>.</p>
     <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a></p>
