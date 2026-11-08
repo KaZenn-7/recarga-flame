@@ -315,3 +315,10 @@ da fatura é gravado em `autopay_info.invMsgId` ANTES de cobrar; paga = fatura t
   `canAutopay` recusa ("sessão caiu") → tudo vai para manual até refazer o login.
 - Resumo diário no Telegram às `SUMMARY_HOUR` (23h): vendas, faturado, lucro, entregues (auto × manual), mediana de
   entrega, fila/incertos, Stars gastos, saldo e autonomia em dias; 1x por dia (`settings.summary_day`).
+
+### Organização do código ✅ (2026-11-07)
+- git LOCAL (`main`, sem remoto — nada é enviado). `.gitignore` exclui .env, banco, .fp_key, .tg_user_session,
+  backups/, node_modules, old-public, *.bak.*. Commitar a cada mudança no lugar de criar `*.bak.*`.
+- 45 cópias soltas (*.bak.*, loja.db.pre-*) movidas para `~/cf-teste-deploy-archive/2026-11-07/` (700; nada apagado).
+- `contexto.md`: exemplo de .env tinha o usuário/senha REAIS do painel → trocado por marcadores (original no arquivo).
+- HTML do login e do painel saíram do server.js para `views/login.js` e `views/painel.js` (saída idêntica byte a byte).
