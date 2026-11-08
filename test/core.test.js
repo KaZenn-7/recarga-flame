@@ -1031,6 +1031,15 @@ test('página "Como funciona": responde em /como-funciona e a loja aponta para e
   const r = await fetch(base + '/como-funciona');
   assert.equal(r.status, 200);
   const h = await r.text();
-  assert.match(h, /<h1>Como funciona<\/h1>/); assert.match(h, /FAQPage/);
-  assert.match(await (await fetch(base + '/')).text(), /href="\/como-funciona"/);
+  assert.match(h, /<h1>Como funciona<\/h1>/); assert.match(h, /href="\/perguntas-frequentes"/);
+  const f = await fetch(base + '/perguntas-frequentes');
+  assert.equal(f.status, 200);
+  const fh = await f.text();
+  assert.match(fh, /<h1>Perguntas frequentes<\/h1>/); assert.match(fh, /FAQPage/);
+  // rodapé igual nas 3 páginas, marcando a página atual
+  const loja = await (await fetch(base + '/')).text();
+  for (const [p, cur] of [[loja, '/'], [h, '/como-funciona'], [fh, '/perguntas-frequentes']]) {
+    assert.match(p, /<footer class="ft">/);
+    assert.ok(p.includes(`href="${cur}" aria-current="page"`));
+  }
 });
