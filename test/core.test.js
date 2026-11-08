@@ -876,6 +876,7 @@ test('pagamento 1 toque: desligado por padrão; ligado paga 1 vez, entrega e res
 });
 
 test('entrega 100% automática: paga sozinho com ✅; senão manual; cliente e Telegram avisados', async () => {
+  RISK.first = 5000; // regra antiga (1ª compra ≥ R$ 50) para provocar revisão com 50.000 Coins
   const pays = [];
   let chk = { currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }, payErr = null;
   _setInvoiceChecker(async () => chk);
@@ -917,7 +918,7 @@ test('entrega 100% automática: paga sozinho com ✅; senão manual; cliente e T
     // modo 1 toque: cliente não vê estado de entrega automática
     await adm('POST', '/api/admin/autopay', { mode: 1 });
     assert.equal((await cliente(b.token)).entrega, null);
-  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+  } finally { RISK.first = null; _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
 
 test('resolver incerto pelo painel: verifica cobrança no histórico → entregue ou libera nova tentativa', async () => {
@@ -1239,6 +1240,7 @@ test('lembretes de Pix: avisa 1x quando falta ≤ 10 min e 1x quando expira; nã
 });
 
 test('aprovar e pagar: pedido em REVISAR só paga com aprovação do operador (painel e Telegram)', async () => {
+  RISK.first = 5000; // regra antiga (1ª compra ≥ R$ 50) para provocar revisão com 50.000 Coins
   const pays = [];
   const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
   _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 771, account: 'jogador_teste', produto: '50 000 coins', msgId: 1 }));
@@ -1274,7 +1276,7 @@ test('aprovar e pagar: pedido em REVISAR só paga com aprovação do operador (p
     assert.equal(pays.length, 2);
     assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(b).status, 'delivered');
     assert.ok(tgSent.some((m) => m.text.includes(`Pedido #${b} aprovado por você, pago no bot (771★)`)));
-  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+  } finally { RISK.first = null; _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
 
 test('margem por produto, ranking por lucro e desempenho de cupom (visitas/conversão/lucro da loja)', async () => {
@@ -1295,6 +1297,7 @@ test('margem por produto, ranking por lucro e desempenho de cupom (visitas/conve
 });
 
 test('entregas: registra como foi entregue e o motivo de não ser automática; analytics agrupa', async () => {
+  RISK.first = 5000; // regra antiga (1ª compra ≥ R$ 50) para provocar revisão com 50.000 Coins
   const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
   _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 771, account: 'jogador_teste', produto: '', msgId: 1 }));
   _setInvoicePayer(async (a) => ({ stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }));
@@ -1319,7 +1322,7 @@ test('entregas: registra como foi entregue e o motivo de não ser automática; a
     const tipos = Object.fromEntries(a.entregaTipos.map((x) => [x.tipo, x.n]));
     assert.ok(tipos.aprovado >= 1 && tipos.manual >= 1);
     assert.ok(a.motivos.some((m) => m.motivo === 'Revisão: primeira compra'));
-  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+  } finally { RISK.first = null; _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
 
 test('previsão de Stars: ritmo, até quando e quanto comprar', async () => {
@@ -1399,4 +1402,21 @@ test('limites em 24h seguem o produto mais caro: 3ª compra dele → revisar; 5�
   o = db.prepare("SELECT * FROM orders WHERE game_id='252503' AND status='paid'").get();
   assert.ok(riskOf(o).some((x) => /pagos em 24h/.test(x)));
   db.exec("DELETE FROM orders WHERE game_id IN ('252501','252502','252503')");
+});
+
+test('1ª compra: só o item mais caro (preço de tabela) vai para revisão', async () => {
+  const prods = await (await fetch(base + '/api/products', { headers: freshIP() })).json();
+  const top = prods.reduce((a, b) => (b.cents > a.cents ? b : a));
+  const outro = prods.filter((p) => p.key !== top.key).reduce((a, b) => (b.cents > a.cents ? b : a));
+  assert.equal(RISK.first, top.cents);
+  const mk = (gid, p, cents, list) => db.prepare(`INSERT INTO orders (token, product, cents, list_cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars)
+    VALUES (?, ?, ?, ?, ?, 'n', ?, 'paid', datetime('now'), datetime('now'), 'x', 10)`).run('fc' + gid, p, cents, list, gid, gid + '@f.com');
+  mk('262601', outro.key, outro.cents, outro.cents);                       // 2º mais caro, 1ª compra → sem revisão
+  mk('262602', top.key, top.cents, top.cents);                             // mais caro, 1ª compra → revisão
+  mk('262603', top.key, Math.round(top.cents * 0.95), top.cents);          // mais caro com cupom → revisão também
+  const r = (gid) => riskOf(db.prepare('SELECT * FROM orders WHERE game_id=?').get(gid));
+  assert.ok(!r('262601').some((x) => /primeira compra/.test(x)));
+  assert.ok(r('262602').some((x) => /primeira compra/.test(x)));
+  assert.ok(r('262603').some((x) => /primeira compra/.test(x)));
+  db.exec("DELETE FROM orders WHERE game_id IN ('262601','262602','262603')");
 });

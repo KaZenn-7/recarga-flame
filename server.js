@@ -179,9 +179,11 @@ const brlEnv = (v, d) => Math.round(Number(v ?? d) * 100);
 const maxPriceCents = () => Math.max(0, ...Object.values(PRODUCTS).filter((p) => p.ativo).map((p) => p.cents || 0));
 const RISK = {
   review: brlEnv(env.RISK_REVIEW_BRL, 340), // pedido a partir disso → "revisar" (acima do 200.000 Coins, R$ 339,90)
-  first: brlEnv(env.RISK_FIRST_BRL, 50),    // 1ª compra do ID a partir disso → revisar
   pend: Number(env.MAX_PENDING_PIX ?? 3),   // Pix em aberto ao mesmo tempo por ID/e-mail
-  _day: null, _cap: null,                   // sobrescritas (testes)
+  _day: null, _cap: null, _first: null,     // sobrescritas (testes)
+  // 1ª compra do ID → revisar só a partir do preço do produto mais caro (preço de tabela, antes do cupom)
+  get first() { return this._first ?? (env.RISK_FIRST_BRL ? brlEnv(env.RISK_FIRST_BRL) : maxPriceCents() || 5000); },
+  set first(v) { this._first = v; },
   get day() { return this._day ?? (env.RISK_DAY_BRL ? brlEnv(env.RISK_DAY_BRL) : 3 * maxPriceCents() || 30000); },
   set day(v) { this._day = v; },
   get cap() { return this._cap ?? (env.LIMIT_DAY_BRL ? brlEnv(env.LIMIT_DAY_BRL) : 4 * maxPriceCents() || 70000); },
@@ -246,7 +248,7 @@ function riskOf(o) {
   if (blockedIn('ip', o.ip_h)) why.push('mesmo IP de um pedido estornado (só alerta: IP de 4G é compartilhado)');
   if (o.cents >= RISK.review) why.push(`valor alto (${brlTxt(o.cents)})`);
   const prev = db.prepare("SELECT COUNT(*) n FROM orders WHERE game_id=? AND id<? AND status='delivered'").get(o.game_id, o.id).n;
-  if (!prev && o.cents >= RISK.first) why.push('primeira compra deste ID');
+  if (!prev && (o.list_cents || o.cents) >= RISK.first) why.push('primeira compra deste ID');
   const day = paid24(o.game_id, o.email);
   if (day >= RISK.day) why.push(`${brlTxt(day)} pagos em 24h por este ID/e-mail`);
   return why;
