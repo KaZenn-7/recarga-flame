@@ -101,6 +101,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .sbar span{flex:1}.sbar button{border:0;border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;background:var(--gold);color:#160a04;cursor:pointer}
 .nost{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(227,179,65,.18);color:var(--gold);vertical-align:1px}
 .serr{color:var(--red)}
+.ssec{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:16px 0 6px;font-weight:700}
 .sbig{font-size:34px;font-weight:800;line-height:1.1;color:var(--gold)}.ssub{font-size:13px;color:var(--mut);margin:4px 0 14px}
 .sacts{display:flex;gap:8px;margin-bottom:14px}.sacts button{flex:1;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font:inherit;font-weight:700;cursor:pointer}
 .sacts .pri{background:var(--orange);color:#160a04;border-color:var(--orange)}
@@ -343,7 +344,7 @@ function renderStars(){
     B.appendChild(el('div','ssub'+(R.err?' serr':''),t));
   }
   let sub=STARS.configurado?'Fila a entregar: '+fmtN(STARS.fila)+'★ · aviso abaixo de '+fmtN(STARS.low)+'★':'Ainda não configurado. Confira no Telegram e informe o saldo atual.';
-  sub+=' · custo por Star: R$ '+STARS.custoAtual.toFixed(4).replace('.',',')+(STARS.custoFonte==='recargas'?' (média das recargas que formam o saldo; vale para os novos pedidos)':' (padrão — registre o valor pago nas recargas para atualizar)');
+  sub+=' · custo por Star: R$ '+STARS.custoAtual.toFixed(4).replace('.',',')+(STARS.custoFonte==='recargas'?' (média das compras que formam o saldo; vale para os novos pedidos)':' (padrão — registre suas compras de Stars para atualizar)');
   B.appendChild(el('div','ssub',sub));
   if(STARS.autopay){
     const A=STARS.autopay,row=el('div','aprow'),tx=el('div');
@@ -364,11 +365,27 @@ function renderStars(){
     row.appendChild(tx);row.appendChild(seg);B.appendChild(row);
   }
   const a=el('div','sacts');
-  const b1=el('button','pri','+ Registrar recarga');b1.onclick=addRecarga;
+  const b1=el('button','pri','+ Registrar compra');b1.onclick=addRecarga;
   const b2=STARS.real?el('button',null,'↻ Ler agora'):el('button',null,STARS.configurado?'Conferir saldo':'Informar saldo');
   b2.onclick=STARS.real?syncNow:conferir;
   a.appendChild(b1);a.appendChild(b2);B.appendChild(a);
+  // compras de Stars: só custo, não mexem no saldo
+  B.appendChild(el('div','ssec','Compras de Stars (custo)'));
+  if(!STARS.compras||!STARS.compras.length)B.appendChild(el('div','ssub','Nenhuma compra registrada. Registre cada compra de Stars com o valor pago — não altera o saldo.'));
+  else{
+    const tc=el('table','smov');
+    STARS.compras.forEach(function(p){
+      const tr=document.createElement('tr');
+      tr.appendChild(el('td','m',p.data));
+      tr.appendChild(el('td',null,fmtN(p.stars)+'★ por '+brlFromCents(p.cents)+(p.nota?' · '+p.nota:'')));
+      tr.appendChild(el('td','n','R$ '+p.unit.toFixed(4).replace('.',',')+'/★'));
+      const td=document.createElement('td');const u=el('button','undo','apagar');u.onclick=function(){delCompra(p);};td.appendChild(u);
+      tr.appendChild(td);tc.appendChild(tr);
+    });
+    B.appendChild(tc);
+  }
   if(!STARS.movs.length)return;
+  B.appendChild(el('div','ssec','Movimentos do saldo'));
   const t=el('table','smov');
   const NM={recarga:'Recarga',ajuste:'Ajuste',entrega:'Entrega'};
   STARS.movs.forEach(function(m){
@@ -377,7 +394,7 @@ function renderStars(){
     tr.appendChild(el('td',null,NM[m.kind]+(m.order_id?' #'+m.order_id:'')+(m.nota?' · '+m.nota:'')+(m.cents?' · '+brlFromCents(m.cents):'')));
     tr.appendChild(el('td','n '+(m.delta>0?'p':''),(m.delta>0?'+':'')+fmtN(m.delta)+'★'));
     const td=document.createElement('td');
-    if(m.kind!=='entrega'){const u=el('button','undo','apagar');u.onclick=function(){delMov(m.id,m.delta);};td.appendChild(u);}
+    if(m.kind==='ajuste'&&!STARS.real){const u=el('button','undo','apagar');u.onclick=function(){delMov(m.id,m.delta);};td.appendChild(u);}
     tr.appendChild(td);t.appendChild(tr);
   });
   B.appendChild(t);
@@ -390,18 +407,22 @@ async function postStars(body){
   catch(e){alert(e.message);}
 }
 function addRecarga(){
-  const v=prompt('Quantos Stars entraram na recarga?','');if(v==null)return;
+  const v=prompt('Quantas Stars você comprou?\\n\\n(Só para calcular o custo — o saldo continua vindo do Telegram.)','');if(v==null)return;
   const st=parseInt(v.replace(/[^0-9]/g,''),10);if(!(st>0)){alert('Quantidade inválida.');return;}
   const c=prompt('Quanto você pagou por esses '+st+'★, em R$? (atualiza o custo por Star dos próximos pedidos)','');if(c==null)return;
   let t=c.replace(/[^0-9,.]/g,'');if(t.indexOf(',')>=0)t=t.split('.').join('').replace(',','.');
   const cents=t?Math.round(parseFloat(t)*100):0;
-  if(!(cents>0)){alert('Informe o valor pago na recarga.');return;}
-  postStars({kind:'recarga',stars:st,cents:cents,nota:''});
+  if(!(cents>0)){alert('Informe o valor pago.');return;}
+  postStars({kind:'compra',stars:st,cents:cents,nota:''});
 }
 function conferir(){
   const v=prompt('Qual o saldo de Stars que aparece agora no Telegram?',STARS&&STARS.configurado?String(STARS.saldo):'');if(v==null)return;
   const n=parseInt(v.replace(/[^0-9]/g,''),10);if(!(n>=0)){alert('Saldo inválido.');return;}
   postStars({kind:'ajuste',saldo_real:n});
+}
+async function delCompra(p){
+  if(!confirm('Apagar a compra de '+fmtN(p.stars)+'★ por '+brlFromCents(p.cents)+'? O custo por Star é recalculado.'))return;
+  try{await api('/api/admin/stars/compras/'+p.id,{method:'DELETE'});await loadStars();}catch(e){alert(e.message);}
 }
 async function delMov(id,delta){
   if(!confirm('Apagar este movimento de '+(delta>0?'+':'')+fmtN(delta)+'★?'))return;

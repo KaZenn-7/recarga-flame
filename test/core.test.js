@@ -692,10 +692,14 @@ test('stars: saldo inicial, recarga, entrega desconta, alerta de fila e saldo ba
   assert.equal((await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 530 })).status, 200);
   let s = await get();
   assert.equal(s.configurado, true); assert.equal(s.saldo, 530);
-  assert.equal((await adm('POST', '/api/admin/stars', { kind: 'recarga', stars: -5 })).status, 400);
-  assert.equal((await adm('POST', '/api/admin/stars', { kind: 'recarga', stars: 100, cents: 875 })).status, 200);
+  assert.equal((await adm('POST', '/api/admin/stars', { kind: 'compra', stars: -5, cents: 100 })).status, 400);
+  assert.equal((await adm('POST', '/api/admin/stars', { kind: 'compra', stars: 100 })).status, 400); // valor obrigatório
+  assert.equal((await adm('POST', '/api/admin/stars', { kind: 'compra', stars: 100, cents: 875 })).status, 200);
   s = await get();
-  assert.equal(s.saldo, 630); assert.equal(s.custoMedio, 0.0875);
+  // compra NÃO altera o saldo; só entra no custo
+  assert.equal(s.saldo, 530); assert.equal(s.custoMedio, 0.0875);
+  assert.equal(s.compras[0].stars, 100); assert.ok(!s.movs.some((m) => m.kind === 'recarga'));
+  await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 630 });
   // pedido de 1.000 Coins (26★) pago e entregue → desconta 26
   mpShouldApprove = true;
   const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '111111', email: 'st@x.com' })).json();
@@ -705,7 +709,7 @@ test('stars: saldo inicial, recarga, entrega desconta, alerta de fila e saldo ba
   s = await get();
   assert.equal(s.saldo, 604); assert.equal(s.fila, 0);
   assert.ok(s.movs.some((m) => m.kind === 'entrega' && m.order_id === id && m.delta === -26));
-  // entrega não pode ser apagada; recarga pode
+  // entrega não pode ser apagada
   const ent = s.movs.find((m) => m.kind === 'entrega');
   assert.equal((await adm('DELETE', '/api/admin/stars/' + ent.id)).status, 404);
   // conferir saldo: real 480 → ajuste −124
@@ -1101,19 +1105,21 @@ test('custo da Star: recarga com valor atualiza o custo dos NOVOS pedidos; venda
   assert.equal(antes.star_cost, 0.0875);
   const n = tgSent.length;
   // recarga grande e cara (R$ 0,10/★) cobre todo o saldo → custo vira 0,10
-  await adm('POST', '/api/admin/stars', { kind: 'recarga', stars: 100000, cents: 1000000 });
+  const saldoAntes = (await (await adm('GET', '/api/admin/stars')).json()).saldo;
+  await adm('POST', '/api/admin/stars', { kind: 'compra', stars: 100000, cents: 1000000 });
   const s = await (await adm('GET', '/api/admin/stars')).json();
-  // saldo > 100.000 → a média inclui também a recarga anterior (100★ a R$ 0,0875): ≈ 0,09999
-  assert.ok(Math.abs(s.custoAtual - 0.1) < 0.0005, String(s.custoAtual)); assert.equal(s.custoFonte, 'recargas');
+  assert.equal(s.saldo, saldoAntes); // compra não mexe no saldo
+  // a compra de 100.000★ sozinha já cobre o saldo atual → custo = R$ 0,10
+  assert.equal(s.custoAtual, 0.1); assert.equal(s.custoFonte, 'recargas');
   const msg = tgSent.slice(n).find((m) => /Custo da Star atualizado/.test(m.text));
-  assert.ok(msg); assert.match(msg.text, /0,0875 → R\$ 0,1000/);
+  assert.ok(msg); assert.match(msg.text, /0,0875 → R\$ 0,1000/); assert.match(msg.text, /compras de Stars/);
   // novo pedido congela o custo novo; o antigo continua 0,0875
   mpShouldApprove = true;
   const p = await (await postJ('/api/orders', { product: 'c1000', gameId: '181811', email: 'sc@x.com' })).json();
   assert.equal(db.prepare('SELECT star_cost FROM orders WHERE id=?').get(p.id).star_cost, s.custoAtual);
   assert.equal(db.prepare('SELECT star_cost FROM orders WHERE id=?').get(antes.id).star_cost, 0.0875);
-  // apagar a recarga volta ao custo anterior
-  const rec = s.movs.find((m) => m.kind === 'recarga' && m.delta === 100000);
-  await adm('DELETE', '/api/admin/stars/' + rec.id);
+  // apagar a compra volta ao custo anterior
+  const rec = s.compras.find((c) => c.stars === 100000);
+  assert.equal((await adm('DELETE', '/api/admin/stars/compras/' + rec.id)).status, 200);
   assert.equal((await (await adm('GET', '/api/admin/stars')).json()).custoAtual, 0.0875);
 });

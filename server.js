@@ -110,8 +110,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS coupon_payouts (
   paid_at TEXT DEFAULT CURRENT_TIMESTAMP
 )`);
 // Custos para o piso de preço e o cálculo do lucro (configuráveis no .env).
-// Custo por Star: calculado das recargas registradas (ver refreshStarCost); STAR_COST_BRL é só o valor inicial,
-// usado enquanto não houver recarga com valor. Cada pedido congela o custo da hora da venda (orders.star_cost).
+// Custo por Star: calculado das COMPRAS de Stars registradas (ver refreshStarCost); STAR_COST_BRL é só o valor
+// inicial, usado enquanto não houver compra registrada. Cada pedido congela o custo da hora da venda (orders.star_cost).
 const STAR_COST = Number(env.STAR_COST_BRL || 0.0875); // R$ por Star (padrão)
 let STAR_NOW = STAR_COST;
 const MP_FEE = Number(env.MP_FEE_PCT || 0.99) / 100;   // taxa do Pix no MP
@@ -299,26 +299,39 @@ function tgMarkup(o, markup) {
 // ---------- Saldo de Stars (livro-caixa manual) ----------
 // O saldo real da conta do operador não é legível por API (Bot API só vê o saldo do bot; ler a conta
 // exigiria sessão do Telegram no servidor — recusado no contexto.md). Então: entrega desconta sozinha,
-// operador registra recargas e "confere o saldo" de vez em quando (gera ajuste da diferença).
+// "confere o saldo" (ou a leitura real da conta faz isso sozinha). Compras de Stars NÃO entram aqui: ficam em
+// stars_purchases, só para o custo — nunca alteram o saldo.
 db.exec(`CREATE TABLE IF NOT EXISTS stars_ledger (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,            -- recarga | ajuste | entrega
+  kind TEXT NOT NULL,            -- ajuste | entrega  (legado: recarga, migrada p/ stars_purchases)
   delta INTEGER NOT NULL,        -- + entra, − sai
-  cents INTEGER,                 -- recarga: quanto custou (opcional)
+  cents INTEGER,                 -- legado
   order_id INTEGER UNIQUE,       -- entrega: 1 desconto por pedido
   nota TEXT DEFAULT '',
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 )`);
 const STARS_LOW = Number(env.STARS_LOW ?? 500); // abaixo disso: aviso de saldo baixo
+// Compras de Stars (Fragment/USDT etc.): SÓ registro de custo. Nunca mexem no saldo (que vem do Telegram).
+db.exec(`CREATE TABLE IF NOT EXISTS stars_purchases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, stars INTEGER NOT NULL, cents INTEGER NOT NULL, nota TEXT DEFAULT '',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+// migração: "recargas" antigas do livro-caixa viram compras e saem do saldo (o alinhamento com o Telegram corrige)
+db.transaction(() => {
+  for (const r of db.prepare("SELECT * FROM stars_ledger WHERE kind='recarga'").all()) {
+    if (r.cents > 0 && r.delta > 0) db.prepare('INSERT INTO stars_purchases (stars, cents, nota, created_at) VALUES (?,?,?,?)').run(r.delta, r.cents, r.nota || '', r.created_at);
+    db.prepare('DELETE FROM stars_ledger WHERE id=?').run(r.id);
+  }
+})();
 // pedidos antigos (antes do custo automático) ficam com o custo padrão da época
 db.prepare('UPDATE orders SET star_cost=? WHERE star_cost IS NULL').run(STAR_COST);
-// Custo atual = média ponderada das recargas MAIS RECENTES (com valor) que somam o saldo atual — ou seja, quanto
-// custaram as Stars que estão na conta agora. Sem recarga com valor: STAR_COST_BRL.
+// Custo atual = média ponderada das COMPRAS mais recentes que somam o saldo atual — ou seja, quanto custaram as
+// Stars que estão na conta agora. Sem compra registrada: STAR_COST_BRL.
 function calcStarCost(saldo) {
-  const recs = db.prepare("SELECT delta, cents FROM stars_ledger WHERE kind='recarga' AND cents > 0 AND delta > 0 ORDER BY id DESC").all();
+  const recs = db.prepare('SELECT stars, cents FROM stars_purchases WHERE cents > 0 AND stars > 0 ORDER BY id DESC').all();
   if (!recs.length) return { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
   let st = 0, c = 0, n = 0;
-  for (const r of recs) { st += r.delta; c += r.cents; n++; if (st >= Math.max(saldo, 1)) break; }
+  for (const r of recs) { st += r.stars; c += r.cents; n++; if (st >= Math.max(saldo, 1)) break; }
   return { cost: c / st / 100, fonte: 'recargas', recargas: n };
 }
 let STAR_INFO = { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
@@ -331,7 +344,7 @@ function refreshStarCost(notify = false) {
     const fmt = (v) => 'R$ ' + v.toFixed(4).replace('.', ',');
     const prej = Object.entries(PRODUCTS).filter(([, p]) => p.ativo && p.stars && p.cents * (1 - MP_FEE) < costCents(p.stars))
       .map(([, p]) => `${p.nome} (${brlTxt(p.cents)}, custo ${brlTxt(Math.round(costCents(p.stars)))})`);
-    tgSend(`💱 Custo da Star atualizado: ${fmt(old)} → ${fmt(STAR_NOW)} (média das recargas que formam o saldo atual).\n`
+    tgSend(`💱 Custo da Star atualizado: ${fmt(old)} → ${fmt(STAR_NOW)} (média das compras de Stars que formam o saldo atual).\n`
       + 'Vale para os novos pedidos; vendas anteriores mantêm o custo da época.'
       + (prej.length ? `\n⚠️ Vendendo NO PREJUÍZO com o custo novo: ${prej.join('; ')}. Ajuste os preços no painel.` : ''));
   }
@@ -365,7 +378,7 @@ async function syncStarsReal(force = false) {
       const hadErr = REAL.err;
       Object.assign(REAL, { balance: b, at: Date.now(), err: null });
       alignLedger(b);
-      refreshStarCost(false); // o saldo muda quais recargas formam o estoque; sem aviso (só recarga avisa)
+      refreshStarCost(false); // o saldo muda quais compras formam o estoque; sem aviso (só registrar compra avisa)
       if (hadErr) tgSend(`✅ Leitura do saldo de Stars voltou a funcionar: ${b}★.`);
       if (prev != null && prev >= STARS_LOW && b < STARS_LOW) tgSend(`🔻 Saldo de Stars baixo: ${b}★ (limite ${STARS_LOW}★). Fila: ${starsFila()}★.`);
     } catch (e) {
@@ -1202,10 +1215,13 @@ function starsInfo() {
     id: m.id, kind: m.kind, delta: m.delta, cents: m.cents, order_id: m.order_id, nota: m.nota || '',
     data: new Date(m.created_at.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
   }));
-  // custo médio de TODAS as recargas com valor (histórico); o custo usado nos pedidos é custoAtual
-  const c = db.prepare("SELECT SUM(delta) st, SUM(cents) c FROM stars_ledger WHERE kind='recarga' AND cents > 0").get();
+  // custo médio de TODAS as compras (histórico); o custo usado nos pedidos é custoAtual
+  const c = db.prepare('SELECT SUM(stars) st, SUM(cents) c FROM stars_purchases').get();
+  const fmtD = (t) => new Date(t.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit' });
+  const compras = db.prepare('SELECT * FROM stars_purchases ORDER BY id DESC LIMIT 20').all()
+    .map((p) => ({ id: p.id, stars: p.stars, cents: p.cents, nota: p.nota || '', data: fmtD(p.created_at), unit: p.cents / p.stars / 100 }));
   return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
-    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, custoFonte: STAR_INFO.fonte,
+    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, custoFonte: STAR_INFO.fonte, compras,
     real: realOn() ? { ativo: real, at: REAL.at || null, err: REAL.err, manual: starsSaldo().s } : null,
     autopay: chkOn() ? { on: autopayOn(), mode: autopayMode(), max: AUTOPAY_MAX, dia: AUTOPAY_DAY, usado24h: autopay24() } : null };
 }
@@ -1224,12 +1240,12 @@ app.post('/api/admin/stars', admin, (req, res) => {
   const b = req.body ?? {};
   const int = (v) => (Number.isInteger(Number(v)) ? Number(v) : NaN);
   const nota = String(b.nota || '').trim().slice(0, 80);
-  if (b.kind === 'recarga') {
+  if (b.kind === 'compra' || b.kind === 'recarga') { // registro de CUSTO; não altera o saldo
     const st = int(b.stars);
     if (!(st > 0 && st <= 1_000_000)) return res.status(400).json({ error: 'Quantidade de Stars inválida.' });
-    const cents = b.cents == null || b.cents === '' ? null : Math.round(Number(b.cents));
-    if (cents != null && !(cents >= 0 && cents <= 100_000_000)) return res.status(400).json({ error: 'Valor inválido.' });
-    db.prepare("INSERT INTO stars_ledger (kind, delta, cents, nota) VALUES ('recarga', ?, ?, ?)").run(st, cents, nota);
+    const cents = Math.round(Number(b.cents));
+    if (!(cents > 0 && cents <= 100_000_000)) return res.status(400).json({ error: 'Informe quanto você pagou (R$).' });
+    db.prepare('INSERT INTO stars_purchases (stars, cents, nota) VALUES (?,?,?)').run(st, cents, nota);
     refreshStarCost(true);
   } else if (b.kind === 'ajuste') {
     const real = int(b.saldo_real);
@@ -1240,10 +1256,17 @@ app.post('/api/admin/stars', admin, (req, res) => {
   } else return res.status(400).json({ error: 'Tipo inválido.' });
   res.json({ ok: true, saldo: starsSaldo().s });
 });
+app.delete('/api/admin/stars/compras/:id', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const r = db.prepare('DELETE FROM stars_purchases WHERE id=?').run(Number(req.params.id));
+  if (!r.changes) return res.status(404).json({ error: 'Compra não encontrada.' });
+  refreshStarCost(true);
+  res.json({ ok: true });
+});
 app.delete('/api/admin/stars/:id', admin, (req, res) => {
   if (!guard(req, res)) return;
   // entregas não se apagam por aqui (corrija com "conferir saldo")
-  const r = db.prepare("DELETE FROM stars_ledger WHERE id=? AND kind IN ('recarga','ajuste')").run(Number(req.params.id));
+  const r = db.prepare("DELETE FROM stars_ledger WHERE id=? AND kind='ajuste'").run(Number(req.params.id));
   if (!r.changes) return res.status(404).json({ error: 'Movimento não encontrado (entregas não podem ser apagadas).' });
   refreshStarCost(true);
   res.json({ ok: true });

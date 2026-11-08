@@ -328,3 +328,8 @@ Aplicado: SSH `PermitRootLogin no` (`/etc/ssh/sshd_config.d/10-no-root-login.con
 (testado). Mantidos por decisão do operador: login por senha, `sudo` NOPASSWD do ramos (loja e Hermes rodam como ramos),
 senha atual do painel, reboot do kernel pendente, apps internos escutando em 0.0.0.0 (bloqueados pelo UFW).
 OK: UFW deny-by-default, fail2ban (sshd), unattended-upgrades, TLS 1.2/1.3, server_tokens off, segredos 600, npm audit 0.
+
+### Custo da Star pelas compras (2026-11-08)
+Compras de Stars ficam em `stars_purchases` (Stars + R$ pagos) — SÓ para custo, NUNCA alteram o saldo (o saldo vem da
+leitura do Telegram). Custo atual = média ponderada das compras mais recentes que somam o saldo; congelado em cada
+pedido (`orders.star_cost`). Aviso 💱 no Telegram quando muda, com produtos no prejuízo. Painel → ★ → "+ Registrar compra".
