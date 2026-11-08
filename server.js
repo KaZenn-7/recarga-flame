@@ -197,7 +197,7 @@ const FP_KEY = (() => {
   return k;
 })();
 const fp = (v) => (v ? crypto.createHmac('sha256', FP_KEY).update(String(v)).digest('hex').slice(0, 32) : null);
-for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL']) {
+for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL', 'approved_at INTEGER']) {
   try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
 }
 // conta de origem do Pix vinda do MP (só depois de pago). NÃO usar payer.identification:
@@ -287,6 +287,7 @@ function paidKeyboard(o) {
   const url = donateLink(o);
   if (url) rows.push([{ text: `🎮 Abrir entrega · ${starsOf(o)}★`, url }]);
   if (canAutopay(o).ok) rows.push([{ text: `⭐ Pagar ${starsOf(o)}★ e entregar`, callback_data: `p:${o.id}` }]);
+  else if (canApprove(o)) rows.push([{ text: `✅ Aprovar e pagar ${starsOf(o)}★`, callback_data: `a:${o.id}` }]);
   rows.push([{ text: '✅ Já entreguei', callback_data: `d:${o.id}` }]);
   return { inline_keyboard: rows };
 }
@@ -455,7 +456,7 @@ async function handleTgUpdate(u) {
   if (String(cq.from?.id) !== String(env.TG_CHAT_ID) || String(cq.message?.chat?.id) !== String(env.TG_CHAT_ID)) {
     return answer('Sem permissão.');
   }
-  const m = /^([dDbpP]):(\d+)$/.exec(cq.data || '');
+  const m = /^([dDbpPaA]):(\d+)$/.exec(cq.data || '');
   if (!m) return answer('Nada a fazer aqui.');
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(Number(m[2]));
   if (!o) return answer('Pedido não encontrado.');
@@ -486,12 +487,21 @@ async function handleTgUpdate(u) {
     ] });
     return answer(`Vai gastar ${starsOf(o)}★ da conta separada: ${o.prod_nome || o.product} para ${o.nickname} (ID ${o.game_id}).`, true);
   }
-  if (m[1] === 'P') {
+  if (m[1] === 'a') {
+    if (!canApprove(o)) { await setKb(paidKeyboard(o)); return answer('Não dá para aprovar e pagar agora (conferência, tetos, saldo ou modo desligado).', true); }
+    await setKb({ inline_keyboard: [
+      [{ text: `✅ Sim, aprovei — pagar ${starsOf(o)}★`, callback_data: `A:${o.id}` }],
+      [{ text: '↩ Voltar', callback_data: `b:${o.id}` }],
+    ] });
+    return answer(`Pedido em REVISAR: ${riskOf(o).join('; ')}.\n\nSó aprove se conferiu o Pix no app do Mercado Pago. Vai gastar ${starsOf(o)}★ da conta separada.`, true);
+  }
+  if (m[1] === 'P' || m[1] === 'A') {
+    const aprovar = m[1] === 'A';
     await answer('Pagando… (até ~30 s)');
     await setKb(doneKeyboard('⏳ Pagando…'));
-    const r = await autopay(o.id);
+    const r = await autopay(o.id, { aprovar });
     if (r.ok) {
-      tgSend(`⭐ Pedido #${o.id} pago no bot (${r.stars}★) e marcado como entregue.${r.botReply ? '\nBot do CF: ' + r.botReply : ''}\n${saldoLine()}`);
+      tgSend(`⭐ Pedido #${o.id} ${aprovar ? 'aprovado por você, ' : ''}pago no bot (${r.stars}★) e marcado como entregue.${r.botReply ? '\nBot do CF: ' + r.botReply : ''}\n${saldoLine()}`);
     } else {
       const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(o.id);
       if (cur.status === 'paid' && cur.autopay !== 'incerto') await setKb(paidKeyboard(cur));
@@ -574,7 +584,8 @@ function canAutopay(o) {
   const ck = chkOf(o);
   if (ck?.status !== 'ok') return { ok: false, why: 'conferência no bot ainda não deu ✅' };
   const risk = riskOf(o);
-  if (risk.length) return { ok: false, why: 'pedido em REVISAR — pague na mão' };
+  // em REVISAR só paga depois que o operador aprova ("Aprovar e pagar" grava approved_at)
+  if (risk.length && !o.approved_at) return { ok: false, why: 'pedido em REVISAR — revise e use "Aprovar e pagar"', revisar: true };
   const st = starsOf(o);
   const max = autopayMax(), dia = autopayDay();
   if (st > max) return { ok: false, why: `acima do teto por pedido (${max}★)` };
@@ -583,9 +594,16 @@ function canAutopay(o) {
   if (sal.n && sal.s < st) return { ok: false, why: `saldo insuficiente (${sal.s}★)` };
   return { ok: true };
 }
-async function autopay(id) {
-  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+// pedido em REVISAR que poderia ser pago se aprovado (conferência ✅, tetos, saldo, modo ligado)
+const canApprove = (o) => o.status === 'paid' && !o.approved_at && riskOf(o).length > 0 && canAutopay({ ...o, approved_at: 1 }).ok;
+async function autopay(id, { aprovar = false } = {}) {
+  let o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o) return { ok: false, why: 'pedido não encontrado' };
+  if (aprovar) {
+    if (!canApprove(o)) return { ok: false, why: o.approved_at ? 'pedido já aprovado' : 'nada a aprovar (ou fora dos tetos/saldo/conferência)' };
+    db.prepare('UPDATE orders SET approved_at=? WHERE id=? AND approved_at IS NULL').run(Date.now(), id);
+    o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  }
   const can = canAutopay(o);
   if (!can.ok) return can;
   // trava atômica: só um pagamento por pedido
@@ -1318,6 +1336,7 @@ function painelOrders() {
       chk: o.status === 'paid' ? chkOf(o) : null, chkOn: chkOn(),
       ap: o.autopay || null, apInfo: o.autopay_info ? JSON.parse(o.autopay_info) : null,
       canPay: o.status === 'paid' ? canAutopay(o) : null,
+      canApprove: o.status === 'paid' ? canApprove(o) : false, approved: !!o.approved_at,
       blocked: ['cancelled', 'reversed'].includes(o.status) && o.paid_at ? orderBlocked(o) : false,
     };
   });
@@ -1392,6 +1411,11 @@ app.post('/api/admin/orders/:id/check', admin, async (req, res) => {
   if (!o) return res.status(404).json({ error: 'Pedido não encontrado.' });
   if (o.status !== 'paid') return res.status(409).json({ error: 'Só pedidos pagos aguardando entrega.' });
   res.json(await conferir(Number(req.params.id)));
+});
+app.post('/api/admin/orders/:id/aprovar', admin, async (req, res) => {
+  if (!guard(req, res)) return;
+  const r = await autopay(Number(req.params.id), { aprovar: true });
+  res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
 });
 app.post('/api/admin/orders/:id/autopay', admin, async (req, res) => {
   if (!guard(req, res)) return;

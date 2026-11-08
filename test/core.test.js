@@ -1234,3 +1234,42 @@ test('lembretes de Pix: avisa 1x quando falta ≤ 10 min e 1x quando expira; nã
   assert.ok(!mailSent.slice(m2).some((m) => m.subject.includes('#' + b.id)));
   mpShouldApprove = true;
 });
+
+test('aprovar e pagar: pedido em REVISAR só paga com aprovação do operador (painel e Telegram)', async () => {
+  const pays = [];
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 771, account: 'jogador_teste', produto: '50 000 coins', msgId: 1 }));
+  _setInvoicePayer(async (a) => { pays.push(a); return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }; });
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 1 });
+    mpShouldApprove = true;
+    const novo = async (gid) => { const j = await (await postJ('/api/orders', { product: 'c50000', gameId: gid, email: gid + '@ap2.com' })).json(); await pagar(j.token); await new Promise((r) => setTimeout(r, 40)); return j.id; };
+    // 1ª compra ≥ R$ 50 → REVISAR: sem "Pagar", com "Aprovar e pagar"
+    const a = await novo('222201');
+    let o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === a);
+    assert.ok(o.risk.some((r) => /primeira compra/.test(r)));
+    assert.equal(o.canPay.ok, false); assert.equal(o.canApprove, true);
+    assert.equal((await adm('POST', '/api/admin/orders/' + a + '/autopay')).status, 409); // sem aprovação não paga
+    const kb = lastCall('editMessageText').body.reply_markup.inline_keyboard.flat();
+    assert.ok(kb.some((b) => b.callback_data === 'a:' + a && /Aprovar e pagar 771★/.test(b.text)));
+    assert.ok(!kb.some((b) => b.callback_data === 'p:' + a));
+    // painel: aprovar e pagar
+    assert.equal((await fetch(base + '/api/admin/orders/' + a + '/aprovar', { method: 'POST', headers: { 'x-painel': '1', ...freshIP() } })).status, 401);
+    const r = await adm('POST', '/api/admin/orders/' + a + '/aprovar');
+    assert.equal(r.status, 200);
+    const row = db.prepare('SELECT status, autopay, approved_at FROM orders WHERE id=?').get(a);
+    assert.equal(row.status, 'delivered'); assert.equal(row.autopay, 'sent'); assert.ok(row.approved_at > 0);
+    assert.equal(pays.length, 1);
+    assert.equal((await adm('POST', '/api/admin/orders/' + a + '/aprovar')).status, 409); // não paga 2x
+    // Telegram: a → confirmação (não paga) → A paga; estranho não
+    const b = await novo('222202');
+    const msgId = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(b).tg_msg;
+    await cb('A:' + b, msgId, 999);
+    await cb('a:' + b, msgId);
+    assert.equal(pays.length, 1);
+    await cb('A:' + b, msgId);
+    assert.equal(pays.length, 2);
+    assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(b).status, 'delivered');
+    assert.ok(tgSent.some((m) => m.text.includes(`Pedido #${b} aprovado por você, pago no bot (771★)`)));
+  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+});

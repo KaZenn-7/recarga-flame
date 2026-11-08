@@ -273,6 +273,7 @@ function card(o){
       <button class="a-ok" onclick="deliver(\${o.id})">Marcar entregue</button></div>\`;
   }
   if(o.status==='paid'&&o.canPay&&o.canPay.ok)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" onclick="payNow('+o.id+',this)">⭐ Pagar '+o.stars+'★</button>');
+  else if(o.status==='paid'&&o.canApprove)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" onclick="approveNow('+o.id+',this)">✅ Aprovar e pagar</button>');
   const apb=o.status!=='paid'?(o.ap==='incerto'?'<div class="chk">Pagamento automático ficou incerto — resolvido manualmente.</div>':''):
     o.ap==='incerto'?'<div class="chk diverge">🚨 Pagamento incerto: '+esc((o.apInfo&&o.apInfo.erro)||'')+'. <button class="rechk" onclick="verifyPay('+o.id+',this)">🔍 verificar cobrança</button></div>':
     o.ap==='paying'?'<div class="chk wait">⏳ Pagando no bot…</div>':
@@ -498,6 +499,14 @@ setInterval(function(){if(!document.hidden)refreshOrders(false);},15000);
 document.addEventListener('visibilitychange',function(){
   if(!document.hidden){unseen=0;document.title='Painel — Recarga Flame';askBack();refreshOrders(false);}
 });
+async function approveNow(id,btn){
+  const o=ORDERS.find(function(x){return x.id===id;});if(!o)return;
+  if(!confirm('APROVAR E PAGAR o pedido #'+id+'?\\n\\nEm revisão por: '+(o.risk||[]).join('; ')+'\\n\\nSó aprove se conferiu o Pix de '+brl(o.cents)+' no app do Mercado Pago.\\n\\nVai pagar '+o.stars+'★ da conta separada: '+o.nome+' para '+o.nick+' (ID '+o.gameId+').'))return;
+  btn.disabled=true;btn.textContent='Pagando…';
+  try{const r=await api('/api/admin/orders/'+id+'/aprovar',{method:'POST'});alert('Aprovado, pago ('+r.stars+'★) e marcado como entregue.'+(r.botReply?'\\n\\nBot do CF: '+r.botReply:''));}
+  catch(e){alert(e.message);}
+  refreshOrders(false);loadStars();
+}
 async function payNow(id,btn){
   const o=ORDERS.find(function(x){return x.id===id;});if(!o)return;
   if(!confirm('Pagar '+o.stars+'★ da conta separada no bot do CounterFlame?\\n\\n'+o.nome+' para '+o.nick+' (ID '+o.gameId+')\\n\\nA fatura é conferida de novo antes de pagar.'))return;
