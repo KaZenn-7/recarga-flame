@@ -230,11 +230,7 @@ input:focus{outline:0;border-color:#45454c}
     <label for="email">Seu e-mail</label>
     <input id="email" type="email" autocomplete="email" placeholder="voce@email.com">
     <p class="hint">Exigido pelo Mercado Pago para gerar o Pix. Usamos só para avisar sobre o seu pedido, como a confirmação de entrega.</p>
-    <div class="prazo">
-      <b>Entrega em até 1 hora</b> após a confirmação do pagamento:
-      <ul><li>Segunda a sexta: das 7h às 23h</li><li>Sábados, domingos e feriados: das 11h às 23h</li></ul>
-      Pagamentos fora desses horários são entregues na manhã seguinte.
-    </div>
+    <div class="prazo"><b>Entrega automática em até 10 minutos</b> após a confirmação do pagamento, a qualquer hora.</div>
     <button class="btn btn-go" id="pagar">Gerar Pix</button>
     <p class="terms">Ao gerar o Pix você concorda com os <a href="/termos-de-uso" target="_blank">Termos de uso</a> e a <a href="/politica-de-privacidade" target="_blank">Política de privacidade</a>. Confira o ID: o item é entregue na conta mostrada acima.</p>
     <p class="err" id="err3"></p>
@@ -273,7 +269,7 @@ input:focus{outline:0;border-color:#45454c}
     <nav class="ft-links" aria-label="Páginas"><a href="/" aria-current="page">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
     <div class="ft-grid">
       <div class="ft-card"><h4>Suporte</h4><a class="ft-btn" href="/suporte">Falar com o suporte</a></div>
-      <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática</span><b>~1 min, 24h</b></li></ul><a class="ft-more" href="/termos-de-uso#entrega">Prazos e exceções nos Termos de uso ›</a></div>
+      <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática, 24h</span><b>até 10 min</b></li></ul><a class="ft-more" href="/termos-de-uso#entrega">Prazos e exceções nos Termos de uso ›</a></div>
     </div>
     <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago.</p>
     <p class="ft-docs"><a href="/termos-de-uso">Termos de uso</a> · <a href="/politica-de-privacidade">Política de privacidade</a> · <a href="/suporte">Suporte</a></p>
@@ -469,7 +465,7 @@ function setStatus(status,entrega){
   $('prazoPago').classList.toggle('hide',status!=='paid'||entrega==='auto');
   $('afternote').classList.toggle('warnbox',status==='paid'&&entrega==='manual');
   $('afternote').textContent=
-    status==='paid'&&entrega==='auto'?'Seu pedido está sendo entregue automaticamente na conta informada. Costuma levar cerca de 1 minuto — esta página atualiza sozinha.':
+    status==='paid'&&entrega==='auto'?'Seu pedido está sendo entregue automaticamente na conta informada. Leva até 10 minutos — esta página atualiza sozinha.':
     status==='paid'&&entrega==='manual'?'Seu pagamento está confirmado, mas a entrega automática não pôde ser concluída agora. Nossa equipe vai entregar manualmente na conta informada dentro do prazo abaixo — você não precisa fazer nada. Se preferir, fale com o suporte.':
     status==='paid'?'Recebemos seu pagamento. A entrega é feita manualmente na conta informada — você pode fechar esta página e voltar depois para acompanhar.':
     status==='notfound'?'Este pedido não existe mais. Se você pagou por ele, fale com o suporte abaixo informando o horário do pagamento.':
