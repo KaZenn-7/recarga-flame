@@ -110,12 +110,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS coupon_payouts (
   paid_at TEXT DEFAULT CURRENT_TIMESTAMP
 )`);
 // Custos para o piso de preço e o cálculo do lucro (configuráveis no .env).
-const STAR_COST = Number(env.STAR_COST_BRL || 0.0875); // R$ por Star
+// Custo por Star: calculado das recargas registradas (ver refreshStarCost); STAR_COST_BRL é só o valor inicial,
+// usado enquanto não houver recarga com valor. Cada pedido congela o custo da hora da venda (orders.star_cost).
+const STAR_COST = Number(env.STAR_COST_BRL || 0.0875); // R$ por Star (padrão)
+let STAR_NOW = STAR_COST;
 const MP_FEE = Number(env.MP_FEE_PCT || 0.99) / 100;   // taxa do Pix no MP
-const costCents = (stars) => stars * STAR_COST * 100;
+const costCents = (stars, cost = STAR_NOW) => stars * cost * 100;
 // menor preço que ainda cobre Stars + taxa do MP: final*(1-fee) >= custo
 const floorCents = (stars) => Math.ceil(costCents(stars) / (1 - MP_FEE));
-const profitCents = (cents, stars) => cents - costCents(stars) - cents * MP_FEE;
+const profitCents = (cents, stars, cost = STAR_NOW) => cents - costCents(stars, cost) - cents * MP_FEE;
+const orderProfit = (o) => profitCents(o.cents, o.prod_stars || 0, o.star_cost ?? STAR_COST);
 const normCode = (c) => String(c ?? '').trim().toUpperCase();
 const validCode = (c) => /^[A-Z0-9_-]{3,20}$/.test(c);
 function getCoupon(code) {
@@ -192,7 +196,7 @@ const FP_KEY = (() => {
   return k;
 })();
 const fp = (v) => (v ? crypto.createHmac('sha256', FP_KEY).update(String(v)).digest('hex').slice(0, 32) : null);
-for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER']) {
+for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL']) {
   try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
 }
 // conta de origem do Pix vinda do MP (só depois de pago). NÃO usar payer.identification:
@@ -306,6 +310,33 @@ db.exec(`CREATE TABLE IF NOT EXISTS stars_ledger (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 )`);
 const STARS_LOW = Number(env.STARS_LOW ?? 500); // abaixo disso: aviso de saldo baixo
+// pedidos antigos (antes do custo automático) ficam com o custo padrão da época
+db.prepare('UPDATE orders SET star_cost=? WHERE star_cost IS NULL').run(STAR_COST);
+// Custo atual = média ponderada das recargas MAIS RECENTES (com valor) que somam o saldo atual — ou seja, quanto
+// custaram as Stars que estão na conta agora. Sem recarga com valor: STAR_COST_BRL.
+function calcStarCost(saldo) {
+  const recs = db.prepare("SELECT delta, cents FROM stars_ledger WHERE kind='recarga' AND cents > 0 AND delta > 0 ORDER BY id DESC").all();
+  if (!recs.length) return { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
+  let st = 0, c = 0, n = 0;
+  for (const r of recs) { st += r.delta; c += r.cents; n++; if (st >= Math.max(saldo, 1)) break; }
+  return { cost: c / st / 100, fonte: 'recargas', recargas: n };
+}
+let STAR_INFO = { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
+// recalcula; se mudou (≥ 0,1%) e notify, avisa no Telegram e aponta produtos vendidos no prejuízo
+function refreshStarCost(notify = false) {
+  const old = STAR_NOW;
+  STAR_INFO = calcStarCost(Math.max(0, starsEff().s));
+  STAR_NOW = STAR_INFO.cost;
+  if (notify && Math.abs(STAR_NOW - old) / old >= 0.001) {
+    const fmt = (v) => 'R$ ' + v.toFixed(4).replace('.', ',');
+    const prej = Object.entries(PRODUCTS).filter(([, p]) => p.ativo && p.stars && p.cents * (1 - MP_FEE) < costCents(p.stars))
+      .map(([, p]) => `${p.nome} (${brlTxt(p.cents)}, custo ${brlTxt(Math.round(costCents(p.stars)))})`);
+    tgSend(`💱 Custo da Star atualizado: ${fmt(old)} → ${fmt(STAR_NOW)} (média das recargas que formam o saldo atual).\n`
+      + 'Vale para os novos pedidos; vendas anteriores mantêm o custo da época.'
+      + (prej.length ? `\n⚠️ Vendendo NO PREJUÍZO com o custo novo: ${prej.join('; ')}. Ajuste os preços no painel.` : ''));
+  }
+  return STAR_NOW;
+}
 // n = nº de conferências: o saldo só é "configurado" depois que o operador informa o saldo real 1 vez
 const starsSaldo = () => db.prepare("SELECT COALESCE(SUM(delta),0) s, SUM(kind='ajuste') n FROM stars_ledger").get();
 // Stars que a fila de pagos (ainda não entregues) vai consumir
@@ -334,6 +365,7 @@ async function syncStarsReal(force = false) {
       const hadErr = REAL.err;
       Object.assign(REAL, { balance: b, at: Date.now(), err: null });
       alignLedger(b);
+      refreshStarCost(false); // o saldo muda quais recargas formam o estoque; sem aviso (só recarga avisa)
       if (hadErr) tgSend(`✅ Leitura do saldo de Stars voltou a funcionar: ${b}★.`);
       if (prev != null && prev >= STARS_LOW && b < STARS_LOW) tgSend(`🔻 Saldo de Stars baixo: ${b}★ (limite ${STARS_LOW}★). Fila: ${starsFila()}★.`);
     } catch (e) {
@@ -930,9 +962,9 @@ app.post('/api/orders', limit(5), async (req, res) => {
   }
   const token = crypto.randomUUID();
   const ins = db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, prod_nome, prod_stars, prod_code,
-      coupon, list_cents, discount_cents, com_pct, device, ip_h) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      coupon, list_cents, discount_cents, com_pct, device, ip_h, star_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(token, product, finalCents, String(gameId), player.nickname, email, p.nome, p.stars, p.code,
-      coupon?.code || null, p.cents, p.cents - finalCents, coupon ? coupon.comissao_pct : null, device, fp('ip:' + req.ip));
+      coupon?.code || null, p.cents, p.cents - finalCents, coupon ? coupon.comissao_pct : null, device, fp('ip:' + req.ip), STAR_NOW);
 
   // Pix expira em 30 min. Formato exigido pelo MP: ISO com offset (ex: -03:00).
   const expiresAt = Date.now() + 30 * 60_000;
@@ -1170,10 +1202,10 @@ function starsInfo() {
     id: m.id, kind: m.kind, delta: m.delta, cents: m.cents, order_id: m.order_id, nota: m.nota || '',
     data: new Date(m.created_at.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
   }));
-  // custo médio real das recargas com valor informado (para comparar com STAR_COST_BRL)
+  // custo médio de TODAS as recargas com valor (histórico); o custo usado nos pedidos é custoAtual
   const c = db.prepare("SELECT SUM(delta) st, SUM(cents) c FROM stars_ledger WHERE kind='recarga' AND cents > 0").get();
   return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
-    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST,
+    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, custoFonte: STAR_INFO.fonte,
     real: realOn() ? { ativo: real, at: REAL.at || null, err: REAL.err, manual: starsSaldo().s } : null,
     autopay: chkOn() ? { on: autopayOn(), mode: autopayMode(), max: AUTOPAY_MAX, dia: AUTOPAY_DAY, usado24h: autopay24() } : null };
 }
@@ -1198,6 +1230,7 @@ app.post('/api/admin/stars', admin, (req, res) => {
     const cents = b.cents == null || b.cents === '' ? null : Math.round(Number(b.cents));
     if (cents != null && !(cents >= 0 && cents <= 100_000_000)) return res.status(400).json({ error: 'Valor inválido.' });
     db.prepare("INSERT INTO stars_ledger (kind, delta, cents, nota) VALUES ('recarga', ?, ?, ?)").run(st, cents, nota);
+    refreshStarCost(true);
   } else if (b.kind === 'ajuste') {
     const real = int(b.saldo_real);
     if (!(real >= 0 && real <= 10_000_000)) return res.status(400).json({ error: 'Saldo inválido.' });
@@ -1212,6 +1245,7 @@ app.delete('/api/admin/stars/:id', admin, (req, res) => {
   // entregas não se apagam por aqui (corrija com "conferir saldo")
   const r = db.prepare("DELETE FROM stars_ledger WHERE id=? AND kind IN ('recarga','ajuste')").run(Number(req.params.id));
   if (!r.changes) return res.status(404).json({ error: 'Movimento não encontrado (entregas não podem ser apagadas).' });
+  refreshStarCost(true);
   res.json({ ok: true });
 });
 app.post('/api/admin/orders/:id/check', admin, async (req, res) => {
@@ -1236,7 +1270,7 @@ function dailySummary(day = spDay()) {
     WHERE o.paid_at IS NOT NULL AND o.status IN ('paid','delivered') AND ${L('o.paid_at')} = ?`).all(day);
   let fat = 0, lucro = 0;
   for (const o of vendas) {
-    const l = profitCents(o.cents, o.prod_stars || 0);
+    const l = orderProfit(o);
     fat += o.cents; lucro += l - (o.coupon ? Math.max(0, l) * ((o.comissao_pct || 0) / 100) : 0);
   }
   const entregues = db.prepare(`SELECT * FROM orders WHERE status='delivered' AND ${L('delivered_at')} = ?`).all(day);
@@ -1462,7 +1496,7 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
 // Período (datas locais, ex.: ?from=2026-11-01&to=2026-11-30) vale para os números de venda;
 // ganho total, já pago e saldo são sempre de todo o histórico.
 const localDay = (t) => new Date(new Date(t.replace(' ', 'T') + 'Z').getTime() - 3 * 3600_000).toISOString().slice(0, 10);
-const comOf = (o) => Math.max(0, profitCents(o.cents, o.prod_stars || 0)) * ((o.com_pct || 0) / 100);
+const comOf = (o) => Math.max(0, orderProfit(o)) * ((o.com_pct || 0) / 100);
 app.get('/api/admin/coupons/report', admin, (req, res) => {
   const re = /^\d{4}-\d{2}-\d{2}$/;
   const from = re.test(req.query.from || '') ? req.query.from : '0000-01-01';
@@ -1478,7 +1512,7 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
     const d = localDay(o.paid_at);
     if (d < from || d > to) continue;
     r.pedidos++; r.faturado += o.cents; r.desconto += o.discount_cents || 0;
-    r.lucro += profitCents(o.cents, o.prod_stars || 0); r.comissao += c;
+    r.lucro += orderProfit(o); r.comissao += c;
   }
   for (const p of db.prepare('SELECT * FROM coupon_payouts ORDER BY paid_at DESC, id DESC').all()) {
     const r = get(p.code);
@@ -1522,7 +1556,7 @@ app.get('/api/admin/analytics', admin, (req, res) => {
   let faturado = 0, lucro = 0, comissao = 0, stars = 0, comCupom = 0;
   const byDay = {}, byProd = {};
   for (const o of ok) {
-    const l = profitCents(o.cents, o.prod_stars || 0);
+    const l = orderProfit(o);
     const c = o.coupon ? Math.max(0, l) * ((o.comissao_pct || 0) / 100) : 0;
     faturado += o.cents; lucro += l; comissao += c; stars += o.prod_stars || 0;
     if (o.coupon) comCupom++;
@@ -1574,4 +1608,6 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(summaryTick, 60_000); // resumo diário às SUMMARY_HOUR (23h)
 }
 
-export { app, db, RISK, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
+
+export { app, db, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

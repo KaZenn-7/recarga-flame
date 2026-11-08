@@ -1095,3 +1095,25 @@ test('link curto de cupom: /aquila → /?cupom=AQUILA; inativo/inexistente → 4
   assert.equal((await fetch(base + '/suporte', { redirect: 'manual' })).status, 200);
   assert.equal((await fetch(base + '/login', { redirect: 'manual' })).status, 200);
 });
+
+test('custo da Star: recarga com valor atualiza o custo dos NOVOS pedidos; vendas antigas mantêm o da época', async () => {
+  const antes = db.prepare("SELECT id, star_cost FROM orders WHERE status IN ('paid','delivered') ORDER BY id DESC LIMIT 1").get();
+  assert.equal(antes.star_cost, 0.0875);
+  const n = tgSent.length;
+  // recarga grande e cara (R$ 0,10/★) cobre todo o saldo → custo vira 0,10
+  await adm('POST', '/api/admin/stars', { kind: 'recarga', stars: 100000, cents: 1000000 });
+  const s = await (await adm('GET', '/api/admin/stars')).json();
+  // saldo > 100.000 → a média inclui também a recarga anterior (100★ a R$ 0,0875): ≈ 0,09999
+  assert.ok(Math.abs(s.custoAtual - 0.1) < 0.0005, String(s.custoAtual)); assert.equal(s.custoFonte, 'recargas');
+  const msg = tgSent.slice(n).find((m) => /Custo da Star atualizado/.test(m.text));
+  assert.ok(msg); assert.match(msg.text, /0,0875 → R\$ 0,1000/);
+  // novo pedido congela o custo novo; o antigo continua 0,0875
+  mpShouldApprove = true;
+  const p = await (await postJ('/api/orders', { product: 'c1000', gameId: '181811', email: 'sc@x.com' })).json();
+  assert.equal(db.prepare('SELECT star_cost FROM orders WHERE id=?').get(p.id).star_cost, s.custoAtual);
+  assert.equal(db.prepare('SELECT star_cost FROM orders WHERE id=?').get(antes.id).star_cost, 0.0875);
+  // apagar a recarga volta ao custo anterior
+  const rec = s.movs.find((m) => m.kind === 'recarga' && m.delta === 100000);
+  await adm('DELETE', '/api/admin/stars/' + rec.id);
+  assert.equal((await (await adm('GET', '/api/admin/stars')).json()).custoAtual, 0.0875);
+});

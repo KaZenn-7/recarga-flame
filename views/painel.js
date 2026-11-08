@@ -343,7 +343,7 @@ function renderStars(){
     B.appendChild(el('div','ssub'+(R.err?' serr':''),t));
   }
   let sub=STARS.configurado?'Fila a entregar: '+fmtN(STARS.fila)+'★ · aviso abaixo de '+fmtN(STARS.low)+'★':'Ainda não configurado. Confira no Telegram e informe o saldo atual.';
-  if(STARS.custoMedio)sub+=' · custo médio das recargas R$ '+STARS.custoMedio.toFixed(4).replace('.',',')+'/★ (cálculo de lucro usa R$ '+STARS.custoConfig.toFixed(4).replace('.',',')+')';
+  sub+=' · custo por Star: R$ '+STARS.custoAtual.toFixed(4).replace('.',',')+(STARS.custoFonte==='recargas'?' (média das recargas que formam o saldo; vale para os novos pedidos)':' (padrão — registre o valor pago nas recargas para atualizar)');
   B.appendChild(el('div','ssub',sub));
   if(STARS.autopay){
     const A=STARS.autopay,row=el('div','aprow'),tx=el('div');
@@ -392,9 +392,10 @@ async function postStars(body){
 function addRecarga(){
   const v=prompt('Quantos Stars entraram na recarga?','');if(v==null)return;
   const st=parseInt(v.replace(/[^0-9]/g,''),10);if(!(st>0)){alert('Quantidade inválida.');return;}
-  const c=prompt('Quanto custou em R$? (opcional, para calcular o custo médio por Star)','');if(c==null)return;
+  const c=prompt('Quanto você pagou por esses '+st+'★, em R$? (atualiza o custo por Star dos próximos pedidos)','');if(c==null)return;
   let t=c.replace(/[^0-9,.]/g,'');if(t.indexOf(',')>=0)t=t.split('.').join('').replace(',','.');
-  const cents=t?Math.round(parseFloat(t)*100):null;
+  const cents=t?Math.round(parseFloat(t)*100):0;
+  if(!(cents>0)){alert('Informe o valor pago na recarga.');return;}
   postStars({kind:'recarga',stars:st,cents:cents,nota:''});
 }
 function conferir(){
