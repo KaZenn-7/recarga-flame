@@ -454,7 +454,7 @@ $('copiar').onclick=async()=>{
 /* etapa 4: pagamento + acompanhamento */
 const ST={pending:['','Aguardando pagamento'],paid:['paid','Pagamento confirmado — preparando entrega'],
   delivered:['done','Entregue. Abra o jogo para conferir.'],cancelled:['bad','Pagamento cancelado ou expirado'],
-  reversed:['bad','Pagamento estornado'],refund:['bad','Pedido cancelado — o valor será devolvido'],expired:['bad','Pix expirado — não foi pago a tempo'],notfound:['bad','Pedido não encontrado']};
+  reversed:['bad','Pagamento estornado'],refund:['bad','Pedido cancelado — o valor será devolvido'],refunded:['bad','Pedido cancelado — valor devolvido'],expired:['bad','Pix expirado — não foi pago a tempo'],notfound:['bad','Pedido não encontrado']};
 let pollT=null,tickT=null,curTok=null;
 
 function showPayment(order){
@@ -509,7 +509,8 @@ function setStatus(status,entrega){
     status==='notfound'?'Este pedido não existe mais. Se você pagou por ele, fale com o suporte abaixo informando o horário do pagamento.':
     retry?'Nenhum valor foi cobrado. Você pode gerar um novo Pix para o mesmo produto.':
     status==='reversed'?'O pagamento foi estornado e o pedido foi cancelado.':
-    status==='refund'?'Não foi possível concluir este pedido e ele não foi entregue. O valor pago será devolvido integralmente via Pix. Se tiver dúvidas, fale com o suporte.':'';
+    status==='refund'?'Não foi possível concluir este pedido e ele não foi entregue. O valor pago será devolvido integralmente via Pix. Se tiver dúvidas, fale com o suporte.':
+    status==='refunded'?'Este pedido não foi entregue e o valor pago foi devolvido integralmente via Pix, para a mesma conta que pagou. Pode levar alguns minutos para aparecer no seu banco.':'';
 }
 
 async function checkOnce(expiredLocal){

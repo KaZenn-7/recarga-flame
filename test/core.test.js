@@ -92,7 +92,7 @@ globalThis.fetch = async (url, opts) => {
   return realFetch(url, opts); // localhost e demais
 };
 
-let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, riskOf, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
+let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, riskOf, _setRefundCaller, reembolsar, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
 let COOKIE = '';
 async function login() {
   const post = (u, b) => fetch(base + u, { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
@@ -107,7 +107,7 @@ const freshIP = () => ({ 'X-Forwarded-For': `10.0.${(ipSeq >> 8) & 255}.${ipSeq+
 
 before(async () => {
   const mod = await import('../server.js?test=' + Date.now());
-  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; riskOf = mod.riskOf; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
+  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; riskOf = mod.riskOf; _setRefundCaller = mod._setRefundCaller; reembolsar = mod.reembolsar; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}`;
   process.env.PUBLIC_URL = base; // para checagens same-origin
@@ -1423,4 +1423,49 @@ test('1ª compra: só o item mais caro (preço de tabela) vai para revisão', as
   assert.ok(r('262602').some((x) => /primeira compra/.test(x)));
   assert.ok(r('262603').some((x) => /primeira compra/.test(x)));
   db.exec("DELETE FROM orders WHERE game_id IN ('262601','262602','262603')");
+});
+
+test('reembolso: só pago e não entregue; 1 vez; cliente vê "valor devolvido"; não vira bloqueio de estorno', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  const calls = [];
+  let falha = null;
+  _setRefundCaller(async (o) => { calls.push(o.id); if (falha) return { ok: false, erro: falha }; return { ok: true, id: 555, estado: 'approved' }; });
+  try {
+    mpShouldApprove = true;
+    const p = await (await postJ('/api/orders', { product: 'c1000', gameId: '272701', email: 'rb@x.com' })).json();
+    await pagar(p.token);
+    // entregue → sem reembolso
+    const q = await (await postJ('/api/orders', { product: 'c1000', gameId: '272702', email: 'rb2@x.com' })).json();
+    await pagar(q.token); await adm('POST', '/painel/' + q.id + '/entregue');
+    assert.equal((await adm('POST', '/api/admin/orders/' + q.id + '/reembolsar')).status, 409);
+    // sem sessão → 401
+    assert.equal((await fetch(base + '/api/admin/orders/' + p.id + '/reembolsar', { method: 'POST', headers: { 'x-painel': '1', ...freshIP() } })).status, 401);
+    // MP recusa → erro, pedido sai da fila e pode tentar de novo
+    falha = 'insufficient_amount';
+    let r = await adm('POST', '/api/admin/orders/' + p.id + '/reembolsar');
+    assert.equal(r.status, 409); assert.match((await r.json()).error, /insufficient_amount/);
+    let row = db.prepare('SELECT status, refund_state FROM orders WHERE id=?').get(p.id);
+    assert.equal(row.status, 'cancelled'); assert.equal(row.refund_state, 'erro');
+    falha = null;
+    // cancelar e reembolsar (pago na fila) → ok; 2ª vez recusada
+    r = await adm('POST', '/api/admin/orders/' + p.id + '/reembolsar');
+    assert.equal(r.status, 200);
+    assert.equal(db.prepare('SELECT refund_state FROM orders WHERE id=?').get(p.id).refund_state, 'done');
+    assert.equal((await adm('POST', '/api/admin/orders/' + p.id + '/reembolsar')).status, 409);
+    assert.deepEqual(calls, [p.id, p.id]);
+    assert.ok(tgSent.some((m) => m.text.includes(`💸 Pedido #${p.id} reembolsado`)));
+    // cliente
+    assert.equal((await (await fetch(base + '/api/orders/' + p.token, { headers: freshIP() })).json()).status, 'refunded');
+    // depois o MP avisa "refunded": NÃO bloqueia o cliente (foi a loja que devolveu)
+    const before = db.prepare("SELECT COUNT(*) n FROM blocked WHERE value='272701'").get().n;
+    const salvo = lastMpBody; lastMpBody = { ...lastMpBody, external_reference: p.token };
+    mpStatus = 'refunded';
+    const n0 = tgSent.length;
+    try { assert.equal((await webhookMP()).status, 200); } finally { mpStatus = null; lastMpBody = salvo; }
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM blocked WHERE value='272701'").get().n, before);
+    assert.ok(!tgSent.slice(n0).some((m) => /cancelado após pagamento|ESTORNADO/.test(m.text)));
+    // painel mostra
+    const o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === p.id);
+    assert.equal(o.refund, 'done'); assert.equal(o.refundable, false);
+  } finally { _setRefundCaller(null); }
 });

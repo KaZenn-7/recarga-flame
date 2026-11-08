@@ -124,6 +124,8 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .chk.diverge{background:rgba(248,81,73,.1);border-color:rgba(248,81,73,.4);color:var(--txt)}
 .chk.erro{background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.4);color:var(--txt)}
 .a-pay{background:var(--gold);color:#160a04}
+.a-ref{background:var(--panel2);color:var(--red);border:1px solid rgba(248,81,73,.4)!important}
+.refrow{text-align:right;padding:6px 14px 0}.refrow .lnk{background:none;border:0;color:var(--dim);font:inherit;font-size:12px;text-decoration:underline;cursor:pointer;padding:0}
 .lims{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
 .lims label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--mut);font-weight:600}
 .lims input{width:100%;padding:9px 10px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:8px;font:inherit;font-size:14px}
@@ -286,6 +288,12 @@ function card(o){
     o.ap==='erro'?'<div class="chk erro">Pagamento não feito: '+esc((o.apInfo&&o.apInfo.erro)||'')+' — pague de novo ou entregue na mão e toque em Marcar entregue.</div>':
     o.ap==='sent'?'<div class="chk ok">⭐ Pago no bot ('+((o.apInfo&&o.apInfo.stars)||'')+'★)'+(o.apInfo&&o.apInfo.botReply?' · '+esc(o.apInfo.botReply):'')+'</div>':'';
   if(o.blocked)acts='<div class="acts"><span class="blk">🚫 Cliente bloqueado</span><button class="a-unb" onclick="unblock('+o.id+')">Desbloquear</button></div>';
+  // reembolso: pago e não entregue
+  const rf=o.refund==='done'?'<div class="chk ok">💸 Reembolsado ('+brl(o.cents)+') pelo Mercado Pago</div>':
+    o.refund==='erro'?'<div class="chk erro">Reembolso não concluído — pode tentar de novo (não devolve em dobro).</div>':
+    o.status==='cancelled'&&o.refundable?'<div class="chk diverge">💸 Pago e não entregue: o cliente deve ser reembolsado.</div>':'';
+  if(o.refundable&&o.status==='paid')acts+='<div class="refrow"><button class="lnk" onclick="refundNow('+o.id+',this)">cancelar e reembolsar</button></div>';
+  else if(o.refundable)acts=(acts||'<div class="acts"></div>').replace('</div>','<button class="a-ref" onclick="refundNow('+o.id+',this)">💸 Reembolsar '+brl(o.cents)+'</button></div>');
   const ck=o.chk;
   const chk=o.status!=='paid'||!o.chkOn?'':'<div class="chk '+(ck?ck.status:'wait')+'">'+(
     !ck?'🔎 Conferindo no bot do CF…':
@@ -306,7 +314,7 @@ function card(o){
       <div class="price"><div class="v mono">\${brl(o.cents)}</div><div class="s">\${o.stars}★ Stars</div></div>
     </div>
     \${tl.length?\`<div class="times">\${tl.map(t=>'<span>'+esc(t)+'</span>').join('')}</div>\`:''}
-    \${chk}\${apb}\${risk}\${acts}
+    \${chk}\${apb}\${rf}\${risk}\${acts}
   </div>\`;
 }
 function render(){
@@ -513,6 +521,14 @@ setInterval(function(){if(!document.hidden)refreshOrders(false);},15000);
 document.addEventListener('visibilitychange',function(){
   if(!document.hidden){unseen=0;document.title='Painel — Recarga Flame';askBack();refreshOrders(false);}
 });
+async function refundNow(id,btn){
+  const o=ORDERS.find(function(x){return x.id===id;});if(!o)return;
+  if(!confirm((o.status==='paid'?'CANCELAR E REEMBOLSAR':'REEMBOLSAR')+' o pedido #'+id+'?\\n\\nDevolve '+brl(o.cents)+' ao cliente pelo Mercado Pago ('+o.nick+', ID '+o.gameId+'). O pedido não será entregue. Não dá para desfazer.'))return;
+  btn.disabled=true;btn.textContent='Reembolsando…';
+  try{await api('/api/admin/orders/'+id+'/reembolsar',{method:'POST'});alert('Reembolsado: '+brl(o.cents)+' devolvidos pelo Mercado Pago.');}
+  catch(e){alert(e.message);}
+  refreshOrders(false);
+}
 async function approveNow(id,btn){
   const o=ORDERS.find(function(x){return x.id===id;});if(!o)return;
   if(!confirm('APROVAR E PAGAR o pedido #'+id+'?\\n\\nEm revisão por: '+(o.risk||[]).join('; ')+'\\n\\nSó aprove se conferiu o Pix de '+brl(o.cents)+' no app do Mercado Pago.\\n\\nVai pagar '+o.stars+'★ da conta separada: '+o.nome+' para '+o.nick+' (ID '+o.gameId+').'))return;

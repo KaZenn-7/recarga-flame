@@ -206,7 +206,7 @@ const FP_KEY = (() => {
   return k;
 })();
 const fp = (v) => (v ? crypto.createHmac('sha256', FP_KEY).update(String(v)).digest('hex').slice(0, 32) : null);
-for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL', 'approved_at INTEGER', 'entrega_via TEXT', 'manual_motivo TEXT']) {
+for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL', 'approved_at INTEGER', 'entrega_via TEXT', 'manual_motivo TEXT', 'refund_state TEXT', 'refund_info TEXT', 'refund_at INTEGER']) {
   try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
 }
 // conta de origem do Pix vinda do MP (só depois de pago). NÃO usar payer.identification:
@@ -252,6 +252,44 @@ function riskOf(o) {
   return why;
 }
 
+// ---------- Reembolso pelo Mercado Pago (só pedido pago e NÃO entregue) ----------
+// Chave de idempotência fixa por pedido: o MP nunca devolve 2x o mesmo pedido, mesmo com toque repetido ou rede caindo
+// (por isso, em erro, é seguro tentar de novo). Estado em orders.refund_state: pending → done | erro.
+async function mpRefund(o) {
+  const r = await fetch(`${MP_URL}/${encodeURIComponent(o.mp_id)}/refunds`, {
+    method: 'POST', signal: AbortSignal.timeout(15000),
+    headers: { ...mpHeaders, 'Content-Type': 'application/json', 'X-Idempotency-Key': `recargaflame-reembolso-${o.id}` },
+    body: '{}', // devolução integral
+  });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok && ['approved', 'in_process', 'authorized'].includes(j.status || 'approved'), status: r.status, id: j.id, estado: j.status,
+    erro: r.ok ? null : (j.message || j.error || `HTTP ${r.status}`) };
+}
+let refundCaller = mpRefund;                 // trocável nos testes
+const _setRefundCaller = (fn) => { refundCaller = fn || mpRefund; };
+const podeReembolsar = (o) => !!(o && o.mp_id && o.paid_at && ['paid', 'cancelled'].includes(o.status) && o.refund_state !== 'done' && o.refund_state !== 'pending');
+async function reembolsar(id) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (!o) return { ok: false, why: 'pedido não encontrado' };
+  if (['delivered', 'reversed'].includes(o.status)) return { ok: false, why: 'pedido já entregue — sem reembolso pelos Termos' };
+  if (!podeReembolsar(o)) return { ok: false, why: o.refund_state === 'done' ? 'já reembolsado' : o.refund_state === 'pending' ? 'reembolso em andamento' : 'pedido sem pagamento' };
+  // trava + tira da fila (pago → cancelado) ANTES de chamar o MP
+  const lock = db.prepare(`UPDATE orders SET refund_state='pending', status='cancelled', manual_motivo=COALESCE(manual_motivo, 'reembolsado pela loja')
+    WHERE id=? AND status IN ('paid','cancelled') AND (refund_state IS NULL OR refund_state='erro')`).run(id);
+  if (!lock.changes) return { ok: false, why: 'reembolso em andamento' };
+  let r;
+  try { r = await refundCaller(o); } catch (e) { r = { ok: false, erro: String(e?.message || e).slice(0, 120) }; }
+  if (r.ok) {
+    db.prepare("UPDATE orders SET refund_state='done', refund_at=?, refund_info=? WHERE id=?").run(Date.now(), JSON.stringify({ id: r.id, estado: r.estado }), id);
+    tgMarkup(o, doneKeyboard(`💸 Reembolsado ${brlTxt(o.cents)}`));
+    tgSend(`💸 Pedido #${id} reembolsado: ${brlTxt(o.cents)} devolvidos via Mercado Pago (${o.nickname} · ID ${o.game_id}).`);
+    return { ok: true, cents: o.cents };
+  }
+  db.prepare("UPDATE orders SET refund_state='erro', refund_info=? WHERE id=?").run(JSON.stringify({ erro: r.erro }), id);
+  return { ok: false, why: 'o Mercado Pago recusou: ' + (r.erro || 'erro desconhecido') + ' (pode tentar de novo; não devolve em dobro)' };
+}
+const refundKb = (o) => ({ inline_keyboard: [[{ text: `💸 Reembolsar ${brlTxt(o.cents)}`, callback_data: `r:${o.id}` }]] });
+
 // Sinal de estorno anterior (conta bancária que pagou ou aparelho) → NÃO entrega: cancela na hora, bloqueia o
 // cliente e avisa o operador para devolver o valor (Termos: pedido não entregue = reembolso integral).
 // IP de estorno NÃO entra aqui (4G/CGNAT é compartilhado): continua só como alerta em riskOf.
@@ -265,9 +303,11 @@ function bloquearPedido(o, motivo) {
   if (!r.changes) return;
   blockClient(o, 'bloqueio automático (sinal de estorno)');
   const v = brlTxt(o.cents);
-  tgSend(`🚫 Pedido #${o.id} BLOQUEADO automaticamente: ${motivo}.\n${o.prod_nome || o.product} · ${v} · ${o.nickname} · ID ${o.game_id}\n`
-    + `NÃO foi entregue. O cliente PAGOU: devolva ${v} pelo app do Mercado Pago (Termos: não entregue = reembolso integral).\n`
-    + 'ID e e-mail deste pedido também foram bloqueados. Se for engano, desbloqueie no card do pedido (aba Cancelados).');
+  tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true, reply_markup: refundKb(o),
+    text: `🚫 Pedido #${o.id} BLOQUEADO automaticamente: ${motivo}.\n${o.prod_nome || o.product} · ${v} · ${o.nickname} · ID ${o.game_id}\n`
+    + `NÃO foi entregue. O cliente PAGOU: devolva ${v} (botão abaixo ou app do Mercado Pago — Termos: não entregue = reembolso integral).\n`
+    + 'ID e e-mail deste pedido também foram bloqueados. Se for engano, desbloqueie no card do pedido (aba Cancelados).' })
+    .then((j) => { const mid = j?.result?.message_id; if (mid) db.prepare('UPDATE orders SET tg_msg=? WHERE id=?').run(mid, o.id); });
 }
 
 async function syncPayment(mpId) {
@@ -293,7 +333,8 @@ async function syncPayment(mpId) {
     const r = db.prepare(`UPDATE orders SET status = CASE status WHEN 'delivered' THEN 'reversed' ELSE 'cancelled' END
       WHERE id=? AND status IN ('pending','paid','delivered')`).run(o.id);
     // estorno/chargeback de pedido já pago ou entregue: operador precisa saber (risco de MED)
-    if (r.changes && (before === 'paid' || before === 'delivered')) {
+    // (reembolso feito pela própria loja — refund_state — não é contestação do cliente: não bloqueia)
+    if (r.changes && (before === 'paid' || before === 'delivered') && !o.refund_state) {
       const pp = payerPrints(pay);
       blockClient({ ...o, payer_acct: o.payer_acct || pp.acct }, pay.status);
       tgMarkup(o, doneKeyboard(before === 'delivered' ? '⚠️ Estornado após entrega' : '⛔ Cancelado — não entregar'));
@@ -488,12 +529,24 @@ async function handleTgUpdate(u) {
   if (String(cq.from?.id) !== String(env.TG_CHAT_ID) || String(cq.message?.chat?.id) !== String(env.TG_CHAT_ID)) {
     return answer('Sem permissão.');
   }
-  const m = /^([dDbpPaA]):(\d+)$/.exec(cq.data || '');
+  const m = /^([dDbpPaArR]):(\d+)$/.exec(cq.data || '');
   if (!m) return answer('Nada a fazer aqui.');
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(Number(m[2]));
   if (!o) return answer('Pedido não encontrado.');
   const msgId = cq.message.message_id;
   const setKb = (kb) => tgApi('editMessageReplyMarkup', { chat_id: env.TG_CHAT_ID, message_id: msgId, reply_markup: kb });
+  if (m[1] === 'r') {
+    if (!podeReembolsar(o)) { await setKb(doneKeyboard(o.refund_state === 'done' ? '💸 Já reembolsado' : 'Sem reembolso possível')); return answer('Este pedido não pode ser reembolsado (entregue, sem pagamento ou já reembolsado).', true); }
+    await setKb({ inline_keyboard: [[{ text: `💸 Sim, devolver ${brlTxt(o.cents)}`, callback_data: `R:${o.id}` }]] });
+    return answer(`Vai devolver ${brlTxt(o.cents)} ao cliente pelo Mercado Pago e cancelar o pedido #${o.id}. Não dá para desfazer.`, true);
+  }
+  if (m[1] === 'R') {
+    await answer('Reembolsando…');
+    const r = await reembolsar(o.id);
+    if (!r.ok) { await setKb(refundKb(o)); tgSend(`⚠️ Reembolso do pedido #${o.id}: ${r.why}`); }
+    else if (msgId !== o.tg_msg) await setKb(doneKeyboard(`💸 Reembolsado ${brlTxt(o.cents)}`));
+    return;
+  }
   if (o.status !== 'paid') {
     const lbl = o.status === 'delivered' ? '✅ Já estava entregue' : '⛔ Pedido ' + (o.status === 'reversed' ? 'estornado' : 'cancelado') + ' — não entregar';
     await setKb(doneKeyboard(lbl));
@@ -1196,7 +1249,7 @@ app.get('/api/orders/:token', async (req, res) => {
     o = findOrder.get(req.params.token);
   }
   const entrega = entregaState(o);
-  const st = o.status === 'cancelled' && o.paid_at ? 'refund' : o.status; // pago e cancelado antes da entrega
+  const st = o.status === 'cancelled' && o.paid_at ? (o.refund_state === 'done' ? 'refunded' : 'refund') : o.status; // pago e não entregue
   if (req.query.full !== '1') return res.json({ status: st, entrega });
   // Dados para reabrir o pedido pelo link (quem tem o token = dono do pedido).
   // Nunca devolve e-mail. QR só enquanto o Pix pode ser pago.
@@ -1406,6 +1459,7 @@ function painelOrders() {
       canPay: o.status === 'paid' ? canAutopay(o) : null,
       canApprove: o.status === 'paid' ? canApprove(o) : false, approved: !!o.approved_at,
       blocked: ['cancelled', 'reversed'].includes(o.status) && o.paid_at ? orderBlocked(o) : false,
+      refundable: podeReembolsar(o), refund: o.refund_state || null,
     };
   });
 }
@@ -1479,6 +1533,11 @@ app.post('/api/admin/orders/:id/check', admin, async (req, res) => {
   if (!o) return res.status(404).json({ error: 'Pedido não encontrado.' });
   if (o.status !== 'paid') return res.status(409).json({ error: 'Só pedidos pagos aguardando entrega.' });
   res.json(await conferir(Number(req.params.id)));
+});
+app.post('/api/admin/orders/:id/reembolsar', admin, async (req, res) => {
+  if (!guard(req, res)) return;
+  const r = await reembolsar(Number(req.params.id));
+  res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
 });
 app.post('/api/admin/orders/:id/aprovar', admin, async (req, res) => {
   if (!guard(req, res)) return;
@@ -1943,4 +2002,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

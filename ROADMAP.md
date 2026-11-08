@@ -362,3 +362,10 @@ Recalcula sozinho se os preços mudarem; `RISK_DAY_BRL`/`LIMIT_DAY_BRL` no .env 
 - Pago com sinal de estorno (conta bancária que pagou ou aparelho já bloqueados) → NÃO vai para revisão: cancela na hora,
   bloqueia ID/e-mail do pedido, aviso 🚫 no Telegram para DEVOLVER o valor no app do MP (reembolso é manual).
   Cliente vê "Pedido cancelado — o valor será devolvido" (status 'refund' na API). IP de estorno segue só como alerta.
+
+### Reembolso pelo Mercado Pago (2026-11-08)
+Botão "💸 Reembolsar" (cancelado e pago) / "cancelar e reembolsar" (pago na fila) no card do painel e no aviso 🚫 do
+Telegram (com confirmação). `POST /v1/payments/{id}/refunds` integral com `X-Idempotency-Key: recargaflame-reembolso-<id>`
+(MP nunca devolve 2x; erro pode ser repetido). Entregue/estornado: recusado (Termos). Estado em orders.refund_state
+(pending/done/erro). Reembolso da loja não é tratado como estorno do cliente (não bloqueia). Cliente vê "valor devolvido".
+Obs.: o MP só devolve se houver saldo na conta do Mercado Pago.
