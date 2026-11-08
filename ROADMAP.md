@@ -331,5 +331,6 @@ OK: UFW deny-by-default, fail2ban (sshd), unattended-upgrades, TLS 1.2/1.3, serv
 
 ### Custo da Star pelas compras (2026-11-08)
 Compras de Stars ficam em `stars_purchases` (Stars + R$ pagos) — SÓ para custo, NUNCA alteram o saldo (o saldo vem da
-leitura do Telegram). Custo atual = média ponderada das compras mais recentes que somam o saldo; congelado em cada
+leitura do Telegram). Custo atual = custo EXATO do saldo: compras mais recentes primeiro, contando só a parte de cada uma
+que ainda está no saldo; congelado em cada
 pedido (`orders.star_cost`). Aviso 💱 no Telegram quando muda, com produtos no prejuízo. Painel → ★ → "+ Registrar compra".

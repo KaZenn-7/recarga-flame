@@ -1123,3 +1123,22 @@ test('custo da Star: recarga com valor atualiza o custo dos NOVOS pedidos; venda
   assert.equal((await adm('DELETE', '/api/admin/stars/compras/' + rec.id)).status, 200);
   assert.equal((await (await adm('GET', '/api/admin/stars')).json()).custoAtual, 0.0875);
 });
+
+test('custo da Star exato: conta só a parte de cada compra que ainda está no saldo', async () => {
+  // saldo manual de 3.000★; compras: antiga 2.000★ a R$ 0,0875 e nova 2.500★ a R$ 0,092
+  _setStarsReader(null);
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 3000 });
+  await adm('POST', '/api/admin/stars', { kind: 'compra', stars: 2000, cents: 17500 });
+  await adm('POST', '/api/admin/stars', { kind: 'compra', stars: 2500, cents: 23000 });
+  let s = await (await adm('GET', '/api/admin/stars')).json();
+  // 2.500 × 0,092 + 500 × 0,0875 = 273,75 ÷ 3.000 = 0,09125
+  assert.ok(Math.abs(s.custoAtual - 0.09125) < 1e-9, String(s.custoAtual));
+  // saldo cai para 2.000 → só a compra nova
+  await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 2000 });
+  await adm('POST', '/api/admin/stars', { kind: 'compra', stars: 1, cents: 9 }); // dispara recálculo
+  s = await (await adm('GET', '/api/admin/stars')).json();
+  // 1 × 0,09 + 1.999 × 0,092
+  assert.ok(Math.abs(s.custoAtual - (0.09 + 1999 * 0.092) / 2000) < 1e-9, String(s.custoAtual));
+  for (const c of s.compras.filter((c) => [2000, 2500, 1].includes(c.stars))) await adm('DELETE', '/api/admin/stars/compras/' + c.id);
+});

@@ -325,13 +325,19 @@ db.transaction(() => {
 })();
 // pedidos antigos (antes do custo automático) ficam com o custo padrão da época
 db.prepare('UPDATE orders SET star_cost=? WHERE star_cost IS NULL').run(STAR_COST);
-// Custo atual = média ponderada das COMPRAS mais recentes que somam o saldo atual — ou seja, quanto custaram as
-// Stars que estão na conta agora. Sem compra registrada: STAR_COST_BRL.
+// Custo atual = custo exato das Stars que estão na conta agora: média ponderada das compras mais recentes,
+// contando só a parte de cada uma que ainda compõe o saldo. Sem compra registrada: STAR_COST_BRL.
 function calcStarCost(saldo) {
   const recs = db.prepare('SELECT stars, cents FROM stars_purchases WHERE cents > 0 AND stars > 0 ORDER BY id DESC').all();
   if (!recs.length) return { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
-  let st = 0, c = 0, n = 0;
-  for (const r of recs) { st += r.stars; c += r.cents; n++; if (st >= Math.max(saldo, 1)) break; }
+  // exato: da mais nova para a mais antiga, conta só a PARTE de cada compra que ainda está no saldo
+  // (ex.: saldo 3.000 = 2.500 da última + 500 da anterior). Saldo maior que tudo registrado: usa todas as compras.
+  let falta = Math.max(saldo, 1), st = 0, c = 0, n = 0;
+  for (const r of recs) {
+    const usa = Math.min(falta, r.stars);
+    st += usa; c += usa * (r.cents / r.stars); n++; falta -= usa;
+    if (falta <= 0) break;
+  }
   return { cost: c / st / 100, fonte: 'recargas', recargas: n };
 }
 let STAR_INFO = { cost: STAR_COST, fonte: 'padrao', recargas: 0 };
