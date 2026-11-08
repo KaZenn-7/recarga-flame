@@ -89,7 +89,7 @@ globalThis.fetch = async (url, opts) => {
   return realFetch(url, opts); // localhost e demais
 };
 
-let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
+let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
 let COOKIE = '';
 async function login() {
   const post = (u, b) => fetch(base + u, { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
@@ -104,7 +104,7 @@ const freshIP = () => ({ 'X-Forwarded-For': `10.0.${(ipSeq >> 8) & 255}.${ipSeq+
 
 before(async () => {
   const mod = await import('../server.js?test=' + Date.now());
-  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
+  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}`;
   process.env.PUBLIC_URL = base; // para checagens same-origin
@@ -1289,4 +1289,49 @@ test('margem por produto, ranking por lucro e desempenho de cupom (visitas/conve
   assert.ok(aq.visitas >= 1); // visitas do teste do funil
   assert.equal(aq.conversao, aq.pedidos / aq.visitas);
   assert.equal(aq.lucroLoja, aq.lucro - aq.comissao);
+});
+
+test('entregas: registra como foi entregue e o motivo de não ser automática; analytics agrupa', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 771, account: 'jogador_teste', produto: '', msgId: 1 }));
+  _setInvoicePayer(async (a) => ({ stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }));
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 2 });
+    await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 50000 }); // saldo de sobra (testes anteriores gastaram)
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 100000 });
+    mpShouldApprove = true;
+    // 1ª compra ≥ R$ 50 no automático → não paga sozinho, motivo = revisão: primeira compra; depois aprovado
+    const j = await (await postJ('/api/orders', { product: 'c50000', gameId: '232301', email: 'ent@x.com' })).json();
+    await pagar(j.token); await new Promise((r) => setTimeout(r, 60));
+    assert.match(db.prepare('SELECT manual_motivo FROM orders WHERE id=?').get(j.id).manual_motivo, /REVISAR: primeira compra/);
+    { const rr = await adm('POST', '/api/admin/orders/' + j.id + '/aprovar'); assert.equal(rr.status, 200, await rr.text()); }
+    assert.equal(db.prepare('SELECT entrega_via FROM orders WHERE id=?').get(j.id).entrega_via, 'aprovado');
+    // entrega manual pelo painel
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
+    const k = await (await postJ('/api/orders', { product: 'c1000', gameId: '232302', email: 'ent2@x.com' })).json();
+    await pagar(k.token); await new Promise((r) => setTimeout(r, 40));
+    await adm('POST', '/painel/' + k.id + '/entregue');
+    assert.equal(db.prepare('SELECT entrega_via FROM orders WHERE id=?').get(k.id).entrega_via, 'manual');
+    const a = await (await adm('GET', '/api/admin/analytics')).json();
+    const tipos = Object.fromEntries(a.entregaTipos.map((x) => [x.tipo, x.n]));
+    assert.ok(tipos.aprovado >= 1 && tipos.manual >= 1);
+    assert.ok(a.motivos.some((m) => m.motivo === 'Revisão: primeira compra'));
+  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+});
+
+test('previsão de Stars: ritmo, até quando e quanto comprar', async () => {
+  // saldo manual 3.000★; 1.400★ entregues "ontem" → ritmo ~700★/dia (2 dias de histórico)
+  db.exec("DELETE FROM stars_ledger");
+  db.prepare("INSERT INTO stars_ledger (kind, delta, nota) VALUES ('ajuste', 4400, 'x')").run();
+  db.prepare("INSERT INTO stars_ledger (kind, delta, order_id, created_at) VALUES ('entrega', -1400, 999001, datetime('now','-1 day'))").run();
+  const f = starsForecast();
+  assert.equal(f.saldo, 3000);
+  assert.ok(f.ritmo >= 600 && f.ritmo <= 1400, String(f.ritmo));
+  assert.ok(f.dias > 0 && f.dias < 6);
+  assert.ok(f.comprar > 0 && f.comprar % 100 === 0); // cobre 14 dias + reserva
+  assert.match(f.ate, /^\d{4}-\d{2}-\d{2}$/);
+  const s = await (await fetch(base + '/api/admin/stars', { headers: { Cookie: COOKIE, 'x-painel': '1', ...freshIP() } })).json();
+  assert.ok(s.previsao && s.previsao.comprar === f.comprar);
+  assert.match(dailySummary(), /🛒 Compre ~\d+★ \(≈ R\$/);
+  db.exec("DELETE FROM stars_ledger WHERE order_id=999001");
 });

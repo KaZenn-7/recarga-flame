@@ -103,6 +103,9 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .sbar span{flex:1}.sbar button{border:0;border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;background:var(--gold);color:#160a04;cursor:pointer}
 .nost{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(227,179,65,.18);color:var(--gold);vertical-align:1px}
 .serr{color:var(--red)}
+.fcast{border:1px solid rgba(63,185,80,.35);background:rgba(63,185,80,.07);border-radius:10px;padding:10px 12px;margin:0 0 12px}
+.fcast.buy{border-color:rgba(227,179,65,.45);background:rgba(227,179,65,.08)}
+.fcast b{display:block;font-size:14px;margin-bottom:2px}.fcast span{font-size:12px;color:var(--mut)}
 .ssec{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:16px 0 6px;font-weight:700}
 .sbig{font-size:34px;font-weight:800;line-height:1.1;color:var(--gold)}.ssub{font-size:13px;color:var(--mut);margin:4px 0 14px}
 .sacts{display:flex;gap:8px;margin-bottom:14px}.sacts button{flex:1;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font:inherit;font-weight:700;cursor:pointer}
@@ -350,6 +353,14 @@ function renderStars(){
     else if(R.err)t='⚠ Leitura do Telegram falhou ('+R.err+'). Usando o saldo manual.';
     else t='Lendo saldo do Telegram…';
     B.appendChild(el('div','ssub'+(R.err?' serr':''),t));
+  }
+  const F=STARS.previsao;
+  if(F&&STARS.configurado){
+    const fc=el('div','fcast'+(F.comprar?' buy':''));
+    const dd=function(s){return s.split('-').reverse().slice(0,2).join('/');};
+    fc.appendChild(el('b',null,F.comprar?('🛒 Compre ~'+fmtN(F.comprar)+'★'+(F.custo?' (≈ '+brlFromCents(F.custo)+')':'')+(F.ate?' até '+dd(F.ate):'')):'✅ Stars em dia'));
+    fc.appendChild(el('span',null,F.ritmo?('Ritmo '+fmtN(F.ritmo)+'★/dia (7 dias) · dura ~'+Math.max(0,Math.floor(F.dias))+' dias · reserva '+fmtN(F.reserva)+'★'+(F.comprar?' · cobre '+F.alvo+' dias':'')):('Sem entregas nos últimos 7 dias · reserva mínima '+fmtN(F.reserva)+'★')));
+    B.appendChild(fc);
   }
   let sub=STARS.configurado?'Fila a entregar: '+fmtN(STARS.fila)+'★ · aviso abaixo de '+fmtN(STARS.low)+'★':'Ainda não configurado. Confira no Telegram e informe o saldo atual.';
   sub+=' · custo por Star: R$ '+STARS.custoAtual.toFixed(4).replace('.',',')+(STARS.custoFonte==='recargas'?' (média das compras que formam o saldo; vale para os novos pedidos)':' (padrão — registre suas compras de Stars para atualizar)');
@@ -799,8 +810,31 @@ async function loadAna(){
   if(a.estornos){const w=el('div','ccard');w.appendChild(el('h4',null,'⚠ '+a.estornos+(a.estornos>1?' estornos':' estorno')+' no período'));
     w.appendChild(el('p','sub','Pedidos pagos que voltaram (MED/chargeback). Não entram nas vendas acima.'));body.appendChild(w);}
   if(a.funil)body.appendChild(funnelCard(a.funil));
+  if(a.entregaTipos)body.appendChild(entregaCard(a));
   body.appendChild(dayChart(a,r));
   body.appendChild(prodRank(a.produtos));
+}
+// como os pedidos foram entregues e por que não foram automáticos
+function entregaCard(a){
+  const NOMES={auto:'Automática (sem toque)',aprovado:'Aprovada por você',toque:'1 toque',manual:'Manual'};
+  const card=el('div','ccard');card.appendChild(el('h4',null,'Como os pedidos foram entregues'));
+  const tot=a.entregaTipos.reduce(function(s,t){return s+t.n;},0);
+  card.appendChild(el('p','sub',tot?(tot+(tot===1?' entrega':' entregas')+' no período · tempo = mediana do pagamento à entrega'):'Sem entregas no período'));
+  if(!tot)return card;
+  const box=el('div','rank');
+  a.entregaTipos.filter(function(t){return t.n;}).forEach(function(t){
+    const r=el('div','rk'),tp=el('div','top');tp.appendChild(el('span',null,NOMES[t.tipo]));
+    tp.appendChild(el('span',null,t.n+' · '+Math.round(t.n/tot*100)+'%'+(t.medianaMin!=null?' · '+fmtMin(t.medianaMin):'')));r.appendChild(tp);
+    const tr=el('div','track'),b=el('div','bar');b.style.width=Math.max(1,t.n/tot*100)+'%';tr.appendChild(b);r.appendChild(tr);box.appendChild(r);
+  });
+  card.appendChild(box);
+  if(a.motivos&&a.motivos.length){
+    card.appendChild(el('p','sub','Por que não foram automáticos:'));
+    const t=el('table','ttab');t.style.fontSize='12.5px';
+    a.motivos.forEach(function(m){const tr=document.createElement('tr');tr.appendChild(el('td',null,m.motivo));tr.appendChild(el('td',null,String(m.n)));t.appendChild(tr);});
+    card.appendChild(t);
+  }
+  return card;
 }
 // funil de compra: aparelhos distintos por etapa (estatística própria da loja)
 function funnelCard(f){

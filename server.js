@@ -197,7 +197,7 @@ const FP_KEY = (() => {
   return k;
 })();
 const fp = (v) => (v ? crypto.createHmac('sha256', FP_KEY).update(String(v)).digest('hex').slice(0, 32) : null);
-for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL', 'approved_at INTEGER']) {
+for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL', 'approved_at INTEGER', 'entrega_via TEXT', 'manual_motivo TEXT']) {
   try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
 }
 // conta de origem do Pix vinda do MP (só depois de pago). NÃO usar payer.identification:
@@ -429,8 +429,10 @@ function starsShortMsg() {
 }
 
 // paid → delivered (painel ou Telegram): e-mail ao cliente + atualiza o aviso. true se mudou.
+// via: 'auto' (sem toque) | 'toque' (1 toque) | 'aprovado' (aprovar e pagar) | 'painel'/'telegram' (manual)
 function markDelivered(id, via) {
-  const r = db.prepare("UPDATE orders SET status='delivered', delivered_at=CURRENT_TIMESTAMP WHERE id=? AND status='paid'").run(id);
+  const tipo = ['auto', 'toque', 'aprovado'].includes(via) ? via : 'manual';
+  const r = db.prepare("UPDATE orders SET status='delivered', delivered_at=CURRENT_TIMESTAMP, entrega_via=? WHERE id=? AND status='paid'").run(tipo, id);
   if (!r.changes) return false;
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   orderEv(o, 'delivered');
@@ -596,7 +598,7 @@ function canAutopay(o) {
 }
 // pedido em REVISAR que poderia ser pago se aprovado (conferência ✅, tetos, saldo, modo ligado)
 const canApprove = (o) => o.status === 'paid' && !o.approved_at && riskOf(o).length > 0 && canAutopay({ ...o, approved_at: 1 }).ok;
-async function autopay(id, { aprovar = false } = {}) {
+async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toque' } = {}) {
   let o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o) return { ok: false, why: 'pedido não encontrado' };
   if (aprovar) {
@@ -617,7 +619,7 @@ async function autopay(id, { aprovar = false } = {}) {
     const r = await invoicePayer({ startParam: `s_${code}_${o.game_id}`, expectStars: starsOf(o), expectAccount: o.nickname,
       onInvoice: (m) => { invMsgId = m; db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ invMsgId: m }), id); } }, env);
     save('sent', r);
-    markDelivered(id, 'auto');
+    markDelivered(id, via);
     syncStarsReal(true);
     return { ok: true, ...r };
   } catch (e) {
@@ -675,6 +677,7 @@ async function conferir(id, fromPaid = false, attempt = 1) {
   }
   if (retry) { const t = setTimeout(() => conferir(id, true, attempt + 1), RETRY_MS); t.unref?.(); return ck; }
   if (fromPaid && autoMode()) await entregaAuto(id);
+  else if (fromPaid) setMotivo(id, autopayMode() === '1' ? 'modo 1 toque (automático desligado)' : 'modo desligado');
   return ck;
 }
 
@@ -694,12 +697,16 @@ async function entregaAuto(id, attempt = 1) {
   const ck = chkOf(o);
   const head = `#${id} · ${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}`;
   if (ck?.status !== 'ok') {
+    setMotivo(id, ck?.status === 'diverge' ? 'conferência não bateu' : 'conferência falhou');
     tgSend(`🖐 Entrega MANUAL necessária ${head}\n${ck ? chkLine(ck) : 'sem conferência'}\n${saldoLine()}`);
     return;
   }
   const can = canAutopay(o);
-  if (!can.ok) { tgSend(`🖐 Entrega MANUAL necessária ${head}\nMotivo: ${can.why}\n${saldoLine()}`); return; }
-  const r = await autopay(id);
+  if (!can.ok) {
+    setMotivo(id, can.revisar ? 'REVISAR: ' + riskOf(o)[0] : can.why);
+    tgSend(`🖐 Entrega MANUAL necessária ${head}\nMotivo: ${can.why}\n${saldoLine()}`); return;
+  }
+  const r = await autopay(id, { via: 'auto' });
   // recusado ANTES de cobrar por motivo passageiro (bot lento, flood, rede): tenta de novo 1x
   if (!r.ok && !r.incerto && attempt < 2 && transient(r.why)) {
     db.prepare("UPDATE orders SET autopay_info=json_set(COALESCE(autopay_info,'{}'),'$.retry',1) WHERE id=?").run(id);
@@ -708,7 +715,26 @@ async function entregaAuto(id, attempt = 1) {
   await syncStarsReal(true);
   if (r.ok) tgSend(`✅ Entregue automaticamente ${head}${r.botReply ? '\nBot do CF: ' + r.botReply : ''}\n${saldoLine()}`);
   else if (r.incerto) tgSend(`🚨 Entrega automática INCERTA ${head} — veja o alerta acima.\n${saldoLine()}`);
-  else tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`);
+  else { setMotivo(id, 'pagamento falhou: ' + r.why); tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`); }
+}
+// por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
+const setMotivo = (id, m) => db.prepare('UPDATE orders SET manual_motivo=? WHERE id=? AND manual_motivo IS NULL').run(String(m).slice(0, 160), id);
+function motivoCat(m) {
+  const s = String(m || '');
+  if (!s) return 'sem registro';
+  if (/primeira compra/.test(s)) return 'Revisão: primeira compra';
+  if (/valor alto/.test(s)) return 'Revisão: valor alto';
+  if (/pagos em 24h/.test(s)) return 'Revisão: muito em 24h';
+  if (/estorno|conta bancária|aparelho|mesmo IP/.test(s)) return 'Revisão: ligado a estorno';
+  if (/REVISAR|conferência no bot/.test(s)) return 'Revisão: outro';
+  if (/conferência/.test(s)) return 'Conferência falhou';
+  if (/teto por pedido/.test(s)) return 'Acima do teto por pedido';
+  if (/24h atingido/.test(s)) return 'Teto de 24h atingido';
+  if (/saldo/.test(s)) return 'Sem saldo de Stars';
+  if (/sessão/.test(s)) return 'Sessão da conta caiu';
+  if (/desligad|modo/.test(s)) return 'Modo automático desligado';
+  if (/pagamento falhou/.test(s)) return 'Pagamento falhou';
+  return 'Outro';
 }
 // O que o CLIENTE vê enquanto o pedido está pago (só no modo automático): 'auto' | 'manual' | null.
 // Nunca expõe o motivo (fraude, saldo, etc.).
@@ -1354,7 +1380,7 @@ function starsInfo() {
   const compras = db.prepare('SELECT * FROM stars_purchases ORDER BY created_at DESC, id DESC LIMIT 20').all()
     .map((p) => ({ id: p.id, stars: p.stars, cents: p.cents, nota: p.nota || '', data: fmtD(p.created_at), unit: p.cents / p.stars / 100 }));
   return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
-    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, taxaMP: MP_FEE, custoFonte: STAR_INFO.fonte, compras,
+    custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, taxaMP: MP_FEE, previsao: starsForecast(), custoFonte: STAR_INFO.fonte, compras,
     real: realOn() ? { ativo: real, at: REAL.at || null, err: REAL.err, manual: starsSaldo().s } : null,
     autopay: chkOn() ? { on: autopayOn(), mode: autopayMode(), max: autopayMax(), dia: autopayDay(), usado24h: autopay24() } : null };
 }
@@ -1422,6 +1448,35 @@ app.post('/api/admin/orders/:id/autopay', admin, async (req, res) => {
   const r = await autopay(Number(req.params.id));
   res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
 });
+// ---------- Previsão de compra de Stars ----------
+// Ritmo = Stars entregues por dia nos últimos 7 dias (dias com histórico, 1 a 7). Reserva mínima = maior entre o
+// aviso de saldo baixo e o maior produto ativo (para nunca travar um pedido grande). Sugestão: cobrir STARS_TARGET_DAYS.
+const STARS_TARGET_DAYS = Number(env.STARS_TARGET_DAYS ?? 14);
+function starsForecast(now = Date.now()) {
+  const e = starsEff();
+  const gasto7 = -db.prepare("SELECT COALESCE(SUM(delta),0) s FROM stars_ledger WHERE kind='entrega' AND created_at > datetime(?, 'unixepoch', '-7 days')").get(Math.floor(now / 1000)).s;
+  const first = db.prepare("SELECT MIN(created_at) m FROM stars_ledger WHERE kind='entrega'").get().m;
+  const dias = first ? Math.min(7, Math.max(1, Math.ceil((now - Date.parse(first.replace(' ', 'T') + 'Z')) / 86_400_000))) : 7;
+  const ritmo = gasto7 / dias;
+  const fila = starsFila();
+  const maior = Math.max(0, ...Object.values(PRODUCTS).filter((p) => p.ativo).map((p) => p.stars || 0));
+  const reserva = Math.max(STARS_LOW, maior);
+  const livre = (e.n ? e.s : 0) - fila;
+  if (!(ritmo > 0)) return { ritmo: 0, saldo: e.s, fila, reserva, dias: null, ate: null, comprar: livre < reserva ? Math.ceil((reserva - livre) / 100) * 100 : 0, custo: null };
+  const duraDias = livre / ritmo;
+  const ateDias = Math.max(0, (livre - reserva) / ritmo);                       // quando o saldo chega na reserva
+  const comprar = Math.max(0, Math.ceil((ritmo * STARS_TARGET_DAYS + reserva - livre) / 100) * 100);
+  const ate = new Date(now - 3 * 3600_000 + ateDias * 86_400_000).toISOString().slice(0, 10);
+  return { ritmo: Math.round(ritmo), saldo: e.s, fila, reserva, dias: duraDias, ate, comprar, custo: comprar ? Math.round(comprar * STAR_NOW * 100) : 0, alvo: STARS_TARGET_DAYS };
+}
+const fcLine = (f) => {
+  if (!f.ritmo) return f.comprar ? `🛒 Compre ~${f.comprar}★ para manter a reserva de ${f.reserva}★` : null;
+  const ate = f.ate.split('-').reverse().slice(0, 2).join('/');
+  return f.comprar
+    ? `🛒 Compre ~${f.comprar}★ (≈ ${brlTxt(f.custo)}) até ${ate} — cobre ${f.alvo} dias no ritmo de ${f.ritmo}★/dia`
+    : `🛒 Stars ok por ~${Math.floor(f.dias)} dias no ritmo de ${f.ritmo}★/dia`;
+};
+
 // ---------- Resumo diário no Telegram (23h, horário de Brasília) ----------
 const SUMMARY_HOUR = Number(env.SUMMARY_HOUR ?? 23);
 const spDay = (ms = Date.now()) => new Date(ms - 3 * 3600_000).toISOString().slice(0, 10); // dia local (UTC-3)
@@ -1465,6 +1520,7 @@ function dailySummary(day = spDay()) {
       + (autonomia != null ? ` · dura ~${autonomia < 1 ? 'menos de 1 dia' : Math.floor(autonomia) + (Math.floor(autonomia) === 1 ? ' dia' : ' dias')} no ritmo atual (${Math.round(porDia)}★/dia)` : '')
       + (e.n && e.s < STARS_LOW ? ' · 🔻 BAIXO' : ''),
     estornos ? `⚠️ ${estornos} estorno/cancelamento após pagamento nos últimos 7 dias` : null,
+    fcLine(starsForecast()),
   ].filter(Boolean).join('\n');
 }
 // dispara 1x por dia a partir da hora marcada (sobrevive a reinício: guarda o último dia enviado)
@@ -1764,8 +1820,20 @@ app.get('/api/admin/analytics', admin, (req, res) => {
       .sort((x, y) => y.visit - x.visit || y.paid - x.paid);
   };
   const funil = { etapas, cupons: grupo('coupon'), origens: grupo('src') };
+  // como foram entregues os pedidos vendidos no período, e por que não foram automáticos
+  const entregues = ok.filter((o) => o.delivered_at);
+  const tipoDe = (o) => o.entrega_via || (o.autopay === 'sent' ? (o.approved_at ? 'aprovado' : 'auto') : 'manual');
+  const med = (arr) => { if (!arr.length) return null; const v = arr.slice().sort((x, y) => x - y); return Math.round(v[Math.floor((v.length - 1) / 2)]); };
+  const minsOf = (o) => (Date.parse(o.delivered_at.replace(' ', 'T') + 'Z') - Date.parse(o.paid_at.replace(' ', 'T') + 'Z')) / 60000;
+  const entregaTipos = ['auto', 'aprovado', 'toque', 'manual'].map((t) => {
+    const g = entregues.filter((o) => tipoDe(o) === t);
+    return { tipo: t, n: g.length, medianaMin: med(g.map(minsOf)) };
+  });
+  const mc = {};
+  for (const o of entregues.filter((x) => tipoDe(x) !== 'auto')) { const k = motivoCat(o.manual_motivo); mc[k] = (mc[k] || 0) + 1; }
+  const motivos = Object.entries(mc).map(([motivo, n]) => ({ motivo, n })).sort((x, y) => y.n - x.n);
   res.json({
-    from, to, funil,
+    from, to, funil, entregaTipos, motivos,
     vendas: ok.length, faturado, ticket: ok.length ? Math.round(faturado / ok.length) : 0,
     lucro: Math.round(lucro - comissao), comissao: Math.round(comissao), stars, comCupom,
     estornos: sold.length - ok.length,
@@ -1804,4 +1872,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, remindPending, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, remindPending, starsForecast, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
