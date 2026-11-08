@@ -96,6 +96,8 @@ input:focus{outline:0;border-color:#45454c}
 .note{font-size:12.5px;color:var(--dim);margin-top:14px;text-align:center}
 .note.warnbox{color:var(--txt);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:11px 13px;text-align:left}
 .hint{font-size:12px;color:var(--dim);margin:6px 0 0}
+.sug{font-size:13px;color:var(--gold);margin:7px 0 0}.sug b{color:var(--txt);word-break:break-all}
+.sug button{border:0;background:var(--gold);color:#160a04;font:inherit;font-size:12px;font-weight:700;border-radius:6px;padding:3px 9px;margin-left:4px;cursor:pointer}
 .cupbar{display:flex;align-items:center;gap:10px;background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);color:var(--green);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:14px}
 .cupbar b{color:var(--txt)}.cupbar button{margin-left:auto;background:transparent;border:0;color:var(--mut);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:2px 4px}
 .prod .p s{display:block;color:var(--dim);font-weight:500;font-size:10.5px;line-height:1.1;margin-bottom:1px}
@@ -230,6 +232,7 @@ input:focus{outline:0;border-color:#45454c}
     </details>
     <label for="email">Seu e-mail</label>
     <input id="email" type="email" autocomplete="email" placeholder="voce@email.com">
+    <p class="sug hide" id="emailSug">Você quis dizer <b id="emailSugTxt"></b>? <button type="button" id="emailSugOk">Usar</button></p>
     <p class="hint">Exigido pelo Mercado Pago para gerar o Pix. Usamos só para avisar sobre o seu pedido, como a confirmação de entrega.</p>
     <div class="prazo"><b>Entrega automática em até 10 minutos</b> após a confirmação do pagamento, a qualquer hora.</div>
     <button class="btn btn-go" id="pagar">Gerar Pix</button>
@@ -416,6 +419,22 @@ function render(){
 
 /* etapa 3: confirmar + pagar */
 $('voltar').onclick=()=>{$('err3').textContent='';show(2);};
+
+/* sugestão de e-mail: domínio digitado errado (gmail.con, hotmial.com, "gmail" sem .com…) */
+const DOMS=['gmail.com','hotmail.com','outlook.com','yahoo.com','yahoo.com.br','icloud.com','live.com','hotmail.com.br','outlook.com.br','bol.com.br','uol.com.br','terra.com.br','msn.com','me.com'];
+function lev(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i]);for(let j=1;j<=n;j++)d[0][j]=j;
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n];}
+function emailSug(v){
+  const m=/^([^\s@]+)@([^\s@]+)$/.exec(v.trim().toLowerCase());if(!m)return null;
+  const dom=m[2];if(DOMS.includes(dom))return null;
+  let best=null,bd=9;for(const d of DOMS){const x=lev(dom,d);if(x<bd){bd=x;best=d;}}
+  if(!/\./.test(dom)){const c=DOMS.find(d=>d.split('.')[0]===dom);if(c)return m[1]+'@'+c;} // "gmail" → gmail.com
+  return best&&bd<=2&&bd<dom.length/3?m[1]+'@'+best:null;
+}
+function checkEmail(){const s=emailSug($('email').value);$('emailSug').classList.toggle('hide',!s);if(s)$('emailSugTxt').textContent=s;}
+$('email').addEventListener('blur',checkEmail);
+$('email').addEventListener('input',()=>{if(!$('emailSug').classList.contains('hide'))checkEmail();});
+$('emailSugOk').onclick=()=>{$('email').value=$('emailSugTxt').textContent;$('emailSug').classList.add('hide');};
 
 $('pagar').onclick=async()=>{
   $('err3').textContent='';const b=$('pagar');b.disabled=true;b.innerHTML='<span class="ld"></span>Gerando Pix';

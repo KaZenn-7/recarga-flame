@@ -27,7 +27,8 @@ let mpStatus = null;             // força um status na consulta (ex.: 'refunded
 let mpPayer = null;              // dados do pagador devolvidos pelo MP (CPF/conta)
 const tgSent = [];               // mensagens enviadas ao Telegram
 const mailSent = [];             // e-mails enviados ao Resend
-const tgCalls = [];              // todas as chamadas à API do bot ({ method, body })
+const tgCalls = [];
+const avatarCalls = [];               // chamadas ao avatar do CounterFlame              // todas as chamadas à API do bot ({ method, body })
 const lastCode = () => (tgSent.at(-1)?.text.match(/\b(\d{6})\b/) || [])[1];
 let lastMpBody = null;           // captura o corpo enviado ao MP
 globalThis.fetch = async (url, opts) => {
@@ -46,7 +47,9 @@ globalThis.fetch = async (url, opts) => {
     return new Response(JSON.stringify({ ok: true, result }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   // avatar do CounterFlame
-  if (u.includes('/avatar')) {
+  if (u.startsWith('https://counterflame.test/') && u.includes('/avatar')) {
+    avatarCalls.push(u);
+    if (u.includes('/888777/')) return new Response('', { status: 404 }); // conta sem avatar
     return new Response(Buffer.from([0xff, 0xd8, 0xff]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
   }
   // player do CounterFlame
@@ -1353,4 +1356,26 @@ test('analytics: horários/dias de pico e clientes (novos, voltaram, recompra, i
   assert.ok(v && v.compras === 1 && v.comprasTotal === 2);
   assert.ok(c.voltaram >= 1); // 242401 já tinha comprado antes do período
   assert.ok(c.intervaloDias !== null); // mediana entre todos os clientes do período (outros testes compram várias vezes no mesmo minuto)
+});
+
+test('avatar: sem foto → imagem padrão em cache e o CounterFlame não é consultado de novo', async () => {
+  const get = () => fetch(base + '/api/player/888777/avatar', { headers: freshIP() });
+  const n = avatarCalls.length;
+  const r = await get();
+  assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /^image\/svg\+xml/);
+  assert.match(r.headers.get('cache-control'), /max-age=21600/);
+  await get(); await get();
+  assert.equal(avatarCalls.length, n + 1); // só a 1ª consultou o CounterFlame
+  const ok = await fetch(base + '/api/player/749125/avatar', { headers: freshIP() });
+  assert.equal(ok.headers.get('content-type'), 'image/jpeg'); assert.match(ok.headers.get('cache-control'), /max-age=3600/);
+});
+
+test('robots.txt e sitemap.xml', async () => {
+  const r = await (await fetch(base + '/robots.txt')).text();
+  assert.match(r, /Disallow: \/painel/); assert.match(r, /Sitemap: https:\/\/recargaflame\.com\.br\/sitemap\.xml/);
+  const s = await fetch(base + '/sitemap.xml');
+  assert.equal(s.status, 200);
+  const x = await s.text();
+  for (const p of ['/como-funciona', '/perguntas-frequentes', '/termos-de-uso']) assert.ok(x.includes('https://recargaflame.com.br' + p));
+  assert.ok(!x.includes('/painel'));
 });

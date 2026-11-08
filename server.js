@@ -1059,16 +1059,27 @@ app.get('/api/player/:id', limit(15), async (req, res) => {
   res.json({ nickname: player.nickname, avatar: `/api/player/${encodeURIComponent(req.params.id)}/avatar`, blocked });
 });
 
+// Avatar do jogador. Conta sem avatar → imagem padrão em cache (o navegador não pede de novo) e o servidor lembra
+// por 6 h que aquele ID não tem foto (não consulta o CounterFlame a cada atualização do painel).
+const AVATAR_PADRAO = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#1c1c1f"/>'
+  + '<circle cx="32" cy="25" r="11" fill="#45454c"/><path d="M12 56c2-11 10-17 20-17s18 6 20 17" fill="#45454c"/></svg>');
+const semAvatar = new Map(); // id → expira (ms)
+const avatarPadrao = (res) => res.set({ 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=21600' }).send(AVATAR_PADRAO);
 app.get('/api/player/:id/avatar', limit(30), async (req, res) => {
-  if (!validId(req.params.id)) return res.sendStatus(400);
+  const id = req.params.id;
+  if (!validId(id)) return res.sendStatus(400);
+  if ((semAvatar.get(id) || 0) > Date.now()) return avatarPadrao(res);
   try {
-    const r = await fetch(`${CF_BASE}/api/users/${req.params.id}/avatar`, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return res.sendStatus(404);
+    const r = await fetch(`${CF_BASE}/api/users/${id}/avatar`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) {
+      if (r.status === 404) { if (semAvatar.size > 5000) semAvatar.clear(); semAvatar.set(id, Date.now() + 6 * 3600_000); }
+      return avatarPadrao(res);
+    }
     const buf = Buffer.from(await r.arrayBuffer());
     res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set('Cache-Control', 'public, max-age=3600');
     res.send(buf);
-  } catch { res.sendStatus(404); }
+  } catch { avatarPadrao(res); }
 });
 
 app.post('/api/orders', limit(5), async (req, res) => {

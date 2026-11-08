@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /painel
+Disallow: /login
+Disallow: /api/
+
+Sitemap: https://recargaflame.com.br/sitemap.xml
