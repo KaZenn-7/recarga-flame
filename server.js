@@ -1551,6 +1551,14 @@ app.get('/api/admin/analytics', admin, (req, res) => {
   });
 });
 
+// Link curto de cupom para divulgação: /aquila → /?cupom=AQUILA (só cupom ATIVO; senão segue para o 404).
+// Fica por último entre as rotas: /painel, /suporte etc. são resolvidos antes.
+app.get('/:code', (req, res, next) => {
+  const c = normCode(req.params.code);
+  if (!validCode(c) || !getCoupon(c)) return next();
+  res.redirect(302, '/?cupom=' + encodeURIComponent(c));
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Erro interno. Tente novamente.' });

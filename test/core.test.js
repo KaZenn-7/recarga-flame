@@ -1086,3 +1086,12 @@ test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Re
   assert.match(mailSent.at(-1).text, /Pedido informado: #55 \(não verificado\)/);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM support_tickets').get().n, 2);
 });
+
+test('link curto de cupom: /aquila → /?cupom=AQUILA; inativo/inexistente → 404; rotas fixas não são afetadas', async () => {
+  const r = await fetch(base + '/aquila', { redirect: 'manual' });
+  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/?cupom=AQUILA');
+  assert.equal((await fetch(base + '/OFF1', { redirect: 'manual' })).status, 404); // cupom desativado
+  assert.equal((await fetch(base + '/naoexiste', { redirect: 'manual' })).status, 404);
+  assert.equal((await fetch(base + '/suporte', { redirect: 'manual' })).status, 200);
+  assert.equal((await fetch(base + '/login', { redirect: 'manual' })).status, 200);
+});
