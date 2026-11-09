@@ -145,6 +145,13 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .rep .meta{margin-top:8px;padding:9px 10px;border-radius:9px;background:rgba(255,90,31,.07);border:1px solid rgba(255,90,31,.3);font-size:12.5px;color:var(--mut)}
 .rep .meta b{color:var(--txt)}.rep .meta .mt b:first-child{color:var(--orange);font-size:15px}
 .rep .pg{height:7px;background:var(--bg);border-radius:99px;overflow:hidden;margin:7px 0 4px}.rep .pg i{display:block;height:100%;background:var(--orange)}
+.tiers details{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:12px}
+.tiers summary{cursor:pointer;font-weight:700;font-size:14px}.tiers .hint{margin:8px 0}
+.tiers .tt{font-size:13px}.tiers .tt th{font-size:12px;font-weight:600}.tiers .tt td{white-space:nowrap}
+.tiers .tt input{width:96px;padding:7px 8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:7px;font:inherit;font-size:13px}
+.tiers .tt input[data-k="pct"]{width:54px}.tiers .undo{background:none;border:0;color:var(--red);font:inherit;font-size:12px;cursor:pointer;padding:0}
+.tiers .tt td{vertical-align:middle}.tiers .ops{display:flex;gap:8px;margin-top:10px}
+.tiers .ops button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;padding:9px;font:inherit;font-weight:700;cursor:pointer}
 .rep .tot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.rep .tot b{color:var(--txt)}
 .rep .ops{display:flex;gap:6px;margin-top:10px}
 .rep .ops button{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:7px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
@@ -203,6 +210,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 </main>
 <main id="viewCup" style="display:none">
   <div class="padd">
+    <div class="tiers" id="tiersBox"></div>
     <div class="rephead"><b>Comissões</b><select id="repPer" onchange="loadRep()"><option value="m0">Este mês</option><option value="m1">Mês passado</option><option value="all">Tudo</option></select></div>
     <div id="repBox"><div class="empty">Carregando…</div></div>
     <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro: no plano de metas, a faixa do mês (pelo faturamento do parceiro) vale para todas as vendas do mês; no plano fixo, o % do dia da venda. O período muda só a primeira linha; <b>a pagar</b> = ganho total − pagamentos registrados.</p>
@@ -216,8 +224,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
     <div class="fg"><label>Código</label><input id="c_code" placeholder="ex.: AQUILA" autocomplete="off" style="text-transform:uppercase"><div class="hint">A-Z, 0-9, _ ou -. Link: <span class="mono" id="c_link"></span></div></div>
     <div class="frow">
       <div class="fg"><label>Desconto ao cliente (%)</label><input id="c_desc" inputmode="decimal" placeholder="5"></div>
-      <div class="fg"><label>Comissão (% do lucro)</label><input id="c_com" inputmode="decimal" placeholder="20"></div>
+      <div class="fg"><label>Plano de comissão</label><select id="c_plano" onchange="cupPlano()"><option value="metas">Metas (faixas)</option><option value="fixo">Fixo (%)</option></select></div>
     </div>
+    <div class="fg" id="c_com_fg"><label>Comissão fixa (% do lucro)</label><input id="c_com" inputmode="decimal" placeholder="20"></div>
+    <div class="fg"><label>IDs do próprio parceiro (não contam)</label><input id="c_ids" inputmode="numeric" placeholder="ex.: 749125, 1310329" autocomplete="off"><div class="hint">Compras feitas nesses IDs não contam para a meta nem geram comissão.</div></div>
     <div class="fg"><label>Nota (opcional)</label><input id="c_nota" placeholder="ex.: youtuber aquilagado" autocomplete="off"></div>
     <label class="fchk"><button type="button" class="sw" id="c_ativo" onclick="this.classList.toggle('on');cupAtivoTxt()"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
     <p class="merr" id="cerr"></p>
@@ -594,7 +604,7 @@ function setView(v){
   document.getElementById('viewAna').style.display=ana?'':'none';
   document.getElementById('htitle').textContent=ped?'Painel de pedidos':prod?'Produtos':cup?'Cupons':'Analytics';
   if(prod)loadProds();
-  if(cup){loadCups();loadRep();}
+  if(cup){loadCups();loadRep();loadTiers();}
   if(ana)loadAna();
 }
 
@@ -710,7 +720,7 @@ function renderCups(){
 async function togCup(code){
   const c=CUPS.find(function(x){return x.code===code;});if(!c)return;
   try{await api('/api/admin/coupons/'+code,{method:'PUT',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({desconto_pct:c.desconto_pct,comissao_pct:c.comissao_pct,nota:c.nota,ativo:!c.ativo})});
+    body:JSON.stringify({desconto_pct:c.desconto_pct,comissao_pct:c.comissao_pct,nota:c.nota,ativo:!c.ativo,plano:c.plano,ids_proprios:c.ids_proprios||''})});
     c.ativo=!c.ativo;renderCups();}
   catch(e){alert(e.message);}
 }
@@ -722,6 +732,36 @@ function perRange(){
   if(v==='all')return '';
   const m=v==='m1'?d.getMonth()-1:d.getMonth();
   return '?from='+f(new Date(d.getFullYear(),m,1))+'&to='+f(new Date(d.getFullYear(),m+1,0));
+}
+// ---- faixas do plano de metas ----
+let TIERS=[];
+async function loadTiers(){try{TIERS=await api('/api/admin/tiers');renderTiers();}catch(e){$$('tiersBox').textContent=e.message;}}
+function renderTiers(){
+  const B=$$('tiersBox');B.textContent='';
+  const d=document.createElement('details');d.appendChild(el('summary',null,'Plano de metas · faixas de comissão'));
+  d.appendChild(el('p','hint','Faturamento do parceiro no mês → % do lucro em TODAS as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Mudanças valem para o mês atual em diante (meses fechados não mudam).'));
+  const t=el('table','ttab tt');const h=el('tr');['Vendas no mês a partir de','Comissão',''].forEach(function(x){h.appendChild(el('th',null,x));});t.appendChild(h);
+  TIERS.forEach(function(x,i){
+    const tr=el('tr');
+    const a=document.createElement('input');a.inputMode='decimal';a.value=(x.min/100).toFixed(2).replace('.',',');a.dataset.k='min';if(i===0){a.disabled=true;a.value='0,00';}
+    const b=document.createElement('input');b.inputMode='decimal';b.value=String(x.pct).replace('.',',');b.dataset.k='pct';
+    const td1=el('td');td1.appendChild(el('span',null,'R$ '));td1.appendChild(a);const td2=el('td');td2.appendChild(b);td2.appendChild(el('span',null,' %'));
+    const td3=el('td');if(i>0){const rm=el('button','undo','remover');rm.onclick=function(){TIERS.splice(i,1);renderTiers();d.open=true;};td3.appendChild(rm);}
+    tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);t.appendChild(tr);
+  });
+  d.appendChild(t);
+  const ops=el('div','ops');
+  const add=el('button',null,'+ faixa');add.onclick=function(){const l=TIERS[TIERS.length-1];TIERS.push({min:l.min+100000,pct:l.pct+5});renderTiers();B.querySelector('details').open=true;};
+  const sv=el('button',null,'Salvar faixas');sv.onclick=saveTiers;
+  if(TIERS.length<6)ops.appendChild(add);ops.appendChild(sv);d.appendChild(ops);
+  B.appendChild(d);
+}
+async function saveTiers(){
+  const rows=$$('tiersBox').querySelectorAll('table tr');const out=[];
+  const num=function(v){let t=String(v).replace(/[^0-9,.]/g,'');if(t.indexOf(',')>=0)t=t.split('.').join('').replace(',','.');return parseFloat(t);};
+  rows.forEach(function(r,i){if(!i)return;const ins=r.querySelectorAll('input');out.push({min:Math.round(num(ins[0].value)*100)||0,pct:num(ins[1].value)});});
+  try{TIERS=await api('/api/admin/tiers',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(out)});renderTiers();loadRep();alert('Faixas salvas.');}
+  catch(e){alert(e.message);}
 }
 async function loadRep(){
   $$('repBox').innerHTML='<div class="empty">Carregando…</div>';
@@ -773,11 +813,13 @@ function openCup(code){
   $$('ctitle').textContent=c?'Editar cupom':'Novo cupom';
   $$('c_code').value=c?c.code:'';$$('c_code').disabled=!!c;
   $$('c_desc').value=c?String(c.desconto_pct).replace('.',','):'5';
-  $$('c_com').value=c?String(c.comissao_pct).replace('.',','):'20';
+  $$('c_com').value=c?String(c.comissao_pct).replace('.',','):'30';
+  $$('c_plano').value=c&&c.plano==='fixo'?'fixo':'metas';$$('c_ids').value=c?(c.ids_proprios||''):'';cupPlano();
   $$('c_nota').value=c?(c.nota||''):'';
   $$('c_ativo').classList.toggle('on',c?!!c.ativo:true);
   $$('cerr').textContent='';cupLink();cupAtivoTxt();$$('cmodal').classList.add('on');
 }
+function cupPlano(){$$('c_com_fg').style.display=$$('c_plano').value==='fixo'?'':'none';}
 function cupAtivoTxt(){$$('c_ativo_txt').textContent=$$('c_ativo').classList.contains('on')?'Ativo — já pode ser usado':'Inativo — o link não dá desconto';}
 function cupLink(){$$('c_link').textContent=location.origin+'/?cupom='+($$('c_code').value.trim().toUpperCase()||'CODIGO');}
 $$('c_code').oninput=cupLink;
@@ -786,7 +828,8 @@ $$('cmodal').onclick=function(e){if(e.target.id==='cmodal')closeCup();};
 async function saveCup(){
   $$('cerr').textContent='';const b=$$('csave');b.disabled=true;
   const num=function(id){return Number(($$(id).value||'0').replace(',','.'));};
-  const payload={code:$$('c_code').value.trim(),desconto_pct:num('c_desc'),comissao_pct:num('c_com'),nota:$$('c_nota').value.trim(),ativo:$$('c_ativo').classList.contains('on')};
+  const payload={code:$$('c_code').value.trim(),desconto_pct:num('c_desc'),comissao_pct:num('c_com'),nota:$$('c_nota').value.trim(),ativo:$$('c_ativo').classList.contains('on'),
+    plano:$$('c_plano').value,ids_proprios:$$('c_ids').value.trim()};
   try{
     if(editCup)await api('/api/admin/coupons/'+editCup,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     else await api('/api/admin/coupons',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});

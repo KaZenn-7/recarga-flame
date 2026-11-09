@@ -1801,7 +1801,10 @@ function parseCoupon(b, codeFixed) {
   if (!validCode(code)) return { err: 'Código inválido (A-Z, 0-9, _ ou -, 3 a 20 caracteres).' };
   if (!Number.isFinite(desconto) || desconto < 0 || desconto > 50) return { err: 'Desconto deve ser de 0 a 50%.' };
   if (!Number.isFinite(comissao) || comissao < 0 || comissao > 100) return { err: 'Comissão deve ser de 0 a 100% do lucro.' };
-  return { code, desconto_pct: desconto, comissao_pct: comissao, ativo: b.ativo ? 1 : 0, nota: String(b.nota || '').trim().slice(0, 80) };
+  const plano = b.plano === 'fixo' ? 'fixo' : 'metas';
+  const ids = String(b.ids_proprios || '').split(/[\s,;]+/).filter(Boolean);
+  if (ids.some((x) => !/^\d{1,12}$/.test(x)) || ids.length > 20) return { err: 'IDs do próprio parceiro: só números, separados por vírgula (até 20).' };
+  return { code, desconto_pct: desconto, comissao_pct: comissao, ativo: b.ativo ? 1 : 0, nota: String(b.nota || '').trim().slice(0, 80), plano, ids_proprios: ids.join(', ') };
 }
 app.get('/api/admin/coupons', admin, (req, res) => {
   res.json(db.prepare('SELECT * FROM coupons ORDER BY created_at DESC').all().map((c) => ({ ...c, ativo: !!c.ativo })));
@@ -1811,15 +1814,19 @@ app.post('/api/admin/coupons', admin, (req, res) => {
   const c = parseCoupon(req.body ?? {});
   if (c.err) return res.status(400).json({ error: c.err });
   if (db.prepare('SELECT 1 FROM coupons WHERE code=?').get(c.code)) return res.status(409).json({ error: 'Já existe um cupom com esse código.' });
-  db.prepare('INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, nota) VALUES (?,?,?,?,?)').run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota);
+  db.prepare('INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, nota, plano, ids_proprios, ptoken) VALUES (?,?,?,?,?,?,?,?)')
+    .run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, crypto.randomBytes(18).toString('base64url'));
   res.json({ ok: true });
 });
 app.put('/api/admin/coupons/:code', admin, (req, res) => {
   if (!guard(req, res)) return;
-  if (!db.prepare('SELECT 1 FROM coupons WHERE code=?').get(normCode(req.params.code))) return res.status(404).json({ error: 'Cupom não encontrado.' });
-  const c = parseCoupon(req.body ?? {}, req.params.code);
+  const atual = db.prepare('SELECT * FROM coupons WHERE code=?').get(normCode(req.params.code));
+  if (!atual) return res.status(404).json({ error: 'Cupom não encontrado.' });
+  // campos que não vierem mantêm o valor atual (edição parcial nunca troca o plano sem querer)
+  const c = parseCoupon({ plano: atual.plano, ids_proprios: atual.ids_proprios, ...(req.body ?? {}) }, req.params.code);
   if (c.err) return res.status(400).json({ error: c.err });
-  db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=? WHERE code=?').run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.code);
+  db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=? WHERE code=?')
+    .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.code);
   res.json({ ok: true });
 });
 // ---------- Plano de metas dos parceiros ----------
@@ -1969,6 +1976,15 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
       lucroLoja: 0, visitas: 0, conversao: null, total: 0, pago: 0, saldo: 0, pagamentos: [], mesAtual: mesAtual(ctx, c.code) });
   }
   res.json({ from, to, cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
+});
+// faixas do plano de metas (editáveis no painel); valores em centavos
+app.get('/api/admin/tiers', admin, (req, res) => res.json(getTiers()));
+app.put('/api/admin/tiers', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const t = (Array.isArray(req.body) ? req.body : []).map((x) => ({ min: Math.round(Number(x.min)), pct: Number(x.pct) }));
+  if (!validTiers(t)) return res.status(400).json({ error: 'Faixas inválidas: a 1ª começa em R$ 0; metas e % crescentes; de 1 a 6 faixas.' });
+  setSetting('tiers', JSON.stringify(t));
+  res.json(t);
 });
 app.post('/api/admin/coupons/:code/payouts', admin, (req, res) => {
   if (!guard(req, res)) return;

@@ -1525,3 +1525,25 @@ test('plano de metas: aviso 🎯 no Telegram quando o parceiro sobe de faixa com
   assert.ok(tgSent.some((m) => /🎯 Parceiro META2 bateu a meta de R\$\s?1\.500,00 no mês → comissão de 35%/.test(m.text)), tgSent.at(-1).text);
   db.exec("DELETE FROM orders WHERE coupon='META2'"); db.exec("DELETE FROM coupons WHERE code='META2'");
 });
+
+test('plano de metas — edição: faixas validadas; cupom com plano/IDs próprios; ativar não apaga o plano', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  assert.deepEqual((await (await adm('GET', '/api/admin/tiers')).json()).map((t) => t.pct), [30, 35, 40, 45]);
+  assert.equal((await adm('PUT', '/api/admin/tiers', [{ min: 100, pct: 30 }])).status, 400);                       // 1ª não começa em 0
+  assert.equal((await adm('PUT', '/api/admin/tiers', [{ min: 0, pct: 30 }, { min: 100000, pct: 25 }])).status, 400); // % caindo
+  assert.equal((await adm('PUT', '/api/admin/tiers', [{ min: 0, pct: 30 }, { min: 0, pct: 35 }])).status, 400);     // meta repetida
+  const ok = await adm('PUT', '/api/admin/tiers', [{ min: 0, pct: 30 }, { min: 200000, pct: 36 }]);
+  assert.equal(ok.status, 200);
+  assert.equal((await (await adm('GET', '/api/admin/tiers')).json())[1].pct, 36);
+  await adm('PUT', '/api/admin/tiers', [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 400000, pct: 40 }, { min: 1000000, pct: 45 }]);
+  // cupom: plano fixo + IDs próprios; IDs inválidos recusados
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'PARC2', desconto_pct: 5, comissao_pct: 25, ativo: true, plano: 'fixo', ids_proprios: 'abc' })).status, 400);
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'PARC2', desconto_pct: 5, comissao_pct: 25, ativo: true, plano: 'fixo', ids_proprios: '111; 222 333' })).status, 200);
+  let c = (await (await adm('GET', '/api/admin/coupons')).json()).find((x) => x.code === 'PARC2');
+  assert.equal(c.plano, 'fixo'); assert.equal(c.ids_proprios, '111, 222, 333'); assert.ok(c.ptoken);
+  // desativar pelo painel (envia plano/ids juntos) mantém o plano
+  await adm('PUT', '/api/admin/coupons/PARC2', { desconto_pct: 5, comissao_pct: 25, nota: '', ativo: false, plano: c.plano, ids_proprios: c.ids_proprios });
+  c = (await (await adm('GET', '/api/admin/coupons')).json()).find((x) => x.code === 'PARC2');
+  assert.equal(c.plano, 'fixo'); assert.equal(c.ativo, false);
+  db.exec("DELETE FROM coupons WHERE code='PARC2'");
+});
