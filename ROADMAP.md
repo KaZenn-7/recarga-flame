@@ -378,3 +378,4 @@ Obs.: o MP só devolve se houver saldo na conta do Mercado Pago.
 - Painel → Cupons: card de faixas, edição por cupom, faixa/progresso do mês; aviso 🎯 ao subir de faixa.
 - Página do parceiro /parceiro/<ptoken> (noindex; sem lucro/margem/custos); "gerar novo link" invalida o anterior.
 - docs/acordo/: modelo de acordo (metas) salvo + gerador que preenche a partir do cupom (`gerar.cjs --cupom X`; saída em gerados/, fora do git). Skill `acordo-parceiro`.
+- docs/parcerias/proposta-youtuber.md: texto de apresentação para novos parceiros (enviar de parcerias@).

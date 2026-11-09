@@ -154,7 +154,7 @@ function buildAcordo(d) {
         t(' O link é pessoal: não compartilhe. Se ele vazar, a Loja gera um novo e o anterior para de funcionar.')]),
 
         H('6. Pagamento'),
-        P([t('A cada 30 dias: '), b('no primeiro dia útil de cada mês'), t(', a Loja paga as comissões das vendas do mês anterior, por Pix para a chave '), v(d.chavePix, 'CHAVE PIX DO PARCEIRO'),
+        P([t('Mensalmente, '), b('no primeiro dia útil de cada mês'), t(', a Loja paga as comissões das vendas do mês anterior, por Pix para a chave '), v(d.chavePix, 'CHAVE PIX DO PARCEIRO'),
           t('. O valor de cada mês é o mostrado no link de acompanhamento. Valores abaixo de '), v(d.minimo == null ? null : brl(d.minimo), 'R$ 20'),
           t(' podem ser acumulados para o mês seguinte.')]),
 
@@ -165,17 +165,25 @@ function buildAcordo(d) {
         LI(t('lembre que a Loja é uma revenda independente, sem vínculo com a Valve nem com a equipe do CounterFlame.')),
         P(t('O atendimento aos clientes é da Loja: dúvidas e problemas vão para recargaflame.com.br/suporte.')),
 
-        H('8. Exclusividade e mudanças'),
+        H('8. Uso indevido'),
+        P(t('Não geram comissão, e podem levar ao encerramento imediato deste acordo:')),
+        LI(t('compras feitas pelo próprio Parceiro ou combinadas com ele só para gerar comissão (inclusive por contas ou Pix de outras pessoas);')),
+        LI(t('compras com Pix de terceiros sem autorização, ou que acabem estornadas ou contestadas;')),
+        LI(t('spam ou envio de mensagens em massa com o cupom;')),
+        LI(t('anúncios pagos usando o nome "Recarga Flame" (por exemplo, no Google) e páginas ou perfis que se passem pela Loja.')),
+        P(t('Em caso de suspeita, a Loja pode segurar a comissão das vendas envolvidas até terminar a análise, avisando o Parceiro.')),
+
+        H('9. Exclusividade e mudanças'),
         P(t(`Não há exclusividade para nenhum dos lados. Desconto${metas ? ', faixas' : ''} e comissão só mudam com acordo dos dois; uma mudança vale do mês seguinte em diante, nunca para meses já fechados.`)),
 
-        H('9. Duração e encerramento'),
+        H('10. Duração e encerramento'),
         P([t('Vale por tempo indeterminado. Qualquer um pode encerrar avisando com '), v(d.avisoDias, '7'),
           t(' dias de antecedência. As comissões das vendas feitas até o encerramento são pagas normalmente.')]),
 
-        H('10. Independência'),
+        H('11. Independência'),
         P(t('Este acordo não cria vínculo de emprego, sociedade ou representação entre as partes.')),
 
-        H('11. Dúvidas'),
+        H('12. Dúvidas'),
         P([t('Dúvidas sobre a plataforma ou sobre este acordo podem ser consultadas nas páginas '), b('recargaflame.com.br/como-funciona'), t(' e '),
           b('recargaflame.com.br/perguntas-frequentes'), t('. O Parceiro também pode ficar à vontade para escrever para '), b('suporte@recargaflame.com.br'), t('.')]),
 
