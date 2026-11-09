@@ -44,11 +44,27 @@ recargaflame.com.br · parcerias@recargaflame.com.br
 
 ---
 
-## 2. Mensagem curta (Instagram, Discord, WhatsApp, comentário fixado)
+## 2. Mensagem curta (Instagram, Discord, WhatsApp)
 
-Oi, [NOME]! Aqui é da Recarga Flame (recargaflame.com.br): vendemos itens de CounterFlame por Pix, com entrega em até 10 min.
-Queria te propor uma parceria: um **cupom com o seu nome** (5% off para a galera) e **comissão de 20% a 45% do lucro** das vendas, paga por Pix todo mês, com um link para você acompanhar tudo em tempo real. Sem exclusividade.
-Posso te mandar os detalhes por e-mail? Nosso contato é parcerias@recargaflame.com.br.
+Sem negrito, para funcionar igual em qualquer app. Copie de dentro do bloco:
+
+```
+Oi, [NOME]! Tudo bem? 👋
+
+Aqui é da Recarga Flame 🔥 (recargaflame.com.br)
+Vendemos itens de CounterFlame por Pix, com entrega em até 10 min ⚡
+
+Queria te propor uma parceria:
+
+🎟️ Cupom com o seu nome: 5% off pra sua galera
+💰 Comissão de 20% a 45% do lucro, subindo conforme as vendas do mês
+📊 Link privado pra acompanhar tudo em tempo real
+💸 Pagamento por Pix todo mês
+🤝 Sem exclusividade e sem custo
+
+Posso te mandar os detalhes? 😄
+📩 parcerias@recargaflame.com.br
+```
 
 ---
 
