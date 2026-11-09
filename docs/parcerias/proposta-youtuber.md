@@ -19,6 +19,13 @@ Oi, [NOME]! Tudo bem?
 
 Somos a **Recarga Flame** (recargaflame.com.br), uma loja que vende itens de CounterFlame (Coins, Gold Pass, Pass Levels e coleções) **por Pix, com entrega em até 10 minutos**.
 
+Diferente de quem vende pelo WhatsApp ou pelo Discord, **todo o processo é automático**:
+
+- ⚡ **Entrega automática em segundos**: o Pix é confirmado sozinho e o item cai na conta, sem esperar ninguém responder.
+- 🌙 **Funciona 24 horas por dia**, inclusive de madrugada, no fim de semana e no feriado.
+- 🔒 **Só precisa do ID do jogo**: nunca pedimos senha, login ou código.
+- 🧾 **Preço fixo no site**, sem negociação. O desconto do cupom entra sozinho e o cliente não precisa mandar comprovante.
+
 Acompanhamos o [NOME DO CANAL] e [UMA FRASE PESSOAL: um vídeo de que gostamos, o estilo do canal, o tamanho da comunidade]. Por isso queremos te propor uma parceria:
 
 - **Cupom com o seu nome** (ex.: [CUPOM]): quem usar ganha **5% de desconto** e tem o link curto **recargaflame.com.br/[cupom]**.
@@ -52,7 +59,8 @@ Sem negrito, para funcionar igual em qualquer app. Copie de dentro do bloco:
 Oi, [NOME]! Tudo bem? 👋
 
 Aqui é da Recarga Flame 🔥 (recargaflame.com.br)
-Vendemos itens de CounterFlame por Pix, com entrega em até 10 min ⚡
+Vendemos itens de CounterFlame por Pix, com entrega automática 24h ⚡
+Sem esperar vendedor ficar online ou responder: pagou, chegou.
 
 Queremos te propor uma parceria:
 
@@ -70,7 +78,45 @@ Equipe de Parcerias · Recarga Flame
 
 ---
 
-## 3. Follow-up (5 a 7 dias depois, se não houver resposta)
+## 3. Diferenciais (para conversas, calls e para o parceiro usar nos vídeos)
+
+### Recarga Flame × venda manual (WhatsApp, Discord, revendedor)
+
+| | Recarga Flame | Venda manual |
+|---|---|---|
+| Entrega | Automática, em segundos após o Pix* | Quando o vendedor vê a mensagem |
+| Horário | 24h, todos os dias | Só quando o vendedor está online |
+| Pagamento | Pix confirmado automaticamente | Mandar comprovante e esperar conferirem |
+| Preço | Fixo no site, desconto do cupom automático | Combinado na conversa |
+| Dados da conta | Só o ID do jogo | Às vezes pedem login ou senha |
+| Acompanhamento | Página do pedido + e-mail de confirmação | Perguntar no chat |
+| Se não der para entregar | Reembolso do Pix, previsto nos termos | Depende do vendedor |
+| Suporte | Formulário e e-mail (suporte@recargaflame.com.br) | Chat pessoal do vendedor |
+
+*Nos pedidos automáticos, a entrega tem levado cerca de 7 segundos depois do Pix confirmado. Prometemos publicamente "até 10 minutos". Alguns pedidos passam por verificação de segurança e levam mais tempo (até 24h, conforme os termos).
+
+### Para o parceiro (× parceria com revendedor manual)
+- 📊 **Comissão transparente**: link privado com vendas, faixa e comissão **em tempo real**, sem depender de "print" ou da palavra do revendedor.
+- 🙌 **Zero trabalho operacional**: ele não responde cliente, não confere Pix e não entrega nada. Só divulga.
+- 🛟 **Suporte é nosso**: qualquer problema do cliente vem para a gente, e não para a DM dele.
+- 🔗 **Link curto e cupom próprio**, que funcionam a qualquer hora, sem a audiência precisar chamar alguém.
+- 🎨 **Kit de divulgação pronto**: post, story, banner, animação e faixa para vídeo com o cupom dele.
+- 📝 **Acordo por escrito**: regras claras de comissão, pagamento e metas.
+- 🛡️ **Antifraude**: estornos e golpes não viram dor de cabeça para ele.
+
+### Frases prontas para o parceiro falar no vídeo
+- "Na Recarga Flame vocês pagam no Pix e o item chega sozinho, em segundos, a qualquer hora. Não precisa esperar ninguém responder."
+- "É só o ID da conta, eles nunca pedem senha."
+- "Usa o cupom [CUPOM] que você ganha 5% de desconto: recargaflame.com.br/[cupom]"
+
+### O que NÃO prometer
+- Não diga "entrega instantânea garantida" ou "100% automático": alguns pedidos passam por verificação.
+- Não diga "mais barato que todo mundo" sem comparar preços de verdade.
+- Não diga "loja oficial": somos uma revenda independente.
+
+---
+
+## 4. Follow-up (5 a 7 dias depois, se não houver resposta)
 
 **Assunto:** Re: [assunto original]
 
@@ -81,7 +127,7 @@ recargaflame.com.br · parcerias@recargaflame.com.br
 
 ---
 
-## 4. Quando a pessoa aceitar
+## 5. Quando a pessoa aceitar
 1. Crie o cupom no painel (Cupons → Novo), plano **metas**, e cadastre os **IDs do jogo** do parceiro.
 2. Gere o acordo com a skill **acordo-parceiro** ("gera o acordo do cupom X").
 3. Envie o acordo e, separado, o **link do parceiro** (painel → Cupons → "Copiar link do parceiro").
