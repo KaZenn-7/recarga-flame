@@ -175,6 +175,10 @@ function buildAcordo(d) {
         H('10. Independência'),
         P(t('Este acordo não cria vínculo de emprego, sociedade ou representação entre as partes.')),
 
+        H('11. Dúvidas'),
+        P([t('Dúvidas sobre a plataforma ou sobre este acordo podem ser consultadas nas páginas '), b('recargaflame.com.br/como-funciona'), t(' e '),
+          b('recargaflame.com.br/perguntas-frequentes'), t('. O Parceiro também pode ficar à vontade para escrever para '), b('suporte@recargaflame.com.br'), t('.')]),
+
         H('Aceite'),
         P([t('Para aceitar, basta o Parceiro responder: '), b('"Li e concordo com o acordo de parceria do cupom '), v(d.cupom, 'CÓDIGO DO CUPOM'), b('".')]),
         P([t('Data: '), v(d.data, 'DD/MM/AAAA')], { spacing: { before: 200, after: 120 } }),
