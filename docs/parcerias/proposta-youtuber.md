@@ -82,6 +82,8 @@ Equipe de Parcerias · Recarga Flame
 
 ### Recarga Flame × venda manual (WhatsApp, Discord, revendedor)
 
+Imagem pronta (post e story): `node docs/kit/gen-comparativo.mjs <pasta> [CUPOM] [DESCONTO%]`. Ao mudar a tabela, mude também `ROWS` no gerador.
+
 | | Recarga Flame | Venda manual |
 |---|---|---|
 | Entrega | Automática, em segundos após o Pix* | Quando o vendedor vê a mensagem |
@@ -133,6 +135,7 @@ recargaflame.com.br · parcerias@recargaflame.com.br
 3. Envie o acordo e, separado, o **link do parceiro** (painel → Cupons → "Copiar link do parceiro").
 4. Guarde a resposta de aceite ("Li e concordo…").
 5. Opcional: gere o kit de divulgação do parceiro com `docs/kit/` (post, story, banner, animação).
+6. Opcional: imagem comparativa com o cupom dele: `node docs/kit/gen-comparativo.mjs <pasta> CUPOM 5` (post 1080×1350 e story). Sem cupom, gera a versão genérica para mandar junto da proposta.
 
 ## Cuidados
 - Não prometa valores garantidos: os exemplos são ilustrativos.
