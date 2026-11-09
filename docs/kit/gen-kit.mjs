@@ -37,14 +37,14 @@ const pages = {
   post: [1080, 1080, `body{width:1080px;height:1080px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;padding:64px 70px 60px;
     background-image:radial-gradient(circle at 50% 38%,rgba(255,90,31,.32),rgba(255,90,31,0) 55%)}`,
     `<div>${brand(76, 50)}<div class="sub" style="font-size:32px;margin-top:14px">Coins e passes do CounterFlame no Pix</div></div>
-     ${prods(['c100000', 'gold', 'arsenal'], 200, 3)}
+     ${prods(['c100000', 'gold', 'wildfire'], 200, 3)}
      <div><div class="off" style="font-size:150px">${PCT}% OFF<small style="font-size:38px">com o cupom</small></div>
        <div class="cup" style="margin-top:20px;font-size:46px;padding:12px 36px">${esc(CODE)}</div></div>
      <div><div class="link" style="font-size:44px;padding:18px 40px">${LINK}</div><div style="margin-top:22px">${pills(25, true)}</div></div>`],
   story: [1080, 1920, `body{width:1080px;height:1920px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;padding:180px 80px 280px;
     background-image:radial-gradient(circle at 50% 42%,rgba(255,90,31,.32),rgba(255,90,31,0) 55%)}`,
     `<div>${brand(76, 50)}<div class="sub" style="font-size:40px;margin-top:22px">Coins e passes do CounterFlame no Pix</div></div>
-     <div style="margin:40px 0 30px">${prods(['c100000', 'gold', 'arsenal', 'wildfire'], 240, 2)}</div>
+     <div style="margin:40px 0 30px">${prods(['c100000', 'gold', 'wildfire', 'bp25'], 240, 2)}</div>
      <div><div class="off" style="font-size:180px">${PCT}% OFF<small style="font-size:48px">com o cupom</small></div>
        <div class="cup" style="margin-top:30px;font-size:60px;padding:12px 36px">${esc(CODE)}</div></div>
      <div><div class="link" style="font-size:${LINK.length > 28 ? 50 : 56}px;padding:18px 40px">${LINK}</div><div style="margin-top:34px">${pills(32, true)}</div></div>`],
@@ -59,7 +59,7 @@ const pages = {
        <div><div class="link" style="font-size:54px;padding:18px 40px">${LINK}</div></div>
        ${pills(30, false)}
      </div>
-     ${prods(['c100000', 'gold', 'arsenal', 'wildfire'], 300, 2)}`],
+     ${prods(['c100000', 'gold', 'wildfire', 'bp25'], 300, 2)}`],
 };
 
 for (const [name, [w, h, css, body]] of Object.entries(pages)) {
