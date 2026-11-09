@@ -145,6 +145,8 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .rep .meta{margin-top:8px;padding:9px 10px;border-radius:9px;background:rgba(255,90,31,.07);border:1px solid rgba(255,90,31,.3);font-size:12.5px;color:var(--mut)}
 .rep .meta b{color:var(--txt)}.rep .meta .mt b:first-child{color:var(--orange);font-size:15px}
 .rep .pg{height:7px;background:var(--bg);border-radius:99px;overflow:hidden;margin:7px 0 4px}.rep .pg i{display:block;height:100%;background:var(--orange)}
+.metabox{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:12.5px;color:var(--mut)}
+.metabox span{flex:1}.metabox button{flex-shrink:0;border:1px solid var(--orange);background:none;color:var(--orange);border-radius:7px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .tiers details{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:12px}
 .tiers summary{cursor:pointer;font-weight:700;font-size:14px}.tiers .hint{margin:8px 0}
 .tiers .tt{font-size:13px}.tiers .tt th{font-size:12px;font-weight:600}.tiers .tt td{white-space:nowrap}
@@ -227,6 +229,8 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="fg"><label>Plano de comissão</label><select id="c_plano" onchange="cupPlano()"><option value="metas">Metas (faixas)</option><option value="fixo">Fixo (%)</option></select></div>
     </div>
     <div class="fg" id="c_com_fg"><label>Comissão fixa (% do lucro)</label><input id="c_com" inputmode="decimal" placeholder="20"></div>
+    <div class="fg" id="c_metas_fg"><div class="metabox"><span id="c_metas_txt"></span><button type="button" onclick="irParaFaixas()">Editar faixas</button></div>
+      <div class="hint">As faixas são as mesmas para todos os parceiros do plano de metas.</div></div>
     <div class="fg"><label>IDs do próprio parceiro (não contam)</label><input id="c_ids" inputmode="numeric" placeholder="ex.: 749125, 1310329" autocomplete="off"><div class="hint">Compras feitas nesses IDs não contam para a meta nem geram comissão.</div></div>
     <div class="fg"><label>Nota (opcional)</label><input id="c_nota" placeholder="ex.: youtuber aquilagado" autocomplete="off"></div>
     <label class="fchk"><button type="button" class="sw" id="c_ativo" onclick="this.classList.toggle('on');cupAtivoTxt()"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
@@ -734,11 +738,14 @@ function perRange(){
   return '?from='+f(new Date(d.getFullYear(),m,1))+'&to='+f(new Date(d.getFullYear(),m+1,0));
 }
 // ---- faixas do plano de metas ----
-let TIERS=[];
+let TIERS=[],TIERS_OPEN=true;
+function tiersResumo(){return TIERS.map(function(t,i){return String(t.pct).replace('.',',')+'%'+(i?' a partir de '+brlFromCents(t.min):'');}).join(' · ');}
+function irParaFaixas(){closeCup();TIERS_OPEN=true;renderTiers();$$('tiersBox').scrollIntoView({behavior:'smooth',block:'start'});}
 async function loadTiers(){try{TIERS=await api('/api/admin/tiers');renderTiers();}catch(e){$$('tiersBox').textContent=e.message;}}
 function renderTiers(){
   const B=$$('tiersBox');B.textContent='';
-  const d=document.createElement('details');d.appendChild(el('summary',null,'Plano de metas · faixas de comissão'));
+  const d=document.createElement('details');d.open=TIERS_OPEN;d.ontoggle=function(){TIERS_OPEN=d.open;};
+  d.appendChild(el('summary',null,'Plano de metas · faixas de comissão (vale para todos os parceiros do plano)'));
   d.appendChild(el('p','hint','Faturamento do parceiro no mês → % do lucro em TODAS as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Mudanças valem para o mês atual em diante (meses fechados não mudam).'));
   const t=el('table','ttab tt');const h=el('tr');['Vendas no mês a partir de','Comissão',''].forEach(function(x){h.appendChild(el('th',null,x));});t.appendChild(h);
   TIERS.forEach(function(x,i){
@@ -819,7 +826,8 @@ function openCup(code){
   $$('c_ativo').classList.toggle('on',c?!!c.ativo:true);
   $$('cerr').textContent='';cupLink();cupAtivoTxt();$$('cmodal').classList.add('on');
 }
-function cupPlano(){$$('c_com_fg').style.display=$$('c_plano').value==='fixo'?'':'none';}
+function cupPlano(){const fixo=$$('c_plano').value==='fixo';$$('c_com_fg').style.display=fixo?'':'none';$$('c_metas_fg').style.display=fixo?'none':'';
+  $$('c_metas_txt').textContent=TIERS.length?tiersResumo():'carregando faixas…';if(!TIERS.length)loadTiers().then(function(){$$('c_metas_txt').textContent=tiersResumo();});}
 function cupAtivoTxt(){$$('c_ativo_txt').textContent=$$('c_ativo').classList.contains('on')?'Ativo — já pode ser usado':'Inativo — o link não dá desconto';}
 function cupLink(){$$('c_link').textContent=location.origin+'/?cupom='+($$('c_code').value.trim().toUpperCase()||'CODIGO');}
 $$('c_code').oninput=cupLink;
