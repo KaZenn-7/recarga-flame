@@ -75,7 +75,7 @@ h1{font-weight:900;letter-spacing:-.04em;line-height:.95}
 <div class="sc" id="s2">
   <div class="sub" id="s2t" style="font-size:${V ? 64 : 64}px;margin-bottom:${V ? 60 : 50}px;color:#f4f4f5;font-weight:900">Coins, passes e coleções</div>
   <div class="prods">
-    ${[['c5000', 'Coins'], ['gold', 'Gold Pass'], ['wildfire', 'Coleções'], ['bp25', 'Níveis de Passe']].map(([k, n], i) => `<div class="prod" id="p${i}"><img src="${CUT}/${k}.png"><b>${n}</b></div>`).join('')}
+    ${[['c200000', 'Coins'], ['gold', 'Gold Pass'], ['wildfire', 'Coleções'], ['bp25', 'Níveis de Passe']].map(([k, n], i) => `<div class="prod" id="p${i}"><img src="${CUT}/${k}.png"><b>${n}</b></div>`).join('')}
   </div>
 </div>
 
