@@ -1,0 +1,8 @@
+{
+  "name": "kit-divulgacao",
+  "private": true,
+  "description": "Geradores do kit de divulgação dos parceiros",
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
+}
