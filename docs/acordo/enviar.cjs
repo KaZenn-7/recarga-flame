@@ -13,7 +13,7 @@ const path = require('path');
   const fd = new FormData();
   fd.append('chat_id', chat);
   fd.append('caption', caption.slice(0, 1000));
-  fd.append('document', new Blob([fs.readFileSync(file)], { type: file.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ({ '.png': 'image/png', '.gif': 'image/gif', '.mp4': 'video/mp4', '.webm': 'video/webm' }[path.extname(file)] || 'text/plain') }), path.basename(file));
+  fd.append('document', new Blob([fs.readFileSync(file)], { type: file.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ({ '.png': 'image/png', '.gif': 'image/gif', '.mp4': 'video/mp4', '.webm': 'video/webm', '.zip': 'application/zip' }[path.extname(file)] || 'text/plain') }), path.basename(file));
   const r = await (await fetch(`https://api.telegram.org/bot${tk}/sendDocument`, { method: 'POST', body: fd })).json();
   if (!r.ok) throw new Error('Telegram: ' + r.description);
   console.log('enviado:', r.result.document.file_name, `(${r.result.document.file_size} bytes)`);
