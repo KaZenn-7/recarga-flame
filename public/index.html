@@ -103,9 +103,19 @@ input:focus{outline:0;border-color:#45454c}
 .prod .p s{display:block;color:var(--dim);font-weight:500;font-size:10.5px;line-height:1.1;margin-bottom:1px}
 .cupwarn{display:flex;align-items:center;gap:10px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--red);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:14px}
 .cupwarn button{margin-left:auto;background:transparent;border:0;color:var(--mut);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
-#cupin2{margin:0 0 14px}
-.cupin{margin-top:16px;font-size:13px}.cupin summary{cursor:pointer;color:var(--mut);font-weight:600;list-style:none;padding:2px 0}
-.cupin summary::-webkit-details-marker{display:none}.cupin .cp{margin-top:8px}.cupin input{text-transform:uppercase}
+.cupin{margin-top:16px;font-size:13px;background:rgba(255,90,31,.07);border:1.5px dashed rgba(255,90,31,.6);border-radius:11px;padding:11px 12px}
+#cupin2{margin:0 0 16px}
+.cupin summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none}
+.cupin summary::-webkit-details-marker{display:none}
+.cupin .ci{font-size:20px;line-height:1;flex-shrink:0}
+.cupin .ct{display:flex;flex-direction:column;gap:1px;min-width:0}
+.cupin .ct b{color:var(--txt);font-size:13.5px;white-space:nowrap}.cupin .ct small{color:var(--mut);font-size:11.5px}
+.cupin .ca{margin-left:auto;flex-shrink:0;background:var(--orange);color:#160a04;font-weight:800;font-size:12px;border-radius:99px;padding:6px 12px}
+.cupin[open] .ca{display:none}
+.cupin .cp{margin-top:10px}.cupin input{text-transform:uppercase}
+.cupin .cp button{background:var(--orange);border-color:var(--orange);color:#160a04;font-weight:800}
+.cupin .err:empty{display:none}.cupin .err{margin:8px 0 0}
+@media(max-width:380px){.cupin{padding:10px}.cupin summary{gap:8px}.cupin .ct b{font-size:13px}.cupin .ca{padding:6px 10px}}
 .help{margin-top:10px;font-size:13px;color:var(--mut)}
 .help summary{cursor:pointer;color:var(--orange);font-weight:600;list-style:none;padding:4px 0}
 .help summary::-webkit-details-marker{display:none}
@@ -203,7 +213,7 @@ input:focus{outline:0;border-color:#45454c}
       <div><div class="nk" id="nick2"></div><div class="id">ID <span class="mono" id="pid2"></span></div></div>
       <button class="edit" id="trocar">Trocar</button>
     </div>
-    <details class="cupin" id="cupin2"><summary>Tem um cupom?</summary>
+    <details class="cupin" id="cupin2"><summary><span class="ci">🎟️</span><span class="ct"><b>Tem cupom de desconto?</b><small>De criador ou promoção</small></span><span class="ca">Inserir</span></summary>
       <div class="cp"><input id="cupinput2" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO" maxlength="20"><button id="cupok2">Aplicar</button></div>
       <p class="err" id="cuperr2"></p>
     </details>
@@ -226,7 +236,7 @@ input:focus{outline:0;border-color:#45454c}
       </div>
       <div class="line hide" id="rdesc"><span class="k">Cupom <b id="rdcode" style="color:var(--txt)"></b></span><span class="v mono" id="rdval" style="color:var(--green)"></span></div>
     </div>
-    <details class="cupin" id="cupin"><summary>Tem um cupom?</summary>
+    <details class="cupin" id="cupin" open><summary><span class="ci">🎟️</span><span class="ct"><b>Tem cupom de desconto?</b><small>De criador ou promoção</small></span><span class="ca">Inserir</span></summary>
       <div class="cp"><input id="cupinput" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO" maxlength="20"><button id="cupok">Aplicar</button></div>
       <p class="err" id="cuperr"></p>
     </details>
