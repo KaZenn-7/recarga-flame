@@ -377,4 +377,4 @@ Obs.: o MP só devolve se houver saldo na conta do Mercado Pago.
 - Faixas padrão (settings.tiers) ou PRÓPRIAS por parceiro (coupons.tiers); plano 'fixo' continua disponível.
 - Painel → Cupons: card de faixas, edição por cupom, faixa/progresso do mês; aviso 🎯 ao subir de faixa.
 - Página do parceiro /parceiro/<ptoken> (noindex; sem lucro/margem/custos); "gerar novo link" invalida o anterior.
-- docs/: modelo de acordo (metas) em .docx + gerador.
+- docs/acordo/: modelo de acordo (metas) salvo + gerador que preenche a partir do cupom (`gerar.cjs --cupom X`; saída em gerados/, fora do git). Skill `acordo-parceiro`.
