@@ -1,6 +1,7 @@
 # Proposta de parceria para youtubers (Recarga Flame)
 
 Envie de **parcerias@recargaflame.com.br**, **um por vez e personalizado**: nunca em massa, porque isso protege a entrega dos e-mails de pedido.
+Sempre na voz da equipe ("nós"), com a assinatura **Equipe de Parcerias · Recarga Flame**.
 Troque tudo o que está entre [colchetes]. Os números dos exemplos são de 09/11/2026 (faixas globais e Gold Pass com 5% de desconto). Confira no painel antes de mandar.
 
 ---
@@ -16,9 +17,9 @@ Troque tudo o que está entre [colchetes]. Os números dos exemplos são de 09/1
 
 Oi, [NOME]! Tudo bem?
 
-Sou da **Recarga Flame** (recargaflame.com.br), uma loja que vende itens de CounterFlame (Coins, Gold Pass, Pass Levels e coleções) **por Pix, com entrega em até 10 minutos**.
+Somos a **Recarga Flame** (recargaflame.com.br), uma loja que vende itens de CounterFlame (Coins, Gold Pass, Pass Levels e coleções) **por Pix, com entrega em até 10 minutos**.
 
-Acompanho o [NOME DO CANAL] e [UMA FRASE PESSOAL: um vídeo de que gostou, o estilo do canal, o tamanho da comunidade]. Por isso queria te propor uma parceria:
+Acompanhamos o [NOME DO CANAL] e [UMA FRASE PESSOAL: um vídeo de que gostamos, o estilo do canal, o tamanho da comunidade]. Por isso queremos te propor uma parceria:
 
 - **Cupom com o seu nome** (ex.: [CUPOM]): quem usar ganha **5% de desconto** e tem o link curto **recargaflame.com.br/[cupom]**.
 - **Comissão sobre o lucro de cada venda feita com o seu cupom**, que **sobe conforme você vende no mês**: de 20% até **45%**. A faixa que você atingir vale para **todas** as vendas do mês, e quem bate uma meta começa o mês seguinte com uma **faixa garantida**.
@@ -35,11 +36,10 @@ Para ter uma ideia, em vendas de Gold Pass com o cupom:
 
 O atendimento aos clientes fica todo por nossa conta. Você só divulga.
 
-Se curtir, eu te mando o acordo (é curto e em linguagem simples) e já crio o seu cupom. Topa?
+Se curtir, mandamos o acordo (é curto e em linguagem simples) e já criamos o seu cupom. Topa?
 
 Abraço,
-**[SEU NOME ou Equipe Recarga Flame]**
-Parcerias · Recarga Flame
+**Equipe de Parcerias · Recarga Flame**
 recargaflame.com.br · parcerias@recargaflame.com.br
 
 ---
@@ -54,7 +54,7 @@ Oi, [NOME]! Tudo bem? 👋
 Aqui é da Recarga Flame 🔥 (recargaflame.com.br)
 Vendemos itens de CounterFlame por Pix, com entrega em até 10 min ⚡
 
-Queria te propor uma parceria:
+Queremos te propor uma parceria:
 
 🎟️ Cupom com o seu nome: 5% off pra sua galera
 💰 Comissão de 20% a 45% do lucro, subindo conforme as vendas do mês
@@ -62,7 +62,9 @@ Queria te propor uma parceria:
 💸 Pagamento por Pix todo mês
 🤝 Sem exclusividade e sem custo
 
-Posso te mandar os detalhes? 😄
+Podemos te mandar os detalhes? 😄
+
+Equipe de Parcerias · Recarga Flame
 📩 parcerias@recargaflame.com.br
 ```
 
@@ -72,7 +74,10 @@ Posso te mandar os detalhes? 😄
 
 **Assunto:** Re: [assunto original]
 
-Oi, [NOME]! Passando só para saber se você chegou a ver a proposta de parceria da Recarga Flame. Se fizer sentido, crio o seu cupom hoje mesmo e te mando o link de acompanhamento. Se não for o momento, sem problema, é só me avisar. Abraço!
+Oi, [NOME]! Passando só para saber se você chegou a ver a nossa proposta de parceria. Se fizer sentido, criamos o seu cupom hoje mesmo e te mandamos o link de acompanhamento. Se não for o momento, sem problema, é só nos avisar. Abraço!
+
+**Equipe de Parcerias · Recarga Flame**
+recargaflame.com.br · parcerias@recargaflame.com.br
 
 ---
 
