@@ -103,8 +103,8 @@ h1{font-weight:900;letter-spacing:-.04em;line-height:.95}
   <div class="cta">
     <div style="display:flex;flex-direction:column;gap:${V ? 34 : 38}px;align-items:${V ? 'center' : 'flex-start'}">
       <div class="brand" id="f0"><img src="${IMG}/brand-mark.png"><b>Recarga <span class="or">Flame</span></b></div>
-      ${CODE ? `<div id="f1"><div class="off">${PCT}% OFF</div><div style="font-size:${V ? 46 : 44}px;font-weight:800;margin:${V ? 10 : 8}px 0 ${V ? 20 : 16}px">com o cupom</div><div class="cup">${esc(CODE)}</div></div>`
-    : `<div id="f1" class="sub" style="font-size:${V ? 54 : 56}px;color:#f4f4f5;font-weight:900">Coins, passes e coleções<br>com entrega automática 24h</div>`}
+      ${CODE ? `<div id="f1" style="text-align:${V ? 'center' : 'left'}"><div class="off">${PCT}% OFF</div><div style="font-size:${V ? 46 : 44}px;font-weight:800;margin:${V ? 10 : 8}px 0 ${V ? 20 : 16}px">com o cupom</div><div class="cup">${esc(CODE)}</div></div>`
+    : `<div id="f1" class="sub" style="text-align:${V ? 'center' : 'left'};font-size:${V ? 54 : 56}px;color:#f4f4f5;font-weight:900">Coins, passes e coleções<br>com entrega automática 24h</div>`}
       <div id="f2"><div class="link">${esc(LINK)}</div></div>
     </div>
     <div class="qrc" id="f3">${qrSvg}<div style="margin-top:12px">Aponte a câmera</div></div>
