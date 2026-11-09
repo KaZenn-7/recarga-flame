@@ -137,6 +137,7 @@ recargaflame.com.br · parcerias@recargaflame.com.br
 5. Opcional: gere o kit de divulgação do parceiro com `docs/kit/` (post, story, banner, animação).
 6. QR code para vídeos (quem vê na TV escaneia): `node docs/kit/gen-qr.mjs CUPOM 5 <pasta>`. Aponta para o link curto com `?src=yt`, então as visitas aparecem como YouTube no funil.
 7. Opcional: imagem comparativa com o cupom dele: `node docs/kit/gen-comparativo.mjs <pasta> CUPOM 5` (post 1080×1350 e story). Sem cupom, gera a versão genérica para mandar junto da proposta.
+8. Opcional: vídeo de 20 s (vertical e horizontal) com o cupom dele: `node docs/kit/gen-video.mjs <pasta> CUPOM 5` (~7 min). Sem cupom, gera o vídeo genérico da loja. Se o site mudar, refaça as telas com `node docs/kit/gen-telas.mjs`.
 
 ## Cuidados
 - Não prometa valores garantidos: os exemplos são ilustrativos.
