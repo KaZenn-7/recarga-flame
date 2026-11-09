@@ -6,7 +6,7 @@
 //
 // Opções (o que o banco não sabe; se faltar, fica [EM AMARELO] no documento):
 //   --nome "Nome do parceiro"   --canal "Canal/perfil"   --pix "chave Pix"   --responsavel "Seu nome"
-//   --dia 5  --minimo 20  --aviso 7  (padrões da loja)   --data 09/11/2026 (padrão: hoje)   --out caminho.docx
+//   --sem-responsavel (só "Recarga Flame", sem "representada por")   --minimo 20  --aviso 7  (padrões da loja)   --data 09/11/2026 (padrão: hoje)   --out caminho.docx
 //
 // Lê loja.db só para leitura. Os acordos gerados têm a chave Pix do parceiro: ficam em docs/acordo/gerados/ (fora do git).
 const fs = require('fs');
@@ -24,7 +24,7 @@ function args(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) continue;
     const k = a.slice(2);
-    if (k === 'modelo') o.modelo = true;
+    if (k === 'modelo' || k === 'sem-responsavel') o[k] = true;
     else o[k] = argv[++i];
   }
   return o;
@@ -78,12 +78,12 @@ async function main() {
       tiersProprias: !!proprias && JSON.stringify(proprias) !== JSON.stringify(globais),
       idsProprios: (c.ids_proprios || '').trim() || null,
       parceiroNome: o.nome || null, canal: o.canal || null, chavePix: o.pix || null, responsavel: o.responsavel || null,
-      diaPagamento: num('dia', 5), minimo: Math.round(num('minimo', 20) * 100), avisoDias: num('aviso', 7),
+      semResponsavel: !!o['sem-responsavel'], minimo: Math.round(num('minimo', 20) * 100), avisoDias: num('aviso', 7),
       data: o.data || hoje(), geradoEm: hoje(), exemplos: exemplosDe(c.desconto_pct),
     };
     fs.mkdirSync(OUT_DIR, { recursive: true });
     out = o.out || path.join(OUT_DIR, `Acordo de parceria - ${c.code} - ${hoje().split('/').reverse().join('-')}.docx`);
-    const falta = [['nome', d.parceiroNome], ['canal', d.canal], ['pix', d.chavePix], ['responsavel', d.responsavel], ['IDs do parceiro (painel)', d.idsProprios]]
+    const falta = [['nome', d.parceiroNome], ['canal', d.canal], ['pix', d.chavePix], ...(d.semResponsavel ? [] : [['responsavel', d.responsavel]]), ['IDs do parceiro (painel)', d.idsProprios]]
       .filter(([, x]) => !x).map(([k]) => k);
     console.log(JSON.stringify({ cupom: c.code, ativo: !!c.ativo, plano: d.plano, desconto: c.desconto_pct,
       comissao: d.plano === 'fixo' ? c.comissao_pct : tiers.map((x) => x.pct), tiersProprias: d.tiersProprias,

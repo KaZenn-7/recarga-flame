@@ -42,7 +42,7 @@ const TIERS_PADRAO = [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 4000
  * d = {
  *   modelo: bool (true = modelo em branco),
  *   cupom, link, desconto, plano: 'metas'|'fixo', comissaoFixa, tiers:[{min,pct}], tiersProprias: bool,
- *   idsProprios, parceiroNome, canal, chavePix, responsavel, diaPagamento, minimo, avisoDias, data,
+ *   idsProprios, parceiroNome, canal, chavePix, responsavel, semResponsavel, minimo, avisoDias, data,
  *   exemplos: { data: 'dd/mm/aaaa', star: 0.0868, linhas: [{ nome, paga, lucro }] }   (centavos)
  * }
  */
@@ -125,7 +125,7 @@ function buildAcordo(d) {
         new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'Acordo de parceria — cupom ', font: FONT, size: 34, bold: true }),
           d.cupom ? new TextRun({ text: String(d.cupom), font: FONT, size: 34, bold: true }) : new TextRun({ text: '[CÓDIGO DO CUPOM]', font: FONT, size: 34, bold: true, highlight: 'yellow' })] }),
         P([t('Recarga Flame · recargaflame.com.br', { color: '777777', size: 20 })], { spacing: { after: 240 } }),
-        P([t('Entre '), b('Recarga Flame'), t(', representada por '), v(d.responsavel, 'SEU NOME COMPLETO'), t(' ("Loja"), e '), v(d.parceiroNome, 'NOME DO PARCEIRO'),
+        P([t('Entre '), b('Recarga Flame'), ...(d.semResponsavel ? [] : [t(', representada por '), v(d.responsavel, 'SEU NOME COMPLETO')]), t(d.semResponsavel ? ' ("Loja") e ' : ' ("Loja"), e '), v(d.parceiroNome, 'NOME DO PARCEIRO'),
           t(', do canal/perfil '), v(d.canal, 'NOME DO CANAL OU PERFIL'), t(' ("Parceiro").')]),
 
         H('1. O que é'),
@@ -154,7 +154,7 @@ function buildAcordo(d) {
         t(' O link é pessoal: não compartilhe. Se ele vazar, a Loja gera um novo e o anterior para de funcionar.')]),
 
         H('6. Pagamento'),
-        P([t('Mensal, até o dia '), v(d.diaPagamento, '5'), t(' do mês seguinte, por Pix para a chave '), v(d.chavePix, 'CHAVE PIX DO PARCEIRO'),
+        P([t('A cada 30 dias: '), b('no primeiro dia útil de cada mês'), t(', a Loja paga as comissões das vendas do mês anterior, por Pix para a chave '), v(d.chavePix, 'CHAVE PIX DO PARCEIRO'),
           t('. O valor de cada mês é o mostrado no link de acompanhamento. Valores abaixo de '), v(d.minimo == null ? null : brl(d.minimo), 'R$ 20'),
           t(' podem ser acumulados para o mês seguinte.')]),
 
