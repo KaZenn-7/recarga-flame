@@ -142,6 +142,9 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .a-unb{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:9px;padding:11px 14px;font:inherit;font-weight:700;cursor:pointer}
 .card.new{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange) inset}
 .newtag{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:var(--orange);color:#160a04;vertical-align:1px}
+.rep .meta{margin-top:8px;padding:9px 10px;border-radius:9px;background:rgba(255,90,31,.07);border:1px solid rgba(255,90,31,.3);font-size:12.5px;color:var(--mut)}
+.rep .meta b{color:var(--txt)}.rep .meta .mt b:first-child{color:var(--orange);font-size:15px}
+.rep .pg{height:7px;background:var(--bg);border-radius:99px;overflow:hidden;margin:7px 0 4px}.rep .pg i{display:block;height:100%;background:var(--orange)}
 .rep .tot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.rep .tot b{color:var(--txt)}
 .rep .ops{display:flex;gap:6px;margin-top:10px}
 .rep .ops button{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:7px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
@@ -202,7 +205,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
   <div class="padd">
     <div class="rephead"><b>Comissões</b><select id="repPer" onchange="loadRep()"><option value="m0">Este mês</option><option value="m1">Mês passado</option><option value="all">Tudo</option></select></div>
     <div id="repBox"><div class="empty">Carregando…</div></div>
-    <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro, com o % que valia no dia da venda. O período muda só a primeira linha; <b>a pagar</b> = ganho total − pagamentos registrados.</p>
+    <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro: no plano de metas, a faixa do mês (pelo faturamento do parceiro) vale para todas as vendas do mês; no plano fixo, o % do dia da venda. O período muda só a primeira linha; <b>a pagar</b> = ganho total − pagamentos registrados.</p>
     <button class="newbtn" onclick="openCup()">+ Novo cupom</button>
   </div>
   <div id="cupList" class="padd" style="padding-top:0"></div>
@@ -695,7 +698,7 @@ async function loadCups(){
 function renderCups(){
   $$('cupList').innerHTML=CUPS.map(function(c){
     return '<div class="prow"><div class="pi"><div class="nm mono">'+esc(c.code)+(c.ativo?'<span class="cuptag">ATIVO</span>':'<span class="cuptag off">INATIVO</span>')+'</div>'+
-      '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · comissão <b>'+pct(c.comissao_pct)+'</b> do lucro'+(c.nota?' · '+esc(c.nota):'')+'</div>'+
+      '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · '+(c.plano==='fixo'?'comissão fixa <b>'+pct(c.comissao_pct)+'</b> do lucro':'<b>plano de metas</b>')+(c.nota?' · '+esc(c.nota):'')+'</div>'+
       '<div class="sub mono">'+esc(location.origin+'/?cupom='+c.code)+'</div></div>'+
       '<div class="rt"><button class="sw '+(c.ativo?'on':'')+'" title="Ativar/desativar" data-tog="'+esc(c.code)+'"></button>'+
       '<div class="ops"><button data-copy="'+esc(c.code)+'">Copiar link</button><button data-edit="'+esc(c.code)+'">Editar</button></div></div></div>';
@@ -730,13 +733,16 @@ async function loadRep(){
         return '<tr><td>'+esc(p.data.split('-').reverse().join('/'))+'</td><td>'+brlFromCents(p.cents)+'</td><td style="text-align:left">'+esc(p.nota)+'</td>'+
           '<td><button class="undo" data-undo="'+p.id+'" data-v="'+esc(brlFromCents(p.cents))+'">desfazer</button></td></tr>';
       }).join('');
-      return '<div class="rep"><div class="top"><span class="mono">'+esc(c.code)+'</span>'+st+'</div>'+
+      const M=c.mesAtual;
+      const meta=M?('<div class="meta"><div class="mt"><b>'+M.pct+'%</b> este mês'+(M.ating<M.garant?' · garantida pelo mês anterior':'')+' · faturado <b>'+brlFromCents(M.faturamento)+'</b> · comissão estimada <b>'+brlFromCents(M.comissao)+'</b></div>'+
+        (M.prox?'<div class="pg"><i style="width:'+Math.min(100,Math.round(M.faturamento/M.prox.min*100))+'%"></i></div><div class="mt2">faltam <b>'+brlFromCents(M.prox.falta)+'</b> para '+M.prox.pct+'% em todas as vendas do mês</div>':'<div class="mt2">faixa máxima ✓</div>')+'</div>'):'';
+      return '<div class="rep"><div class="top"><span class="mono">'+esc(c.code)+'</span>'+st+'</div>'+meta+
         '<div class="nums"><span><b>'+c.visitas+'</b> visitas pelo link</span><span><b>'+c.pedidos+'</b> vendas</span>'+
         '<span>conversão <b>'+(c.conversao==null?'—':Math.round(c.conversao*100)+'%')+'</b></span></div>'+
         '<div class="nums"><span>faturado <b>'+brlFromCents(c.faturado)+'</b></span>'+
         '<span>descontos <b>'+brlFromCents(c.desconto)+'</b></span><span>lucro <b>'+brlFromCents(c.lucro)+'</b></span>'+
         '<span>comissão <b>'+brlFromCents(c.comissao)+'</b></span><span>fica para a loja <b>'+brlFromCents(c.lucroLoja)+'</b></span></div>'+
-        '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>hoje '+pct(c.comissao_pct)+' do lucro</span></div>'+
+        '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>'+(c.plano==='fixo'?'fixo: '+pct(c.comissao_pct)+' do lucro':'plano de metas')+'</span></div>'+
         '<div class="ops"><button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button></div>'+
         (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
         '</div>';

@@ -326,7 +326,7 @@ async function syncPayment(mpId) {
       orderEv(o, 'paid');
       const oo = { ...o, payer_acct: pp.acct };
       const sinal = estornoSinal(oo);
-      if (sinal) bloquearPedido(oo, sinal); else notifyPaid(oo);
+      if (sinal) bloquearPedido(oo, sinal); else { notifyPaid(oo); avisoFaixa(oo); }
     }
   } else if (['cancelled', 'rejected', 'refunded', 'charged_back'].includes(pay.status)) {
     const before = o.status;
@@ -1586,9 +1586,10 @@ function dailySummary(day = spDay()) {
   const vendas = db.prepare(`SELECT o.*, o.com_pct AS comissao_pct FROM orders o
     WHERE o.paid_at IS NOT NULL AND o.status IN ('paid','delivered') AND ${L('o.paid_at')} = ?`).all(day);
   let fat = 0, lucro = 0;
+  const pctOf = makePartnerCtx().pctOf;
   for (const o of vendas) {
     const l = orderProfit(o);
-    fat += o.cents; lucro += l - (o.coupon ? Math.max(0, l) * ((o.comissao_pct || 0) / 100) : 0);
+    fat += o.cents; lucro += l - (o.coupon ? Math.max(0, l) * (pctOf(o) / 100) : 0);
   }
   const entregues = db.prepare(`SELECT * FROM orders WHERE status='delivered' AND ${L('delivered_at')} = ?`).all(day);
   const auto = entregues.filter((o) => o.autopay === 'sent' && !JSON.parse(o.autopay_info || '{}').resolvido).length;
@@ -1821,22 +1822,123 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
   db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=? WHERE code=?').run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.code);
   res.json({ ok: true });
 });
+// ---------- Plano de metas dos parceiros ----------
+// Comissão = % do LUCRO; a faixa sai do FATURAMENTO do parceiro no mês (vendas pagas/entregues, fora compras do
+// próprio parceiro) e vale para TODAS as vendas do mês. Faixa garantida: quem atingiu uma faixa começa o mês
+// seguinte uma faixa abaixo (só no mês seguinte). Meses fechados ficam congelados (partner_months), então editar
+// as faixas não muda comissão passada. Cupom com plano 'fixo' usa o % do pedido (com_pct), como antes.
+for (const col of ["plano TEXT DEFAULT 'metas'", 'ids_proprios TEXT', 'ptoken TEXT']) {
+  try { db.exec(`ALTER TABLE coupons ADD COLUMN ${col}`); } catch { /* já existe */ }
+}
+db.exec("UPDATE coupons SET plano='metas' WHERE plano IS NULL");
+for (const c of db.prepare('SELECT code FROM coupons WHERE ptoken IS NULL').all()) {
+  db.prepare('UPDATE coupons SET ptoken=? WHERE code=?').run(crypto.randomBytes(18).toString('base64url'), c.code);
+}
+db.exec(`CREATE TABLE IF NOT EXISTS partner_months (
+  code TEXT NOT NULL, mes TEXT NOT NULL, ating INTEGER NOT NULL, idx INTEGER NOT NULL, pct REAL NOT NULL,
+  PRIMARY KEY (code, mes)
+)`);
+const TIERS_DEF = [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 400000, pct: 40 }, { min: 1000000, pct: 45 }];
+function getTiers() {
+  try { const t = JSON.parse(getSetting('tiers', '')); if (validTiers(t)) return t; } catch { /* padrão */ }
+  return TIERS_DEF;
+}
+function validTiers(t) {
+  if (!Array.isArray(t) || t.length < 1 || t.length > 6 || t[0].min !== 0) return false;
+  for (let i = 0; i < t.length; i++) {
+    if (!Number.isInteger(t[i].min) || t[i].min < 0 || !(t[i].pct >= 0 && t[i].pct <= 100)) return false;
+    if (i && (t[i].min <= t[i - 1].min || t[i].pct < t[i - 1].pct)) return false;
+  }
+  return true;
+}
+const curMes = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7);
+const mesOf = (paidAt) => localDay(paidAt).slice(0, 7);
+const prevMes = (m) => { const [y, mm] = m.split('-').map(Number); return new Date(Date.UTC(y, mm - 2, 1)).toISOString().slice(0, 7); };
+const tierIdx = (fat, tiers) => tiers.reduce((acc, t, k) => (fat >= t.min ? k : acc), 0);
+const proprios = (c) => new Set(String(c?.ids_proprios || '').split(/[\s,;]+/).filter(Boolean));
+// Contexto de cálculo (cache por requisição): faturamento por mês e faixa de cada mês de cada parceiro
+function makePartnerCtx() {
+  const tiers = getTiers(), cur = curMes();
+  const cupons = Object.fromEntries(db.prepare('SELECT * FROM coupons').all().map((c) => [c.code, c]));
+  const cache = {};
+  const dados = (code) => {
+    if (cache[code]) return cache[code];
+    const c = cupons[code], own = proprios(c);
+    const vendas = db.prepare(`SELECT * FROM orders WHERE coupon=? AND status IN ('paid','delivered') AND paid_at IS NOT NULL`).all(code)
+      .filter((o) => !own.has(String(o.game_id)));
+    const porMes = {};
+    for (const o of vendas) { const m = mesOf(o.paid_at); porMes[m] = (porMes[m] || 0) + o.cents; }
+    return (cache[code] = { c, own, vendas, porMes, info: {} });
+  };
+  const info = (code, mes) => {
+    const d = dados(code);
+    if (d.info[mes]) return d.info[mes];
+    let r = mes < cur ? db.prepare('SELECT ating, idx, pct FROM partner_months WHERE code=? AND mes=?').get(code, mes) : null;
+    if (!r) {
+      const ating = tierIdx(d.porMes[mes] || 0, tiers);
+      const ant = prevMes(mes);
+      // faixa ATINGIDA (por faturamento) no mês anterior: congelada se o mês já fechou
+      const antAting = d.porMes[ant] ? (db.prepare('SELECT ating FROM partner_months WHERE code=? AND mes=?').get(code, ant)?.ating ?? tierIdx(d.porMes[ant], tiers)) : 0;
+      const garant = d.porMes[ant] ? Math.max(0, antAting - 1) : 0;
+      const idx = Math.max(ating, garant);
+      r = { ating, idx, pct: tiers[idx].pct, garant };
+      if (mes < cur) db.prepare('INSERT OR IGNORE INTO partner_months (code, mes, ating, idx, pct) VALUES (?,?,?,?,?)').run(code, mes, ating, idx, r.pct);
+    }
+    return (d.info[mes] = r);
+  };
+  // % de comissão de um pedido (0 se for compra do próprio parceiro)
+  const pctOf = (o) => {
+    if (!o.coupon) return 0;
+    const c = cupons[o.coupon];
+    if (!c || c.plano === 'fixo') return o.com_pct || 0;
+    if (proprios(c).has(String(o.game_id))) return 0;
+    return info(o.coupon, mesOf(o.paid_at)).pct;
+  };
+  return { tiers, cur, cupons, dados, info, pctOf };
+}
+// resumo do mês atual de um parceiro do plano de metas (para painel, página do parceiro e aviso de faixa)
+function mesAtual(ctx, code) {
+  const d = ctx.dados(code), m = ctx.cur, inf = ctx.info(code, m);
+  const fat = d.porMes[m] || 0;
+  const doMes = d.vendas.filter((o) => mesOf(o.paid_at) === m);
+  const comissao = Math.round(doMes.reduce((a, o) => a + Math.max(0, orderProfit(o)) * inf.pct / 100, 0));
+  const prox = ctx.tiers[inf.idx + 1] || null;
+  return { mes: m, vendas: doMes.length, faturamento: fat, pct: inf.pct, idx: inf.idx, ating: inf.ating, garant: inf.garant,
+    garantidaPct: inf.garant > 0 ? ctx.tiers[inf.garant].pct : null,
+    prox: prox ? { pct: prox.pct, min: prox.min, falta: Math.max(0, prox.min - fat) } : null, comissao };
+}
+// aviso no Telegram quando um parceiro sobe de faixa com uma venda paga
+function avisoFaixa(o) {
+  try {
+    if (!o.coupon) return;
+    const ctx = makePartnerCtx(), c = ctx.cupons[o.coupon];
+    if (!c || c.plano === 'fixo' || proprios(c).has(String(o.game_id))) return;
+    const d = ctx.dados(o.coupon), fat = d.porMes[ctx.cur] || 0;
+    const antes = tierIdx(fat - o.cents, ctx.tiers), agora = tierIdx(fat, ctx.tiers);
+    const garant = ctx.info(o.coupon, ctx.cur).garant;
+    if (agora > antes && agora > garant) {
+      tgSend(`🎯 Parceiro ${o.coupon} bateu a meta de ${brlTxt(ctx.tiers[agora].min)} no mês → comissão de ${ctx.tiers[agora].pct}% do lucro em TODAS as vendas do mês (faturado até agora: ${brlTxt(fat)}).`);
+    }
+  } catch (e) { console.error('avisoFaixa', e.message); }
+}
+
 // Relatório: só pedidos pagos/entregues (cancelado/estornado não gera comissão).
 // Período (datas locais, ex.: ?from=2026-11-01&to=2026-11-30) vale para os números de venda;
 // ganho total, já pago e saldo são sempre de todo o histórico.
 const localDay = (t) => new Date(new Date(t.replace(' ', 'T') + 'Z').getTime() - 3 * 3600_000).toISOString().slice(0, 10);
-const comOf = (o) => Math.max(0, orderProfit(o)) * ((o.com_pct || 0) / 100);
+const comOf = (o, pctOf) => Math.max(0, orderProfit(o)) * (pctOf(o) / 100);
 app.get('/api/admin/coupons/report', admin, (req, res) => {
+  const ctx = makePartnerCtx();
   const re = /^\d{4}-\d{2}-\d{2}$/;
   const from = re.test(req.query.from || '') ? req.query.from : '0000-01-01';
   const to = re.test(req.query.to || '') ? req.query.to : '9999-12-31';
   const pctNow = Object.fromEntries(db.prepare('SELECT code, comissao_pct FROM coupons').all().map((c) => [c.code, c.comissao_pct]));
   const by = {};
-  const get = (code) => (by[code] ||= { code, comissao_pct: pctNow[code] ?? 0, pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0, total: 0, pago: 0, pagamentos: [] });
+  const get = (code) => (by[code] ||= { code, comissao_pct: pctNow[code] ?? 0, plano: ctx.cupons[code]?.plano || 'metas', pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0, total: 0, pago: 0, pagamentos: [] });
   const rows = db.prepare(`SELECT * FROM orders WHERE coupon IS NOT NULL AND status IN ('paid','delivered') AND paid_at IS NOT NULL`).all();
   for (const o of rows) {
     const r = get(o.coupon);
-    const c = comOf(o);
+    const c = comOf(o, ctx.pctOf);
     r.total += c;
     const d = localDay(o.paid_at);
     if (d < from || d > to) continue;
@@ -1857,8 +1959,15 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
     const total = Math.round(r.total);
     const lucro = Math.round(r.lucro), comissao = Math.round(r.comissao);
     return { ...r, lucro, comissao, lucroLoja: lucro - comissao, visitas: r.visitas || 0,
-      conversao: r.visitas ? r.pedidos / r.visitas : null, total, saldo: total - r.pago };
+      conversao: r.visitas ? r.pedidos / r.visitas : null, total, saldo: total - r.pago,
+      mesAtual: r.plano === 'fixo' || !ctx.cupons[r.code] ? null : mesAtual(ctx, r.code) };
   });
+  // cupons do plano de metas sem venda ainda também aparecem (mostram a faixa e a meta)
+  for (const c of Object.values(ctx.cupons)) {
+    if (by[c.code] || c.plano === 'fixo' || !c.ativo) continue;
+    list.push({ code: c.code, comissao_pct: c.comissao_pct, plano: c.plano, pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0,
+      lucroLoja: 0, visitas: 0, conversao: null, total: 0, pago: 0, saldo: 0, pagamentos: [], mesAtual: mesAtual(ctx, c.code) });
+  }
   res.json({ from, to, cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
 });
 app.post('/api/admin/coupons/:code/payouts', admin, (req, res) => {
@@ -1889,11 +1998,12 @@ app.get('/api/admin/analytics', admin, (req, res) => {
   const sold = db.prepare(`SELECT o.*, o.com_pct AS comissao_pct FROM orders o
     WHERE o.paid_at IS NOT NULL AND o.status IN ('paid','delivered','reversed') AND ${local('o.paid_at')} BETWEEN ? AND ?`).all(from, to);
   const ok = sold.filter((o) => o.status !== 'reversed');
+  const pctOf = makePartnerCtx().pctOf;
   let faturado = 0, lucro = 0, comissao = 0, stars = 0, comCupom = 0;
   const byDay = {}, byProd = {};
   for (const o of ok) {
     const l = orderProfit(o);
-    const c = o.coupon ? Math.max(0, l) * ((o.comissao_pct || 0) / 100) : 0;
+    const c = o.coupon ? Math.max(0, l) * (pctOf(o) / 100) : 0;
     faturado += o.cents; lucro += l; comissao += c; stars += o.prod_stars || 0;
     if (o.coupon) comCupom++;
     const d = new Date(new Date(o.paid_at.replace(' ', 'T') + 'Z').getTime() - 3 * 3600_000).toISOString().slice(0, 10);
@@ -2005,4 +2115,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, makePartnerCtx, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

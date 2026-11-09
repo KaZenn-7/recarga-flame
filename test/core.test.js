@@ -418,6 +418,7 @@ const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Conte
 
 test('cupom: cria, valida e mostra preço com 5% (arredondado, acima do piso)', async () => {
   assert.equal((await adm('POST', '/api/admin/coupons', { code: 'aquila', desconto_pct: 5, comissao_pct: 20, ativo: true })).status, 200);
+  db.prepare("UPDATE coupons SET plano='fixo' WHERE code='AQUILA'").run(); // estes testes cobrem o plano fixo (% congelado no pedido)
   assert.equal((await adm('POST', '/api/admin/coupons', { code: 'AQUILA', desconto_pct: 5, comissao_pct: 20, ativo: true })).status, 409);
   const r = await (await fetch(base + '/api/coupon/Aquila', { headers: freshIP() })).json();
   assert.equal(r.code, 'AQUILA');
@@ -1475,4 +1476,52 @@ test('link curto de cupom mantém a origem (?src=wa) e descarta lixo', async () 
   assert.equal(r.headers.get('location'), '/?cupom=AQUILA&src=wa');
   const x = await fetch(base + '/aquila?src=%3Cscript%3E', { redirect: 'manual' });
   assert.equal(x.headers.get('location'), '/?cupom=AQUILA');
+});
+
+// ---------- plano de metas dos parceiros ----------
+test('plano de metas: faixa pelo faturamento do mês vale p/ todas as vendas; garantida no mês seguinte; IDs próprios fora; meses fechados congelados', async () => {
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano, ids_proprios) VALUES ('META1', 5, 0, 1, 'metas', '999555')").run();
+  const mes = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7);
+  const [y, m] = mes.split('-').map(Number);
+  const ant = new Date(Date.UTC(y, m - 2, 15)).toISOString().slice(0, 10) + ' 15:00:00';
+  const ins = (gid, cents, paid) => db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon, star_cost)
+    VALUES (?, 'c1000', ?, ?, 'p', ?, 'delivered', ?, ?, 'x', 0, 'META1', 0.0875)`).run('m' + gid + paid + cents + Math.random(), cents, gid, gid + '@m.com', paid, paid);
+  // mês anterior: R$ 4.500 → atingiu 40%
+  ins('300001', 450000, ant);
+  // mês atual: R$ 1.000 (faixa atingida 30%) → garantida 35% (uma abaixo de 40%)
+  ins('300002', 100000, new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' '));
+  // compra do próprio parceiro (ID 999555) não conta
+  ins('999555', 900000, new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' '));
+  const rep = await (await fetch(base + '/api/admin/coupons/report', { headers: { Cookie: COOKIE, 'x-painel': '1', ...freshIP() } })).json();
+  const c = rep.cupons.find((x) => x.code === 'META1');
+  assert.equal(c.plano, 'metas');
+  assert.equal(c.mesAtual.faturamento, 100000);           // sem a compra própria
+  assert.equal(c.mesAtual.ating, 0); assert.equal(c.mesAtual.garant, 1); // atingiu 40% (índice 2) no mês anterior → garantida 35% (índice 1)
+  assert.equal(c.mesAtual.pct, 35);
+  assert.equal(c.mesAtual.prox.pct, 40); assert.equal(c.mesAtual.prox.falta, 400000 - 100000);
+  // lucro de cada venda (prod_stars 0): cents − 0,99% taxa; comissão do mês atual a 35%, do anterior a 40%, própria = 0
+  const esperado = Math.round(450000 * (1 - 0.0099) * 0.40) + Math.round(100000 * (1 - 0.0099) * 0.35);
+  assert.ok(Math.abs(c.total - esperado) <= 1, c.total + ' vs ' + esperado);
+  // mês anterior congelado: mudar as faixas não altera a comissão passada
+  db.prepare("INSERT INTO settings (k, v) VALUES ('tiers', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(JSON.stringify([{ min: 0, pct: 10 }, { min: 150000, pct: 11 }, { min: 400000, pct: 12 }, { min: 1000000, pct: 13 }]));
+  const rep2 = await (await fetch(base + '/api/admin/coupons/report', { headers: { Cookie: COOKIE, 'x-painel': '1', ...freshIP() } })).json();
+  const c2 = rep2.cupons.find((x) => x.code === 'META1');
+  const antCom = Math.round(450000 * (1 - 0.0099) * 0.40);
+  assert.ok(c2.total >= antCom - 1); // o mês fechado segue a 40%
+  db.prepare("DELETE FROM settings WHERE k='tiers'").run();
+  db.exec("DELETE FROM orders WHERE coupon='META1'"); db.exec("DELETE FROM partner_months WHERE code='META1'"); db.exec("DELETE FROM coupons WHERE code='META1'");
+});
+
+test('plano de metas: aviso 🎯 no Telegram quando o parceiro sobe de faixa com uma venda', async () => {
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano) VALUES ('META2', 5, 0, 1, 'metas')").run();
+  const agora = new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' ');
+  db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon)
+    VALUES ('mm1', 'c1000', 149000, '300101', 'p', 'a@m2.com', 'delivered', ?, ?, 'x', 0, 'META2')`).run(agora, agora);
+  mpShouldApprove = true;
+  const j = await (await postJ('/api/orders', { product: 'c1000', gameId: '300102', email: 'b@m2.com', coupon: 'META2' })).json();
+  db.prepare('UPDATE orders SET cents=1500 WHERE id=?').run(j.id); // garante cruzar R$ 1.500
+  lastMpBody = { ...lastMpBody, transaction_amount: 15 };
+  await pagar(j.token); await new Promise((r) => setTimeout(r, 30));
+  assert.ok(tgSent.some((m) => /🎯 Parceiro META2 bateu a meta de R\$\s?1\.500,00 no mês → comissão de 35%/.test(m.text)), tgSent.at(-1).text);
+  db.exec("DELETE FROM orders WHERE coupon='META2'"); db.exec("DELETE FROM coupons WHERE code='META2'");
 });
