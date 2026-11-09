@@ -15,27 +15,34 @@ const P = (runs, o = {}) => new Paragraph({ children: Array.isArray(runs) ? runs
 const H = (text) => new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text, font: FONT, size: 24, bold: true, color: ORANGE })] });
 const LI = (runs) => new Paragraph({ children: Array.isArray(runs) ? runs : [runs], numbering: { reference: 'bul', level: 0 }, spacing: { after: 80, line: 290 } });
 
-// tabela de exemplos (preços de 08/11/2026, 5% de desconto, 20% do lucro, R$ 0,0875/★)
-const W = [3000, 1700, 1700, 1700, 1306];
-const cell = (text, i, head = false, fill) => new TableCell({
-  width: { size: W[i], type: WidthType.DXA },
-  shading: fill ? { type: ShadingType.CLEAR, color: 'auto', fill } : undefined,
-  margins: { top: 80, bottom: 80, left: 100, right: 100 },
-  children: [new Paragraph({ alignment: i ? AlignmentType.RIGHT : AlignmentType.LEFT,
-    children: [new TextRun({ text, font: FONT, size: 20, bold: head })] })],
-});
-const rows = [
-  ['Produto', 'Cliente paga', 'Custo + taxa', 'Lucro', 'Comissão'],
-  ['Gold Pass', 'R$ 35,06', 'R$ 24,06', 'R$ 11,00', 'R$ 2,20'],
-  ['10.000 Coins', 'R$ 19,86', 'R$ 15,16', 'R$ 4,70', 'R$ 0,94'],
-  ['100.000 Coins', 'R$ 166,16', 'R$ 132,81', 'R$ 33,35', 'R$ 6,67'],
-];
-const table = new Table({
+// tabelas (larguras em DXA somando 9406 = largura útil); hl(ri, ci) destaca a célula em amarelo (campo a preencher)
+const mkTable = (W, rows, hl = () => false) => new Table({
   width: { size: W.reduce((a, c) => a + c, 0), type: WidthType.DXA },
   columnWidths: W,
   rows: rows.map((r, ri) => new TableRow({ tableHeader: ri === 0,
-    children: r.map((c, i) => cell(c, i, ri === 0, ri === 0 ? 'F3E4DC' : undefined)) })),
+    children: r.map((text, i) => new TableCell({
+      width: { size: W[i], type: WidthType.DXA },
+      shading: ri === 0 ? { type: ShadingType.CLEAR, color: 'auto', fill: 'F3E4DC' } : undefined,
+      margins: { top: 80, bottom: 80, left: 100, right: 100 },
+      children: [new Paragraph({ alignment: i ? AlignmentType.RIGHT : AlignmentType.LEFT,
+        children: [new TextRun({ text, font: FONT, size: 20, bold: ri === 0 || hl(ri, i), highlight: hl(ri, i) ? 'yellow' : undefined })] })],
+    })) })),
 });
+// faixas do plano de metas (padrão da loja; ajuste se o parceiro tiver faixas próprias)
+const faixas = mkTable([5600, 3806], [
+  ['Vendas do Parceiro no mês', 'Comissão (% do lucro)'],
+  ['até R$ 1.499,99', '30%'],
+  ['a partir de R$ 1.500,00', '35%'],
+  ['a partir de R$ 4.000,00', '40%'],
+  ['a partir de R$ 10.000,00', '45%'],
+], (ri) => ri > 0);
+// exemplos com os preços e o custo de 09/11/2026 (Star a R$ 0,0868), cliente com 5% de desconto
+const exemplos = mkTable([2306, 1500, 1400, 1050, 1050, 1050, 1050], [
+  ['Produto', 'Cliente paga', 'Lucro', '30%', '35%', '40%', '45%'],
+  ['10.000 Coins', 'R$ 19,86', 'R$ 4,82', 'R$ 1,45', 'R$ 1,69', 'R$ 1,93', 'R$ 2,17'],
+  ['Gold Pass', 'R$ 35,06', 'R$ 11,19', 'R$ 3,36', 'R$ 3,92', 'R$ 4,48', 'R$ 5,04'],
+  ['100.000 Coins', 'R$ 166,16', 'R$ 34,40', 'R$ 10,32', 'R$ 12,04', 'R$ 13,76', 'R$ 15,48'],
+]);
 
 const aviso = new Table({
   width: { size: 9406, type: WidthType.DXA }, columnWidths: [9406],
@@ -46,7 +53,9 @@ const aviso = new Table({
     children: [
       P([b('Como usar este modelo (apague este quadro antes de enviar)')], { spacing: { after: 80 } }),
       LI([t('Preencha todos os campos '), f('EM AMARELO'), t(' e remova o destaque amarelo.')]),
-      LI(t('Os exemplos da cláusula 3 usam 5% de desconto, 20% do lucro e os preços de 08/11/2026. Se o desconto, a comissão ou os preços forem outros, refaça a conta com o relatório da aba Cupons do painel.')),
+      LI(t('A tabela de faixas da cláusula 3 traz as faixas padrão. Se o parceiro tiver faixas próprias (painel → Cupons → Editar → Faixas deste parceiro), troque os valores. Para comissão fixa, troque a tabela por "X% do lucro em todas as vendas" e apague as frases sobre faixas.')),
+      LI(t('Os exemplos usam 5% de desconto e os preços e custos de 09/11/2026 — servem só de ilustração.')),
+      LI(t('O link de acompanhamento do parceiro está no painel → Cupons → "Copiar link do parceiro".')),
       LI(t('O link curto do cupom é recargaflame.com.br/<código do cupom> e só funciona com o cupom ATIVO no painel.')),
       LI(t('Envie por mensagem ou e-mail e guarde a resposta de aceite do parceiro.')),
     ],
@@ -88,39 +97,48 @@ const doc = new Document({
       H('2. Desconto para o cliente'),
       P([t('Quem usar o cupom tem '), f('5'), t('% de desconto, calculado automaticamente pela Loja no momento do pagamento. O desconto nunca deixa o preço abaixo do custo do item.')]),
 
-      H('3. Comissão do Parceiro'),
-      P([t('O Parceiro recebe '), f('20'), t('% do '), b('lucro'), t(' de cada venda paga e entregue com o cupom.')]),
-      P([b('Lucro'), t(' = valor pago pelo cliente − custo das Stars usadas na compra − taxa do Mercado Pago (0,99%).')]),
-      P([t('O custo das Stars é o custo real que a Loja pagou, calculado pela média das recargas de Stars e '), b('registrado no momento de cada venda'),
-        t(' — uma venda já feita nunca tem a comissão alterada depois. O custo usado em cada venda aparece no relatório mensal.')]),
-      P([t('Exemplos com os preços de hoje (custo de R$ 0,0875 por Star):', { italics: true, color: '555555', size: 20 })], { spacing: { after: 80 } }),
-      table,
+      H('3. Comissão e metas'),
+      P([t('O Parceiro recebe uma porcentagem do '), b('lucro'), t(' de cada venda paga e entregue com o cupom. A porcentagem depende do '),
+        b('total vendido pelo Parceiro no mês'), t(' (soma do que os clientes pagaram com o cupom), conforme a tabela:')]),
+      faixas,
+      new Paragraph({ spacing: { after: 120 }, children: [] }),
+      LI([b('A faixa atingida vale para todas as vendas do mês'), t(' — inclusive as feitas antes de bater a meta.')]),
+      LI([b('Faixa garantida: '), t('quem atinge uma faixa começa o mês seguinte uma faixa abaixo dela (ex.: atingiu 40% em março → começa abril em 35%). A garantia vale só para o mês seguinte.')]),
+      LI(t('Os meses são do calendário (horário de Brasília). Ao fechar o mês, a faixa daquele mês fica registrada e não muda depois.')),
+      P([b('Lucro'), t(' = valor pago pelo cliente − custo das Stars usadas na compra − taxa do Mercado Pago (0,99%). O custo das Stars é o custo real pago pela Loja, '),
+        b('registrado no momento de cada venda'), t(' — uma venda já feita não tem o lucro alterado depois.')], { spacing: { before: 120, after: 120 } }),
+      P([t('Exemplos de comissão por venda em cada faixa:', { italics: true, color: '555555', size: 20 })], { spacing: { after: 80 } }),
+      exemplos,
       new Paragraph({ spacing: { after: 120 }, children: [] }),
 
-      H('4. O que não gera comissão'),
-      LI(t('Pedidos não pagos, cancelados, reembolsados ou estornados (inclusive contestação de Pix/MED).')),
+      H('4. O que não conta'),
+      LI(t('Pedidos não pagos, cancelados, reembolsados ou estornados (inclusive contestação de Pix/MED) não contam para a meta nem geram comissão.')),
+      LI([t('Compras feitas pelo próprio Parceiro (contas do jogo de ID '), f('IDs DO JOGO DO PARCEIRO'), t(') não contam para a meta nem geram comissão.')]),
       LI(t('Se uma venda já paga ao Parceiro for estornada depois, o valor é descontado do próximo pagamento.')),
 
-      H('5. Pagamento'),
+      H('5. Acompanhamento'),
+      P([t('O Parceiro acompanha tudo por um '), b('link privado'), t(' com as vendas do mês, a faixa atual, quanto falta para a próxima, a comissão estimada, o histórico mensal e os pagamentos recebidos, atualizado na hora. O link é pessoal: não compartilhe. Se ele vazar, a Loja gera um novo e o anterior para de funcionar.')]),
+
+      H('6. Pagamento'),
       P([t('Mensal, até o dia '), f('5'), t(' do mês seguinte, por Pix para a chave '), f('CHAVE PIX DO PARCEIRO'),
-        t('. Junto com o pagamento, a Loja envia o relatório do mês: número de vendas, valor faturado, lucro e comissão. Valores abaixo de R$ '),
+        t('. O valor de cada mês é o mostrado no link de acompanhamento. Valores abaixo de R$ '),
         f('20'), t(' podem ser acumulados para o mês seguinte.')]),
 
-      H('6. Divulgação'),
+      H('7. Divulgação'),
       P(t('O Parceiro divulga do jeito que preferir, desde que:')),
       LI(t('não prometa o que a Loja não oferece (por exemplo: reembolso após a entrega, preço "oficial" ou itens que a Loja não vende);')),
       LI(t('deixe claro que é uma parceria (por exemplo: "parceria" ou "#publi");')),
       LI(t('lembre que a Loja é uma revenda independente, sem vínculo com a Valve nem com a equipe do CounterFlame.')),
       P(t('O atendimento aos clientes é da Loja: dúvidas e problemas vão para recargaflame.com.br/suporte.')),
 
-      H('7. Exclusividade e mudanças'),
-      P(t('Não há exclusividade para nenhum dos lados. Desconto e comissão só mudam com acordo dos dois.')),
+      H('8. Exclusividade e mudanças'),
+      P(t('Não há exclusividade para nenhum dos lados. Desconto, faixas e comissão só mudam com acordo dos dois; uma mudança vale do mês seguinte em diante, nunca para meses já fechados.')),
 
-      H('8. Duração e encerramento'),
+      H('9. Duração e encerramento'),
       P([t('Vale por tempo indeterminado. Qualquer um pode encerrar avisando com '), f('7'),
         t(' dias de antecedência. As comissões das vendas feitas até o encerramento são pagas normalmente.')]),
 
-      H('9. Independência'),
+      H('10. Independência'),
       P(t('Este acordo não cria vínculo de emprego, sociedade ou representação entre as partes.')),
 
       H('Aceite'),
