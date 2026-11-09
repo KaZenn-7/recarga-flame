@@ -369,3 +369,12 @@ Telegram (com confirmação). `POST /v1/payments/{id}/refunds` integral com `X-I
 (MP nunca devolve 2x; erro pode ser repetido). Entregue/estornado: recusado (Termos). Estado em orders.refund_state
 (pending/done/erro). Reembolso da loja não é tratado como estorno do cliente (não bloqueia). Cliente vê "valor devolvido".
 Obs.: o MP só devolve se houver saldo na conta do Mercado Pago.
+
+### Plano de metas dos parceiros ✅ (2026-11-09, 4 etapas)
+- Comissão = % do LUCRO; faixa pelo FATURAMENTO do parceiro no mês (padrão 30% / 35% ≥ R$1.500 / 40% ≥ R$4.000 /
+  45% ≥ R$10.000), valendo para TODAS as vendas do mês. Faixa garantida: começa o mês seguinte 1 faixa abaixo.
+  Compras do próprio parceiro (coupons.ids_proprios) não contam. Meses fechados congelados (partner_months).
+- Faixas padrão (settings.tiers) ou PRÓPRIAS por parceiro (coupons.tiers); plano 'fixo' continua disponível.
+- Painel → Cupons: card de faixas, edição por cupom, faixa/progresso do mês; aviso 🎯 ao subir de faixa.
+- Página do parceiro /parceiro/<ptoken> (noindex; sem lucro/margem/custos); "gerar novo link" invalida o anterior.
+- docs/: modelo de acordo (metas) em .docx + gerador.
