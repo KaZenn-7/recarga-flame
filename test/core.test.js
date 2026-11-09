@@ -1573,3 +1573,28 @@ test('faixas individuais: parceiro com faixas próprias calcula por elas; voltar
   assert.equal(r.find((x) => x.code === 'IND1').mesAtual.pct, 30);
   db.exec("DELETE FROM orders WHERE coupon IN ('IND1','IND2')"); db.exec("DELETE FROM coupons WHERE code IN ('IND1','IND2')");
 });
+
+test('página do parceiro: link privado mostra mês, faixa e pagamentos — nunca lucro/margem/custos; novo link invalida o antigo', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  await adm('POST', '/api/admin/coupons', { code: 'PAG1', desconto_pct: 5, comissao_pct: 0, ativo: true, plano: 'metas' });
+  const agora = new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' ');
+  db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon, star_cost)
+    VALUES ('pg1', 'c1000', 100000, '320001', 'p', 'p@g.com', 'delivered', ?, ?, '1.000 Coins', 26, 'PAG1', 0.0875)`).run(agora, agora);
+  db.prepare("INSERT INTO coupon_payouts (code, cents, nota) VALUES ('PAG1', 1234, 'Pix teste')").run();
+  const rep = (await (await adm('GET', '/api/admin/coupons/report')).json()).cupons.find((x) => x.code === 'PAG1');
+  assert.match(rep.linkParceiro, /\/parceiro\/[A-Za-z0-9_-]{20,}$/);
+  const path = new URL(rep.linkParceiro).pathname;
+  const r = await fetch(base + path, { headers: freshIP() });
+  assert.equal(r.status, 200); assert.match(r.headers.get('x-robots-tag'), /noindex/);
+  const h = await r.text();
+  assert.match(h, /Parceiro PAG1/); assert.match(h, /30% <small>de comissão/); assert.match(h, /Faltam/);
+  assert.match(h, /R\$\s?1\.000,00/);       // faturado do mês
+  assert.match(h, /Pix teste/);              // pagamento recebido
+  for (const proibido of [/lucro/i, /margem/i, /custo/i, /stars/i, /★/]) assert.doesNotMatch(h, proibido, String(proibido));
+  // token inválido
+  assert.equal((await fetch(base + '/parceiro/abc', { headers: freshIP() })).status, 404);
+  // novo link: o antigo para de funcionar
+  assert.equal((await adm('POST', '/api/admin/coupons/PAG1/ptoken')).status, 200);
+  assert.equal((await fetch(base + path, { headers: freshIP() })).status, 404);
+  db.exec("DELETE FROM orders WHERE coupon='PAG1'"); db.exec("DELETE FROM coupon_payouts WHERE code='PAG1'"); db.exec("DELETE FROM coupons WHERE code='PAG1'");
+});

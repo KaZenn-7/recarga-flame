@@ -3,5 +3,6 @@ Allow: /
 Disallow: /painel
 Disallow: /login
 Disallow: /api/
+Disallow: /parceiro/
 
 Sitemap: https://recargaflame.com.br/sitemap.xml

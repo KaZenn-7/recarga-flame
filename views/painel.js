@@ -155,6 +155,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .tiers .tt input[data-k="pct"]{width:54px}.tiers .undo{background:none;border:0;color:var(--red);font:inherit;font-size:12px;cursor:pointer;padding:0}
 .tiers .tt td{vertical-align:middle}.tiers .ops{display:flex;gap:8px;margin-top:10px}
 .tiers .ops button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;padding:9px;font:inherit;font-weight:700;cursor:pointer}
+.rep .plk{font-size:11.5px;color:var(--dim);margin-top:6px}.rep .ops{flex-wrap:wrap}
 .rep .tot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.rep .tot b{color:var(--txt)}
 .rep .ops{display:flex;gap:6px;margin-top:10px}
 .rep .ops button{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:7px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
@@ -794,11 +795,18 @@ async function loadRep(){
         '<span>descontos <b>'+brlFromCents(c.desconto)+'</b></span><span>lucro <b>'+brlFromCents(c.lucro)+'</b></span>'+
         '<span>comissão <b>'+brlFromCents(c.comissao)+'</b></span><span>fica para a loja <b>'+brlFromCents(c.lucroLoja)+'</b></span></div>'+
         '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>'+(c.plano==='fixo'?'fixo: '+pct(c.comissao_pct)+' do lucro':'plano de metas')+'</span></div>'+
-        '<div class="ops"><button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button></div>'+
+        '<div class="ops"><button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button>'+
+        (c.linkParceiro?'<button data-plink="'+esc(c.linkParceiro)+'">Copiar link do parceiro</button>':'')+'</div>'+
+        (c.linkParceiro?'<div class="plk">Página do parceiro (só leitura, sem lucro/margem) · <button class="undo" data-pnew="'+esc(c.code)+'">gerar novo link</button></div>':'')+
         (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
         '</div>';
     }).join('')||'<div class="empty" style="padding:24px">Nenhuma venda com cupom ainda.</div>';
     $$('repBox').querySelectorAll('[data-pay]').forEach(function(b){b.onclick=function(){payCup(b.dataset.pay,Number(b.dataset.saldo));};});
+    $$('repBox').querySelectorAll('[data-plink]').forEach(function(b){b.onclick=function(){const u=b.dataset.plink;
+      (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(function(){alert('Link do parceiro copiado. Envie só para ele — quem tiver o link vê os números da parceria.');},function(){prompt('Copie o link do parceiro:',u);});};});
+    $$('repBox').querySelectorAll('[data-pnew]').forEach(function(b){b.onclick=async function(){
+      if(!confirm('Gerar um novo link para '+b.dataset.pnew+'? O link atual deixa de funcionar na hora.'))return;
+      try{await api('/api/admin/coupons/'+b.dataset.pnew+'/ptoken',{method:'POST'});loadRep();}catch(e){alert(e.message);}};});
     $$('repBox').querySelectorAll('[data-undo]').forEach(function(b){b.onclick=function(){undoPay(b.dataset.undo,b.dataset.v);};});
   }catch(e){$$('repBox').innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }

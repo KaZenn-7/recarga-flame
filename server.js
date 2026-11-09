@@ -1981,13 +1981,15 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
     const lucro = Math.round(r.lucro), comissao = Math.round(r.comissao);
     return { ...r, lucro, comissao, lucroLoja: lucro - comissao, visitas: r.visitas || 0,
       conversao: r.visitas ? r.pedidos / r.visitas : null, total, saldo: total - r.pago,
-      mesAtual: r.plano === 'fixo' || !ctx.cupons[r.code] ? null : mesAtual(ctx, r.code) };
+      mesAtual: r.plano === 'fixo' || !ctx.cupons[r.code] ? null : mesAtual(ctx, r.code),
+      linkParceiro: ctx.cupons[r.code]?.ptoken ? `${SITE_URL}/parceiro/${ctx.cupons[r.code].ptoken}` : null };
   });
   // cupons do plano de metas sem venda ainda também aparecem (mostram a faixa e a meta)
   for (const c of Object.values(ctx.cupons)) {
     if (by[c.code] || c.plano === 'fixo' || !c.ativo) continue;
     list.push({ code: c.code, comissao_pct: c.comissao_pct, plano: c.plano, pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0,
-      lucroLoja: 0, visitas: 0, conversao: null, total: 0, pago: 0, saldo: 0, pagamentos: [], mesAtual: mesAtual(ctx, c.code) });
+      lucroLoja: 0, visitas: 0, conversao: null, total: 0, pago: 0, saldo: 0, pagamentos: [], mesAtual: mesAtual(ctx, c.code),
+      linkParceiro: c.ptoken ? `${SITE_URL}/parceiro/${c.ptoken}` : null });
   }
   res.json({ from, to, cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
 });
@@ -2000,6 +2002,78 @@ app.put('/api/admin/tiers', admin, (req, res) => {
   setSetting('tiers', JSON.stringify(t));
   res.json(t);
 });
+// gera um novo link do parceiro (o antigo para de funcionar)
+app.post('/api/admin/coupons/:code/ptoken', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const r = db.prepare('UPDATE coupons SET ptoken=? WHERE code=?').run(crypto.randomBytes(18).toString('base64url'), normCode(req.params.code));
+  res.status(r.changes ? 200 : 404).json(r.changes ? { ok: true } : { error: 'Cupom não encontrado.' });
+});
+
+// ---------- Página do parceiro (link privado, só leitura; nunca mostra lucro, margem ou custos) ----------
+app.get('/parceiro/:token', limit(30), (req, res) => {
+  const tk = String(req.params.token || '');
+  const c = /^[A-Za-z0-9_-]{20,40}$/.test(tk) ? db.prepare('SELECT * FROM coupons WHERE ptoken=?').get(tk) : null;
+  res.set('X-Robots-Tag', 'noindex, nofollow').set('Cache-Control', 'no-store');
+  if (!c) return res.status(404).type('html').send('<!doctype html><meta charset="utf-8"><title>Link inválido</title><p style="font-family:sans-serif;padding:24px">Link inválido ou desativado.</p>');
+  const ctx = makePartnerCtx();
+  const T = ctx.tiersOf(c.code); // faixas deste parceiro (próprias ou padrão)
+  const d = ctx.dados(c.code);
+  const meses = [...new Set([...Object.keys(d.porMes), ctx.cur])].sort().reverse();
+  const linhaMes = (m) => {
+    const inf = ctx.info(c.code, m);
+    const pct = c.plano === 'fixo' ? null : inf.pct;
+    const doMes = d.vendas.filter((o) => mesOf(o.paid_at) === m);
+    const raw = doMes.reduce((a, o) => a + Math.max(0, orderProfit(o)) * (c.plano === 'fixo' ? (o.com_pct || 0) : pct) / 100, 0);
+    return { m, vendas: doMes.length, fat: d.porMes[m] || 0, pct: pct ?? c.comissao_pct, com: Math.round(raw), raw };
+  };
+  const hist = meses.map(linhaMes);
+  const atual = c.plano === 'fixo' ? null : mesAtual(ctx, c.code);
+  const ganho = Math.round(hist.reduce((a, h) => a + h.raw, 0)); // arredonda só o total (igual ao painel)
+  const pagos = db.prepare('SELECT cents, nota, paid_at FROM coupon_payouts WHERE code=? ORDER BY paid_at DESC').all(c.code);
+  const pago = pagos.reduce((a, p) => a + p.cents, 0);
+  const nomeMes = (m) => { const [y, mm] = m.split('-'); return ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+mm - 1] + '/' + y; };
+  const link = `${SITE_URL}/${c.code.toLowerCase()}`;
+  const barra = atual?.prox ? Math.min(100, Math.round((atual.faturamento - T[atual.ating].min) / (atual.prox.min - T[atual.ating].min) * 100)) : 100;
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Parceiro ${esc(c.code)} — Recarga Flame</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<style>
+:root{--bg:#0e0e10;--panel:#161618;--line:#2a2a2e;--txt:#f4f4f5;--mut:#9b9ba3;--dim:#6c6c74;--orange:#ff5a1f;--green:#3fb950}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif}
+.w{max-width:520px;margin:0 auto;padding:18px 18px 40px}.bar{display:flex;align-items:center;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.bar img{width:30px;height:30px;border-radius:7px}.bar b span{color:var(--orange)}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mut);font-size:13px;margin:0 0 16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.big{font-size:30px;font-weight:800}.big small{font-size:14px;color:var(--mut);font-weight:600}
+.k{display:grid;grid-template-columns:1fr 1fr;gap:10px}.k div{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
+.k span{display:block;font-size:12px;color:var(--mut)}.k b{font-size:19px}
+.prog{height:10px;background:var(--bg);border-radius:99px;overflow:hidden;margin:10px 0 6px}.prog i{display:block;height:100%;background:var(--orange)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}td,th{padding:7px 4px;border-top:1px solid var(--line);text-align:right}td:first-child,th:first-child{text-align:left}th{color:var(--mut);font-weight:600}
+.cur{color:var(--orange);font-weight:700}.link{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all;color:var(--orange)}
+.note{font-size:12px;color:var(--dim)}
+</style></head><body><div class="w">
+<div class="bar"><img src="/img/brand-mark.png" alt=""><b>Recarga <span>Flame</span></b></div>
+<h1>Parceiro ${esc(c.code)}</h1><p class="sub">Seu link: <span class="link">${esc(link)}</span> · cupom <b>${esc(c.code)}</b> (${String(c.desconto_pct).replace('.', ',')}% de desconto para o cliente)</p>
+${atual ? `<div class="card"><div class="note">Este mês (${nomeMes(atual.mes)})</div>
+<div class="big">${atual.pct}% <small>de comissão${atual.garantidaPct && atual.idx === atual.garant && atual.ating < atual.garant ? ' · faixa garantida pelo mês anterior' : ''}</small></div>
+<div class="k" style="margin-top:10px"><div><span>Vendas</span><b>${atual.vendas}</b></div><div><span>Faturado</span><b>${brlTxt(atual.faturamento)}</b></div>
+<div><span>Comissão estimada</span><b>${brlTxt(atual.comissao)}</b></div><div><span>Próxima faixa</span><b>${atual.prox ? atual.prox.pct + '%' : 'máxima ✓'}</b></div></div>
+${atual.prox ? `<div class="prog"><i style="width:${barra}%"></i></div><div class="note">Faltam <b style="color:var(--txt)">${brlTxt(atual.prox.falta)}</b> em vendas este mês para ${atual.prox.pct}% em todas as vendas do mês.</div>` : ''}
+</div>
+<div class="card"><b>Faixas de comissão</b><table><tr><th>Vendas no mês</th><th>Comissão</th></tr>
+${T.map((t, i) => `<tr${i === atual.idx ? ' class="cur"' : ''}><td>${i === 0 ? (T[1] ? 'até ' + brlTxt(T[1].min) : 'qualquer valor') : 'a partir de ' + brlTxt(t.min)}</td><td>${t.pct}%</td></tr>`).join('')}
+</table><p class="note" style="margin:8px 0 0">A faixa atingida vale para todas as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Contam vendas pagas e entregues; compras canceladas, reembolsadas ou feitas pelo próprio parceiro não contam.</p></div>` : `<div class="card"><div class="big">${String(c.comissao_pct).replace('.', ',')}% <small>de comissão fixa</small></div></div>`}
+<div class="card"><b>Histórico</b><table><tr><th>Mês</th><th>Vendas</th><th>Faturado</th><th>Faixa</th><th>Comissão</th></tr>
+${hist.map((h) => `<tr><td>${nomeMes(h.m)}</td><td>${h.vendas}</td><td>${brlTxt(h.fat)}</td><td>${h.pct}%</td><td>${brlTxt(h.com)}</td></tr>`).join('')}
+</table></div>
+<div class="card"><div class="k"><div><span>Total ganho</span><b>${brlTxt(ganho)}</b></div><div><span>Já recebido</span><b>${brlTxt(pago)}</b></div></div>
+<p style="margin:10px 0 0">A receber: <b>${brlTxt(Math.max(0, ganho - pago))}</b></p>
+${pagos.length ? `<table style="margin-top:8px"><tr><th>Pagamento</th><th>Valor</th></tr>${pagos.map((p) => `<tr><td>${localDay(p.paid_at).split('-').reverse().join('/')}${p.nota ? ' · ' + esc(p.nota) : ''}</td><td>${brlTxt(p.cents)}</td></tr>`).join('')}</table>` : ''}</div>
+<p class="note">Atualizado agora. Dúvidas sobre a parceria: fale com a Recarga Flame.</p>
+</div></body></html>`;
+  res.type('html').send(html);
+});
+
 app.post('/api/admin/coupons/:code/payouts', admin, (req, res) => {
   if (!guard(req, res)) return;
   const code = normCode(req.params.code);
