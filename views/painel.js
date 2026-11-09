@@ -145,6 +145,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .rep .meta{margin-top:8px;padding:9px 10px;border-radius:9px;background:rgba(255,90,31,.07);border:1px solid rgba(255,90,31,.3);font-size:12.5px;color:var(--mut)}
 .rep .meta b{color:var(--txt)}.rep .meta .mt b:first-child{color:var(--orange);font-size:15px}
 .rep .pg{height:7px;background:var(--bg);border-radius:99px;overflow:hidden;margin:7px 0 4px}.rep .pg i{display:block;height:100%;background:var(--orange)}
+.tiers .addt{margin-top:8px;width:100%;border:1px dashed var(--line);background:none;color:var(--mut);border-radius:8px;padding:8px;font:inherit;font-weight:700;cursor:pointer}
 .metabox{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:12.5px;color:var(--mut)}
 .metabox span{flex:1}.metabox button{flex-shrink:0;border:1px solid var(--orange);background:none;color:var(--orange);border-radius:7px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .tiers details{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:12px}
@@ -229,8 +230,11 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="fg"><label>Plano de comissão</label><select id="c_plano" onchange="cupPlano()"><option value="metas">Metas (faixas)</option><option value="fixo">Fixo (%)</option></select></div>
     </div>
     <div class="fg" id="c_com_fg"><label>Comissão fixa (% do lucro)</label><input id="c_com" inputmode="decimal" placeholder="20"></div>
-    <div class="fg" id="c_metas_fg"><div class="metabox"><span id="c_metas_txt"></span><button type="button" onclick="irParaFaixas()">Editar faixas</button></div>
-      <div class="hint">As faixas são as mesmas para todos os parceiros do plano de metas.</div></div>
+    <div class="fg" id="c_metas_fg"><label>Faixas deste parceiro</label>
+      <select id="c_tmode" onchange="cupTmode()"><option value="padrao">Usar as faixas padrão</option><option value="proprias">Faixas próprias deste parceiro</option></select>
+      <div id="c_tpad" class="metabox" style="margin-top:8px"><span id="c_metas_txt"></span><button type="button" onclick="irParaFaixas()">Editar padrão</button></div>
+      <div id="c_tprop" class="tiers" style="margin-top:8px"></div>
+      <div class="hint">Faixas próprias valem só para este parceiro; as padrão valem para todos que as usam. Meses fechados não mudam.</div></div>
     <div class="fg"><label>IDs do próprio parceiro (não contam)</label><input id="c_ids" inputmode="numeric" placeholder="ex.: 749125, 1310329" autocomplete="off"><div class="hint">Compras feitas nesses IDs não contam para a meta nem geram comissão.</div></div>
     <div class="fg"><label>Nota (opcional)</label><input id="c_nota" placeholder="ex.: youtuber aquilagado" autocomplete="off"></div>
     <label class="fchk"><button type="button" class="sw" id="c_ativo" onclick="this.classList.toggle('on');cupAtivoTxt()"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
@@ -712,7 +716,7 @@ async function loadCups(){
 function renderCups(){
   $$('cupList').innerHTML=CUPS.map(function(c){
     return '<div class="prow"><div class="pi"><div class="nm mono">'+esc(c.code)+(c.ativo?'<span class="cuptag">ATIVO</span>':'<span class="cuptag off">INATIVO</span>')+'</div>'+
-      '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · '+(c.plano==='fixo'?'comissão fixa <b>'+pct(c.comissao_pct)+'</b> do lucro':'<b>plano de metas</b>')+(c.nota?' · '+esc(c.nota):'')+'</div>'+
+      '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · '+(c.plano==='fixo'?'comissão fixa <b>'+pct(c.comissao_pct)+'</b> do lucro':'<b>plano de metas</b>'+(c.tiers?' (faixas próprias)':''))+(c.nota?' · '+esc(c.nota):'')+'</div>'+
       '<div class="sub mono">'+esc(location.origin+'/?cupom='+c.code)+'</div></div>'+
       '<div class="rt"><button class="sw '+(c.ativo?'on':'')+'" title="Ativar/desativar" data-tog="'+esc(c.code)+'"></button>'+
       '<div class="ops"><button data-copy="'+esc(c.code)+'">Copiar link</button><button data-edit="'+esc(c.code)+'">Editar</button></div></div></div>';
@@ -821,11 +825,36 @@ function openCup(code){
   $$('c_code').value=c?c.code:'';$$('c_code').disabled=!!c;
   $$('c_desc').value=c?String(c.desconto_pct).replace('.',','):'5';
   $$('c_com').value=c?String(c.comissao_pct).replace('.',','):'30';
-  $$('c_plano').value=c&&c.plano==='fixo'?'fixo':'metas';$$('c_ids').value=c?(c.ids_proprios||''):'';cupPlano();
+  $$('c_plano').value=c&&c.plano==='fixo'?'fixo':'metas';$$('c_ids').value=c?(c.ids_proprios||''):'';
+  CT=null;try{CT=c&&c.tiers?JSON.parse(c.tiers):null;}catch(e){CT=null;}
+  $$('c_tmode').value=CT?'proprias':'padrao';cupPlano();cupTmode();
   $$('c_nota').value=c?(c.nota||''):'';
   $$('c_ativo').classList.toggle('on',c?!!c.ativo:true);
   $$('cerr').textContent='';cupLink();cupAtivoTxt();$$('cmodal').classList.add('on');
 }
+let CT=null; // faixas próprias do cupom em edição (null = padrão)
+function cupTmode(){
+  const prop=$$('c_tmode').value==='proprias';
+  if(prop&&!CT)CT=TIERS.map(function(t){return {min:t.min,pct:t.pct};});
+  $$('c_tpad').style.display=prop?'none':'';$$('c_tprop').style.display=prop?'':'none';
+  if(prop)renderCT();
+}
+function renderCT(){
+  const B=$$('c_tprop');B.textContent='';
+  const t=el('table','ttab tt');const h=el('tr');['Vendas no mês a partir de','Comissão',''].forEach(function(x){h.appendChild(el('th',null,x));});t.appendChild(h);
+  CT.forEach(function(x,i){
+    const tr=el('tr');
+    const a=document.createElement('input');a.inputMode='decimal';a.value=i?(x.min/100).toFixed(2).replace('.',','):'0,00';a.disabled=!i;
+    a.oninput=function(){x.min=Math.round(numBR(a.value)*100)||0;};
+    const b=document.createElement('input');b.inputMode='decimal';b.dataset.k='pct';b.value=String(x.pct).replace('.',',');b.oninput=function(){x.pct=numBR(b.value);};
+    const td1=el('td');td1.appendChild(el('span',null,'R$ '));td1.appendChild(a);const td2=el('td');td2.appendChild(b);td2.appendChild(el('span',null,' %'));
+    const td3=el('td');if(i){const rm=el('button','undo','remover');rm.type='button';rm.onclick=function(){CT.splice(i,1);renderCT();};td3.appendChild(rm);}
+    tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);t.appendChild(tr);
+  });
+  B.appendChild(t);
+  if(CT.length<6){const ad=el('button','addt','+ faixa');ad.type='button';ad.onclick=function(){const l=CT[CT.length-1];CT.push({min:l.min+100000,pct:l.pct+5});renderCT();};B.appendChild(ad);}
+}
+function numBR(v){let t=String(v).replace(/[^0-9,.]/g,'');if(t.indexOf(',')>=0)t=t.split('.').join('').replace(',','.');return parseFloat(t);}
 function cupPlano(){const fixo=$$('c_plano').value==='fixo';$$('c_com_fg').style.display=fixo?'':'none';$$('c_metas_fg').style.display=fixo?'none':'';
   $$('c_metas_txt').textContent=TIERS.length?tiersResumo():'carregando faixas…';if(!TIERS.length)loadTiers().then(function(){$$('c_metas_txt').textContent=tiersResumo();});}
 function cupAtivoTxt(){$$('c_ativo_txt').textContent=$$('c_ativo').classList.contains('on')?'Ativo — já pode ser usado':'Inativo — o link não dá desconto';}
@@ -837,7 +866,8 @@ async function saveCup(){
   $$('cerr').textContent='';const b=$$('csave');b.disabled=true;
   const num=function(id){return Number(($$(id).value||'0').replace(',','.'));};
   const payload={code:$$('c_code').value.trim(),desconto_pct:num('c_desc'),comissao_pct:num('c_com'),nota:$$('c_nota').value.trim(),ativo:$$('c_ativo').classList.contains('on'),
-    plano:$$('c_plano').value,ids_proprios:$$('c_ids').value.trim()};
+    plano:$$('c_plano').value,ids_proprios:$$('c_ids').value.trim(),
+    tiers:$$('c_plano').value==='metas'&&$$('c_tmode').value==='proprias'&&CT?CT:null};
   try{
     if(editCup)await api('/api/admin/coupons/'+editCup,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     else await api('/api/admin/coupons',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});

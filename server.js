@@ -1804,18 +1804,25 @@ function parseCoupon(b, codeFixed) {
   const plano = b.plano === 'fixo' ? 'fixo' : 'metas';
   const ids = String(b.ids_proprios || '').split(/[\s,;]+/).filter(Boolean);
   if (ids.some((x) => !/^\d{1,12}$/.test(x)) || ids.length > 20) return { err: 'IDs do próprio parceiro: só números, separados por vírgula (até 20).' };
-  return { code, desconto_pct: desconto, comissao_pct: comissao, ativo: b.ativo ? 1 : 0, nota: String(b.nota || '').trim().slice(0, 80), plano, ids_proprios: ids.join(', ') };
+  let tiers = null; // faixas próprias do parceiro; null = usa as padrão
+  if (b.tiers) {
+    const t = (typeof b.tiers === 'string' ? JSON.parse(b.tiers) : b.tiers).map((x) => ({ min: Math.round(Number(x.min)), pct: Number(x.pct) }));
+    if (!validTiers(t)) return { err: 'Faixas do parceiro inválidas: a 1ª começa em R$ 0; metas e % crescentes; de 1 a 6 faixas.' };
+    tiers = JSON.stringify(t);
+  }
+  return { code, desconto_pct: desconto, comissao_pct: comissao, ativo: b.ativo ? 1 : 0, nota: String(b.nota || '').trim().slice(0, 80), plano, ids_proprios: ids.join(', '), tiers };
 }
 app.get('/api/admin/coupons', admin, (req, res) => {
   res.json(db.prepare('SELECT * FROM coupons ORDER BY created_at DESC').all().map((c) => ({ ...c, ativo: !!c.ativo })));
 });
 app.post('/api/admin/coupons', admin, (req, res) => {
   if (!guard(req, res)) return;
-  const c = parseCoupon(req.body ?? {});
+  let c;
+  try { c = parseCoupon(req.body ?? {}); } catch { return res.status(400).json({ error: 'Faixas do parceiro inválidas.' }); }
   if (c.err) return res.status(400).json({ error: c.err });
   if (db.prepare('SELECT 1 FROM coupons WHERE code=?').get(c.code)) return res.status(409).json({ error: 'Já existe um cupom com esse código.' });
-  db.prepare('INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, nota, plano, ids_proprios, ptoken) VALUES (?,?,?,?,?,?,?,?)')
-    .run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, crypto.randomBytes(18).toString('base64url'));
+  db.prepare('INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, nota, plano, ids_proprios, tiers, ptoken) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, crypto.randomBytes(18).toString('base64url'));
   res.json({ ok: true });
 });
 app.put('/api/admin/coupons/:code', admin, (req, res) => {
@@ -1823,10 +1830,12 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
   const atual = db.prepare('SELECT * FROM coupons WHERE code=?').get(normCode(req.params.code));
   if (!atual) return res.status(404).json({ error: 'Cupom não encontrado.' });
   // campos que não vierem mantêm o valor atual (edição parcial nunca troca o plano sem querer)
-  const c = parseCoupon({ plano: atual.plano, ids_proprios: atual.ids_proprios, ...(req.body ?? {}) }, req.params.code);
+  let c;
+  try { c = parseCoupon({ plano: atual.plano, ids_proprios: atual.ids_proprios, tiers: atual.tiers, ...(req.body ?? {}) }, req.params.code); }
+  catch { return res.status(400).json({ error: 'Faixas do parceiro inválidas.' }); }
   if (c.err) return res.status(400).json({ error: c.err });
-  db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=? WHERE code=?')
-    .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.code);
+  db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=?, tiers=? WHERE code=?')
+    .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, c.code);
   res.json({ ok: true });
 });
 // ---------- Plano de metas dos parceiros ----------
@@ -1834,7 +1843,7 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
 // próprio parceiro) e vale para TODAS as vendas do mês. Faixa garantida: quem atingiu uma faixa começa o mês
 // seguinte uma faixa abaixo (só no mês seguinte). Meses fechados ficam congelados (partner_months), então editar
 // as faixas não muda comissão passada. Cupom com plano 'fixo' usa o % do pedido (com_pct), como antes.
-for (const col of ["plano TEXT DEFAULT 'metas'", 'ids_proprios TEXT', 'ptoken TEXT']) {
+for (const col of ["plano TEXT DEFAULT 'metas'", 'ids_proprios TEXT', 'ptoken TEXT', 'tiers TEXT']) { // tiers: faixas próprias (JSON) ou NULL = padrão
   try { db.exec(`ALTER TABLE coupons ADD COLUMN ${col}`); } catch { /* já existe */ }
 }
 db.exec("UPDATE coupons SET plano='metas' WHERE plano IS NULL");
@@ -1865,9 +1874,11 @@ const tierIdx = (fat, tiers) => tiers.reduce((acc, t, k) => (fat >= t.min ? k : 
 const proprios = (c) => new Set(String(c?.ids_proprios || '').split(/[\s,;]+/).filter(Boolean));
 // Contexto de cálculo (cache por requisição): faturamento por mês e faixa de cada mês de cada parceiro
 function makePartnerCtx() {
-  const tiers = getTiers(), cur = curMes();
+  const padrao = getTiers(), cur = curMes();
   const cupons = Object.fromEntries(db.prepare('SELECT * FROM coupons').all().map((c) => [c.code, c]));
   const cache = {};
+  // faixas do parceiro: próprias (se definidas e válidas) ou as padrão
+  const tiersOf = (code) => { try { const t = JSON.parse(cupons[code]?.tiers || 'null'); if (validTiers(t)) return t; } catch { /* padrão */ } return padrao; };
   const dados = (code) => {
     if (cache[code]) return cache[code];
     const c = cupons[code], own = proprios(c);
@@ -1880,6 +1891,7 @@ function makePartnerCtx() {
   const info = (code, mes) => {
     const d = dados(code);
     if (d.info[mes]) return d.info[mes];
+    const tiers = tiersOf(code);
     let r = mes < cur ? db.prepare('SELECT ating, idx, pct FROM partner_months WHERE code=? AND mes=?').get(code, mes) : null;
     if (!r) {
       const ating = tierIdx(d.porMes[mes] || 0, tiers);
@@ -1901,7 +1913,7 @@ function makePartnerCtx() {
     if (proprios(c).has(String(o.game_id))) return 0;
     return info(o.coupon, mesOf(o.paid_at)).pct;
   };
-  return { tiers, cur, cupons, dados, info, pctOf };
+  return { tiers: padrao, tiersOf, cur, cupons, dados, info, pctOf };
 }
 // resumo do mês atual de um parceiro do plano de metas (para painel, página do parceiro e aviso de faixa)
 function mesAtual(ctx, code) {
@@ -1909,9 +1921,10 @@ function mesAtual(ctx, code) {
   const fat = d.porMes[m] || 0;
   const doMes = d.vendas.filter((o) => mesOf(o.paid_at) === m);
   const comissao = Math.round(doMes.reduce((a, o) => a + Math.max(0, orderProfit(o)) * inf.pct / 100, 0));
-  const prox = ctx.tiers[inf.idx + 1] || null;
+  const tiers = ctx.tiersOf(code);
+  const prox = tiers[inf.idx + 1] || null;
   return { mes: m, vendas: doMes.length, faturamento: fat, pct: inf.pct, idx: inf.idx, ating: inf.ating, garant: inf.garant,
-    garantidaPct: inf.garant > 0 ? ctx.tiers[inf.garant].pct : null,
+    garantidaPct: inf.garant > 0 ? tiers[inf.garant].pct : null, proprias: tiers !== ctx.tiers,
     prox: prox ? { pct: prox.pct, min: prox.min, falta: Math.max(0, prox.min - fat) } : null, comissao };
 }
 // aviso no Telegram quando um parceiro sobe de faixa com uma venda paga
@@ -1921,10 +1934,11 @@ function avisoFaixa(o) {
     const ctx = makePartnerCtx(), c = ctx.cupons[o.coupon];
     if (!c || c.plano === 'fixo' || proprios(c).has(String(o.game_id))) return;
     const d = ctx.dados(o.coupon), fat = d.porMes[ctx.cur] || 0;
-    const antes = tierIdx(fat - o.cents, ctx.tiers), agora = tierIdx(fat, ctx.tiers);
+    const tiers = ctx.tiersOf(o.coupon);
+    const antes = tierIdx(fat - o.cents, tiers), agora = tierIdx(fat, tiers);
     const garant = ctx.info(o.coupon, ctx.cur).garant;
     if (agora > antes && agora > garant) {
-      tgSend(`🎯 Parceiro ${o.coupon} bateu a meta de ${brlTxt(ctx.tiers[agora].min)} no mês → comissão de ${ctx.tiers[agora].pct}% do lucro em TODAS as vendas do mês (faturado até agora: ${brlTxt(fat)}).`);
+      tgSend(`🎯 Parceiro ${o.coupon} bateu a meta de ${brlTxt(tiers[agora].min)} no mês → comissão de ${tiers[agora].pct}% do lucro em TODAS as vendas do mês (faturado até agora: ${brlTxt(fat)}).`);
     }
   } catch (e) { console.error('avisoFaixa', e.message); }
 }

@@ -103,6 +103,8 @@ async function login() {
 }
 // cada chamada ganha um IP único via X-Forwarded-For para não compartilhar baldes de rate-limit
 let ipSeq = 0;
+// espera uma condição ficar verdadeira (até 3 s) — evita testes que dependem de tempo fixo
+const ateQue = async (fn, ms = 3000) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error('condição não atingida em ' + ms + ' ms'); await new Promise((r) => setTimeout(r, 10)); } };
 const freshIP = () => ({ 'X-Forwarded-For': `10.0.${(ipSeq >> 8) & 255}.${ipSeq++ & 255}` });
 
 before(async () => {
@@ -985,7 +987,7 @@ test('automático: falha passageira na conferência tenta de novo e entrega; fal
     // durante as novas tentativas o cliente segue vendo "entregando automaticamente"
     const c1 = await (await fetch(base + '/api/orders/' + a.token, { headers: freshIP() })).json();
     assert.ok(c1.status === 'delivered' || c1.entrega === 'auto');
-    await espera(150);
+    await ateQue(() => pays.length === 1 && db.prepare('SELECT status FROM orders WHERE id=?').get(a.id).status === 'delivered');
     assert.equal(chamadas, 3); assert.equal(pays.length, 1);
     assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(a.id).status, 'delivered');
     assert.ok(!tgSent.some((m) => m.text.includes('MANUAL necessária #' + a.id)));
@@ -993,7 +995,7 @@ test('automático: falha passageira na conferência tenta de novo e entrega; fal
     falhas = 99; chamadas = 0;
     const b = await (await postJ('/api/orders', { product: 'c1000', gameId: '161612', email: 'rt2@x.com' })).json();
     await pagar(b.token);
-    await espera(200);
+    await ateQue(() => tgSent.some((m) => m.text.includes('MANUAL necessária #' + b.id)));
     assert.equal(chamadas, 3);
     assert.ok(tgSent.some((m) => m.text.includes('MANUAL necessária #' + b.id)));
     assert.equal((await (await fetch(base + '/api/orders/' + b.token, { headers: freshIP() })).json()).entrega, 'manual');
@@ -1546,4 +1548,28 @@ test('plano de metas — edição: faixas validadas; cupom com plano/IDs própri
   c = (await (await adm('GET', '/api/admin/coupons')).json()).find((x) => x.code === 'PARC2');
   assert.equal(c.plano, 'fixo'); assert.equal(c.ativo, false);
   db.exec("DELETE FROM coupons WHERE code='PARC2'");
+});
+
+test('faixas individuais: parceiro com faixas próprias calcula por elas; voltar ao padrão; inválidas recusadas', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  const proprias = [{ min: 0, pct: 40 }, { min: 50000, pct: 50 }];
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'IND1', desconto_pct: 5, comissao_pct: 0, ativo: true, plano: 'metas', tiers: [{ min: 10, pct: 40 }] })).status, 400);
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'IND1', desconto_pct: 5, comissao_pct: 0, ativo: true, plano: 'metas', tiers: proprias })).status, 200);
+  await adm('POST', '/api/admin/coupons', { code: 'IND2', desconto_pct: 5, comissao_pct: 0, ativo: true, plano: 'metas' }); // padrão
+  const agora = new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' ');
+  for (const [cup, gid] of [['IND1', '310001'], ['IND2', '310002']]) db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon)
+    VALUES (?, 'c1000', 60000, ?, 'p', ?, 'delivered', ?, ?, 'x', 0, ?)`).run('ind' + gid, gid, gid + '@i.com', agora, agora, cup);
+  const rep = async () => (await (await adm('GET', '/api/admin/coupons/report')).json()).cupons;
+  let r = await rep();
+  const i1 = r.find((x) => x.code === 'IND1').mesAtual, i2 = r.find((x) => x.code === 'IND2').mesAtual;
+  assert.equal(i1.pct, 50); assert.equal(i1.proprias, true);   // R$ 600 ≥ R$ 500 nas faixas próprias
+  assert.equal(i2.pct, 30); assert.equal(i2.proprias, false);  // R$ 600 nas padrão = 30%
+  // edição parcial (ex.: ativar/desativar) mantém as faixas próprias
+  await adm('PUT', '/api/admin/coupons/IND1', { desconto_pct: 5, comissao_pct: 0, nota: '', ativo: false });
+  assert.ok((await (await adm('GET', '/api/admin/coupons')).json()).find((x) => x.code === 'IND1').tiers);
+  // voltar ao padrão (tiers: null)
+  await adm('PUT', '/api/admin/coupons/IND1', { desconto_pct: 5, comissao_pct: 0, nota: '', ativo: true, tiers: null });
+  r = await rep();
+  assert.equal(r.find((x) => x.code === 'IND1').mesAtual.pct, 30);
+  db.exec("DELETE FROM orders WHERE coupon IN ('IND1','IND2')"); db.exec("DELETE FROM coupons WHERE code IN ('IND1','IND2')");
 });
