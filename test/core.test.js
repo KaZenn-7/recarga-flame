@@ -1550,6 +1550,12 @@ test('reembolso: só pago e não entregue; 1 vez; cliente vê "valor devolvido";
     falha = 'insufficient_amount';
     let r = await adm('POST', '/api/admin/orders/' + p.id + '/reembolsar');
     assert.equal(r.status, 409); assert.match((await r.json()).error, /insufficient_amount/);
+    // aviso do pedido editado (cancelado, ainda precisa reembolsar, botão de reembolso), sem mensagem nova
+    const eR = lastCall('editMessageText').body;
+    assert.equal(eR.message_id, db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(p.id).tg_msg);
+    assert.match(eR.text, new RegExp(`⚠️ Pedido #${p.id} · reembolso recusado pelo Mercado Pago`)); assert.match(eR.text, /insufficient_amount/);
+    assert.match(eR.text, /ainda precisa receber/); assert.equal(eR.reply_markup.inline_keyboard[0][0].callback_data, 'r:' + p.id);
+    assert.ok(!tgSent.some((m) => m.text.includes(`#${p.id}`) && /recus/.test(m.text)));
     let row = db.prepare('SELECT status, refund_state FROM orders WHERE id=?').get(p.id);
     assert.equal(row.status, 'cancelled'); assert.equal(row.refund_state, 'erro');
     falha = null;

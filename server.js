@@ -317,7 +317,7 @@ async function reembolsar(id) {
     return { ok: true, cents: o.cents };
   }
   db.prepare("UPDATE orders SET refund_state='erro', refund_info=? WHERE id=?").run(JSON.stringify({ erro: r.erro }), id);
-  return { ok: false, why: 'o Mercado Pago recusou: ' + (r.erro || 'erro desconhecido') + ' (pode tentar de novo; não devolve em dobro)' };
+  return { ok: false, mp: true, why: 'o Mercado Pago recusou: ' + (r.erro || 'erro desconhecido') + ' (pode tentar de novo; não devolve em dobro)' };
 }
 const refundKb = (o) => ({ inline_keyboard: [[{ text: `💸 Reembolsar ${brlTxt(o.cents)}`, callback_data: `r:${o.id}` }]] });
 
@@ -1673,7 +1673,15 @@ app.post('/api/admin/orders/:id/check', admin, async (req, res) => {
 });
 app.post('/api/admin/orders/:id/reembolsar', admin, async (req, res) => {
   if (!guard(req, res)) return;
-  const r = await reembolsar(Number(req.params.id));
+  const id = Number(req.params.id);
+  const r = await reembolsar(id);
+  // recusado pelo MP: edita o aviso do pedido (o pedido já saiu da fila e o cliente ainda precisa receber); sem mensagem nova
+  if (!r.ok && r.mp) {
+    const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+    tgAviso(id, { icone: '⚠️', titulo: 'reembolso recusado pelo Mercado Pago', saldo: false, fallback: false, kb: refundKb(o),
+      extras: [bloqAuto(o) && `🚫 Bloqueado automaticamente: ${bloqAuto(o)}.`,
+        `Pedido cancelado e NÃO entregue: o cliente ainda precisa receber ${brlTxt(o.cents)}.`, `Motivo: ${r.why}`] });
+  }
   res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
 });
 app.post('/api/admin/orders/:id/aprovar', admin, async (req, res) => {
