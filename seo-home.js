@@ -15,7 +15,7 @@ export function vitrineHtml(prods) {
   if (!cats.length) return '';
   return `<section class="vit" id="precos" aria-labelledby="vit-t">
     <h2 id="vit-t">Produtos e preços</h2>
-    <p class="sub">Preços no Pix. Para comprar, digite seu ID acima.</p>
+    <p class="sub">Preços no Pix. Para comprar, digite seu ID acima. <a href="/comprar-coins-counterflame">Preço por 1.000 Coins</a>.</p>
 ${cats.map((c) => `    <div class="cat"><h3>${escH(c)}</h3><ul class="vgrid">${g[c].map((p) =>
     `<li><img src="${escH(p.img)}" alt="${escH(p.nome)}" width="64" height="64" loading="lazy"><span class="n">${escH(p.nome)}</span><span class="p mono">${brl(p.cents)}</span></li>`).join('')}</ul></div>`).join('\n')}
   </section>`;
@@ -40,4 +40,17 @@ export function ldJson(prods) {
 
 export function homeHtml(indexHtml, prods) {
   return indexHtml.replace('<!--VITRINE-->', () => vitrineHtml(prods)).replace('<!--LDJSON-->', () => ldJson(prods));
+}
+
+// Tabela de pacotes de Coins (página /comprar-coins-counterflame), com preço por 1.000 Coins.
+export function coinsTable(prods) {
+  const rows = prods.filter((p) => p.cat === 'Coins').map((p) => ({ p, n: Number(String(p.nome).replace(/\D/g, '')) || 0 }))
+    .sort((a, b) => a.n - b.n);
+  if (!rows.length) return '<p class="tip">Veja os pacotes disponíveis na <a href="/#precos">loja</a>.</p>';
+  return `<table class="tbl"><thead><tr><th>Pacote</th><th>Preço</th><th>Por 1.000</th></tr></thead><tbody>${rows.map(({ p, n }) =>
+    `<tr><td><span class="pk"><img src="${escH(p.img)}" alt="" width="28" height="28" loading="lazy"><b>${escH(p.nome)}</b></span></td><td><b>${brl(p.cents)}</b></td><td>${n ? brl(Math.round(p.cents * 1000 / n)) : '—'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+export function pageHtml(html, prods) {
+  return html.replace('<!--TABELA_COINS-->', () => coinsTable(prods));
 }

@@ -8,7 +8,7 @@ import Database from 'better-sqlite3';
 import { userConfig, readStarsBalance, checkInvoice, payInvoice, invoicePaid } from './tg-user.js';
 import { LOGIN_HTML } from './views/login.js';
 import { painelHtml } from './views/painel.js';
-import { homeHtml } from './seo-home.js';
+import { homeHtml, pageHtml } from './seo-home.js';
 
 const env = process.env;
 for (const k of ['MP_ACCESS_TOKEN', 'MP_WEBHOOK_SECRET', 'ADMIN_USER', 'ADMIN_PASS', 'PUBLIC_URL']) {
@@ -1151,6 +1151,10 @@ app.get(['/', '/index.html'], (req, res) => {
     .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${SITE_URL}/?cupom=${encodeURIComponent(c.code)}">`);
   res.type('html').set('Cache-Control', 'no-cache').send(html);
 });
+// páginas de conteúdo (SEO); a de Coins recebe a tabela de preços dos produtos ativos
+const PAGES_SEO = Object.fromEntries(['onde-encontrar-id-counterflame', 'comprar-coins-counterflame']
+  .map((s) => [s, fs.existsSync(path.join('public', s + '.html')) ? fs.readFileSync(path.join('public', s + '.html'), 'utf8') : null]));
+for (const [s, html] of Object.entries(PAGES_SEO)) if (html) app.get(['/' + s, '/' + s + '.html'], (req, res) => res.type('html').set('Cache-Control', 'no-cache').send(pageHtml(html, prodsPublic())));
 app.use(express.static('public'));
 // páginas institucionais (também em /como-funciona.html e /perguntas-frequentes.html)
 app.get('/como-funciona', (req, res) => res.sendFile('como-funciona.html', { root: 'public' }));
