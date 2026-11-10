@@ -333,7 +333,15 @@ function estornoSinal(o) {
 const bloqAuto = (o) => (String(o?.manual_motivo || '').startsWith('bloqueado: ') ? o.manual_motivo.slice(11) : null);
 // desbloqueio pelo painel de um pedido bloqueado automaticamente: edita o aviso 🚫 (sem mensagem nova)
 function tgDesbloqueado(o) {
-  if (!o?.tg_msg || !bloqAuto(o)) return;
+  if (!o?.tg_msg) return;
+  // pedido de estorno/contestação (bloqueio feito pelo aviso do MP): o valor já voltou ao cliente pelo MP
+  if (!bloqAuto(o) && o.paid_at && !o.refund_state && ['reversed', 'cancelled'].includes(o.status)) {
+    tgAviso(o.id, { icone: '🔓', titulo: 'cliente desbloqueado', saldo: false, fallback: false, botao: '🔓 Desbloqueado',
+      extras: [o.status === 'reversed' ? 'Pedido ESTORNADO após entrega (contestação no Mercado Pago).' : 'Pedido cancelado após pagamento (estorno no Mercado Pago) — não entregar.',
+        'Bloqueio desfeito: ID, e-mail, aparelho e conta que pagou podem comprar de novo.'] });
+    return;
+  }
+  if (!bloqAuto(o)) return;
   const pode = podeReembolsar(o), v = brlTxt(o.cents);
   tgAviso(o.id, { icone: '🔓', titulo: 'cliente desbloqueado', saldo: false, fallback: false,
     kb: pode ? refundKb(o) : doneKeyboard(o.refund_state === 'done' ? `💸 Reembolsado ${v}` : '🔓 Desbloqueado'),
@@ -1840,8 +1848,9 @@ app.post('/api/admin/orders/:id/unblock', admin, (req, res) => {
   if (!guard(req, res)) return;
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Pedido não encontrado.' });
+  const estava = orderBlocked(o);
   unblockClient(o);
-  tgDesbloqueado(o);
+  if (estava) tgDesbloqueado(o);
   res.json({ ok: true });
 });
 

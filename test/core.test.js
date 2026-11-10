@@ -605,7 +605,17 @@ test('antifraude: estorno após pagamento bloqueia ID e e-mail; painel desbloque
   const o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === id);
   assert.equal(o.blocked, true);
   assert.equal((await fetch(base + '/api/admin/orders/' + id + '/unblock', { method: 'POST', headers: { 'x-painel': '1' } })).status, 401);
+  const nU = tgSent.length;
   assert.equal((await adm('POST', '/api/admin/orders/' + id + '/unblock')).status, 200);
+  const eu = lastCall('editMessageText').body;
+  assert.equal(eu.message_id, msgEst); assert.match(eu.text, new RegExp('🔓 Pedido #' + id + ' · cliente desbloqueado'));
+  assert.match(eu.text, /cancelado após pagamento/); assert.match(eu.reply_markup.inline_keyboard[0][0].text, /Desbloqueado/);
+  assert.ok(!eu.reply_markup.inline_keyboard.flat().some((x) => /^r:/.test(x.callback_data))); // MP já devolveu: sem botão de reembolso
+  assert.equal(tgSent.length, nU);
+  // desbloquear de novo (já livre): não mexe no aviso
+  const cE = tgCalls.length;
+  assert.equal((await adm('POST', '/api/admin/orders/' + id + '/unblock')).status, 200);
+  assert.ok(!tgCalls.slice(cE).some((c) => c.method === 'editMessageText'));
   assert.equal((await pedir('c1000', '666666', 'mal@x.com')).status, 200);
 });
 
