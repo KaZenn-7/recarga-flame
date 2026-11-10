@@ -1848,6 +1848,7 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
   try { c = parseCoupon({ plano: atual.plano, ids_proprios: atual.ids_proprios, tiers: atual.tiers, ...(req.body ?? {}) }, req.params.code); }
   catch { return res.status(400).json({ error: 'Faixas do parceiro inválidas.' }); }
   if (c.err) return res.status(400).json({ error: c.err });
+  freezeClosedMonths(makePartnerCtx()); // meses fechados ficam com as faixas que valiam neles
   db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=?, tiers=? WHERE code=?')
     .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, c.code);
   res.json({ ok: true });
@@ -1902,7 +1903,7 @@ const prevMes = (m) => { const [y, mm] = m.split('-').map(Number); return new Da
 const tierIdx = (fat, tiers) => tiers.reduce((acc, t, k) => (fat >= t.min ? k : acc), 0);
 const proprios = (c) => new Set(String(c?.ids_proprios || '').split(/[\s,;]+/).filter(Boolean));
 // Contexto de cálculo (cache por requisição): faturamento por mês e faixa de cada mês de cada parceiro
-function makePartnerCtx() {
+function buildPartnerCtx() {
   const padrao = getTiers(), cur = curMes();
   const cupons = Object.fromEntries(db.prepare('SELECT * FROM coupons').all().map((c) => [c.code, c]));
   const cache = {};
@@ -1944,6 +1945,37 @@ function makePartnerCtx() {
   };
   return { tiers: padrao, tiersOf, cur, cupons, dados, info, pctOf };
 }
+// Contexto de cálculo; antes, aplica faixas padrão agendadas cujo mês chegou.
+function makePartnerCtx() { rollTiers(); return buildPartnerCtx(); }
+const nextMes = (m) => { const [y, mm] = m.split('-').map(Number); return new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 7); };
+// Faixas padrão agendadas para um mês futuro (settings.tiers_next = {mes, tiers}); null se não houver.
+function tiersNext() {
+  try { const n = JSON.parse(getSetting('tiers_next', 'null')); if (n && /^\d{4}-\d{2}$/.test(n.mes) && validTiers(n.tiers)) return n; } catch { /* nada agendado */ }
+  return null;
+}
+// Chegou o mês das faixas agendadas: congela os meses fechados com as faixas ANTIGAS e só então troca.
+function rollTiers() {
+  const n = tiersNext();
+  if (!n || curMes() < n.mes) return;
+  freezeClosedMonths(buildPartnerCtx());
+  setSetting('tiers', JSON.stringify(n.tiers));
+  db.prepare("DELETE FROM settings WHERE k='tiers_next'").run();
+}
+// Grava (partner_months) a faixa de todo mês fechado com venda que ainda não foi gravado, do mais antigo
+// para o mais novo (a faixa garantida de um mês depende do anterior). Mês gravado não muda mais.
+function freezeClosedMonths(ctx) {
+  for (const c of Object.values(ctx.cupons)) {
+    if (c.plano === 'fixo') continue;
+    for (const m of Object.keys(ctx.dados(c.code).porMes).sort()) if (m < ctx.cur) ctx.info(c.code, m);
+  }
+}
+// Na virada do mês: congela o mês que fechou com as faixas que valiam nele.
+function freezeTick() {
+  const m = curMes();
+  if (getSetting('frozen_mes', '') === m) return;
+  freezeClosedMonths(makePartnerCtx());
+  setSetting('frozen_mes', m);
+}
 // resumo do mês atual de um parceiro do plano de metas (para painel, página do parceiro e aviso de faixa)
 function mesAtual(ctx, code) {
   const d = ctx.dados(code), m = ctx.cur, inf = ctx.info(code, m);
@@ -1984,12 +2016,13 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
   const to = re.test(req.query.to || '') ? req.query.to : '9999-12-31';
   const pctNow = Object.fromEntries(db.prepare('SELECT code, comissao_pct FROM coupons').all().map((c) => [c.code, c.comissao_pct]));
   const by = {};
-  const get = (code) => (by[code] ||= { code, comissao_pct: pctNow[code] ?? 0, plano: ctx.cupons[code]?.plano || 'metas', pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0, total: 0, pago: 0, pagamentos: [] });
+  const get = (code) => (by[code] ||= { code, comissao_pct: pctNow[code] ?? 0, plano: ctx.cupons[code]?.plano || 'metas', pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0, total: 0, fechado: 0, mesCom: 0, pago: 0, pagamentos: [] });
   const rows = db.prepare(`SELECT * FROM orders WHERE coupon IS NOT NULL AND status IN ('paid','delivered') AND paid_at IS NOT NULL`).all();
   for (const o of rows) {
     const r = get(o.coupon);
     const c = comOf(o, ctx.pctOf);
     r.total += c;
+    if (mesOf(o.paid_at) < ctx.cur) r.fechado += c; else r.mesCom += c; // a pagar = só meses fechados
     const d = localDay(o.paid_at);
     if (d < from || d > to) continue;
     r.pedidos++; r.faturado += o.cents; r.desconto += o.discount_cents || 0;
@@ -2009,7 +2042,8 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
     const total = Math.round(r.total);
     const lucro = Math.round(r.lucro), comissao = Math.round(r.comissao);
     return { ...r, lucro, comissao, lucroLoja: lucro - comissao, visitas: r.visitas || 0,
-      conversao: r.visitas ? r.pedidos / r.visitas : null, total, saldo: total - r.pago,
+      conversao: r.visitas ? r.pedidos / r.visitas : null, total, fechado: Math.round(r.fechado), mesCom: Math.round(r.mesCom),
+      saldo: Math.round(r.fechado) - r.pago, minimo: PAYOUT_MIN,
       mesAtual: r.plano === 'fixo' || !ctx.cupons[r.code] ? null : mesAtual(ctx, r.code),
       linkParceiro: ctx.cupons[r.code]?.ptoken ? `${SITE_URL}/parceiro/${ctx.cupons[r.code].ptoken}` : null };
   });
@@ -2017,7 +2051,7 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
   for (const c of Object.values(ctx.cupons)) {
     if (by[c.code] || c.plano === 'fixo' || !c.ativo) continue;
     list.push({ code: c.code, comissao_pct: c.comissao_pct, plano: c.plano, pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0,
-      lucroLoja: 0, visitas: 0, conversao: null, total: 0, pago: 0, saldo: 0, pagamentos: [], mesAtual: mesAtual(ctx, c.code),
+      lucroLoja: 0, visitas: 0, conversao: null, total: 0, fechado: 0, mesCom: 0, pago: 0, saldo: 0, minimo: PAYOUT_MIN, pagamentos: [], mesAtual: mesAtual(ctx, c.code),
       linkParceiro: c.ptoken ? `${SITE_URL}/parceiro/${c.ptoken}` : null });
   }
   res.json({ from, to, cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
@@ -2028,8 +2062,20 @@ app.put('/api/admin/tiers', admin, (req, res) => {
   if (!guard(req, res)) return;
   const t = (Array.isArray(req.body) ? req.body : []).map((x) => ({ min: Math.round(Number(x.min)), pct: Number(x.pct) }));
   if (!validTiers(t)) return res.status(400).json({ error: 'Faixas inválidas: a 1ª começa em R$ 0; metas e % crescentes; de 1 a 6 faixas.' });
+  // ?quando=proximo: agenda para o mês que vem (o mês atual segue com as faixas de hoje)
+  if (req.query.quando === 'proximo') {
+    setSetting('tiers_next', JSON.stringify({ mes: nextMes(curMes()), tiers: t }));
+    return res.json(getTiers());
+  }
+  freezeClosedMonths(makePartnerCtx()); // meses fechados ficam com as faixas que valiam neles
   setSetting('tiers', JSON.stringify(t));
   res.json(t);
+});
+app.get('/api/admin/tiers/agendado', admin, (req, res) => res.json({ agendado: tiersNext() }));
+app.delete('/api/admin/tiers/agendado', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  db.prepare("DELETE FROM settings WHERE k='tiers_next'").run();
+  res.json({ ok: true });
 });
 // gera um novo link do parceiro (o antigo para de funcionar)
 app.post('/api/admin/coupons/:code/ptoken', admin, (req, res) => {
@@ -2037,6 +2083,52 @@ app.post('/api/admin/coupons/:code/ptoken', admin, (req, res) => {
   const r = db.prepare('UPDATE coupons SET ptoken=? WHERE code=?').run(crypto.randomBytes(18).toString('base64url'), normCode(req.params.code));
   res.status(r.changes ? 200 : 404).json(r.changes ? { ok: true } : { error: 'Cupom não encontrado.' });
 });
+
+// ---------- Fechamento mensal das comissões (Telegram, 1º dia útil a partir das 9h) ----------
+// Paga-se no 1º dia útil a comissão dos meses JÁ FECHADOS; abaixo do mínimo acumula para o mês seguinte.
+const PAYOUT_MIN = Number(env.PAYOUT_MIN_CENTS ?? 2000);
+const FECH_HOUR = Number(env.FECH_HOUR ?? 9);
+const nomeMesBR = (m) => ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+m.slice(5) - 1] + '/' + m.slice(0, 4);
+// 1º dia útil do mês ('AAAA-MM'): pula sábado, domingo, 1º/jan e 1º/mai (feriados que caem no dia 1)
+function primeiroDiaUtil(mes) {
+  for (let d = 1; ; d++) {
+    const dd = String(d).padStart(2, '0'), wd = new Date(`${mes}-${dd}T12:00:00Z`).getUTCDay();
+    if (wd === 0 || wd === 6 || ['01-01', '05-01'].includes(`${mes.slice(5)}-${dd}`)) continue;
+    return d;
+  }
+}
+function fechamentoMsg() {
+  const ctx = makePartnerCtx(), fech = {}, pago = {};
+  for (const o of db.prepare("SELECT * FROM orders WHERE coupon IS NOT NULL AND status IN ('paid','delivered') AND paid_at IS NOT NULL").all()) {
+    if (mesOf(o.paid_at) < ctx.cur) fech[o.coupon] = (fech[o.coupon] || 0) + comOf(o, ctx.pctOf);
+  }
+  for (const p of db.prepare('SELECT code, SUM(cents) s FROM coupon_payouts GROUP BY code').all()) pago[p.code] = p.s;
+  const pagar = [], acumula = [], credito = [];
+  for (const c of [...new Set([...Object.keys(fech), ...Object.keys(pago)])].sort()) {
+    const s = Math.round(fech[c] || 0) - (pago[c] || 0);
+    if (s >= PAYOUT_MIN) pagar.push([c, s]); else if (s > 0) acumula.push([c, s]); else if (s < 0) credito.push([c, -s]);
+  }
+  if (!pagar.length && !acumula.length && !credito.length) return null;
+  const L = (a) => a.map(([c, s]) => `• ${c}: ${brlTxt(s)}`).join('\n');
+  return [
+    `💸 Comissões dos parceiros — fechamento de ${nomeMesBR(prevMes(ctx.cur))}`,
+    pagar.length ? `Pagar hoje por Pix (total ${brlTxt(pagar.reduce((a, [, s]) => a + s, 0))}):\n${L(pagar)}` : '✅ Nenhum parceiro atingiu o mínimo para pagamento.',
+    acumula.length ? `Abaixo do mínimo de ${brlTxt(PAYOUT_MIN)} (acumula para o próximo mês):\n${L(acumula)}` : null,
+    credito.length ? `Crédito (pago a mais; abate dos próximos):\n${L(credito)}` : null,
+    pagar.length ? 'Depois de pagar, registre cada Pix no painel → Cupons → Comissões → Registrar pagamento.' : null,
+  ].filter(Boolean).join('\n\n');
+}
+// 1x por mês (guarda o mês enviado; sobrevive a reinício). Sem nada a pagar/acumular, não manda nada.
+function fechamentoTick(now = Date.now()) {
+  const loc = new Date(now - 3 * 3600_000), mes = loc.toISOString().slice(0, 7), du = primeiroDiaUtil(mes);
+  if (getSetting('fechamento_mes', '') === mes) return false;
+  if (loc.getUTCDate() < du || (loc.getUTCDate() === du && loc.getUTCHours() < FECH_HOUR)) return false;
+  setSetting('fechamento_mes', mes);
+  freezeClosedMonths(makePartnerCtx());
+  const msg = fechamentoMsg();
+  if (msg) tgSend(msg);
+  return !!msg;
+}
 
 // ---------- Página do parceiro (link privado, só leitura; nunca mostra lucro, margem ou custos) ----------
 app.get('/parceiro/:token', limit(30), (req, res) => {
@@ -2058,6 +2150,9 @@ app.get('/parceiro/:token', limit(30), (req, res) => {
   const hist = meses.map(linhaMes);
   const atual = c.plano === 'fixo' ? null : mesAtual(ctx, c.code);
   const ganho = Math.round(hist.reduce((a, h) => a + h.raw, 0)); // arredonda só o total (igual ao painel)
+  const fechado = Math.round(hist.filter((h) => h.m < ctx.cur).reduce((a, h) => a + h.raw, 0)); // meses fechados
+  const doMes = hist.find((h) => h.m === ctx.cur)?.com || 0;
+  const agendado = T === ctx.tiers ? tiersNext() : null; // faixas padrão mudam no mês que vem (aviso ao parceiro)
   const pagos = db.prepare('SELECT cents, nota, paid_at FROM coupon_payouts WHERE code=? ORDER BY paid_at DESC').all(c.code);
   const pago = pagos.reduce((a, p) => a + p.cents, 0);
   const nomeMes = (m) => { const [y, mm] = m.split('-'); return ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+mm - 1] + '/' + y; };
@@ -2091,12 +2186,13 @@ ${atual.prox ? `<div class="prog"><i style="width:${barra}%"></i></div><div clas
 </div>
 <div class="card"><b>Faixas de comissão</b><table><tr><th>Vendas no mês</th><th>Comissão</th></tr>
 ${T.map((t, i) => `<tr${i === atual.idx ? ' class="cur"' : ''}><td>${i === 0 ? (T[1] ? 'até ' + brlTxt(T[1].min) : 'qualquer valor') : 'a partir de ' + brlTxt(t.min)}</td><td>${t.pct}%</td></tr>`).join('')}
-</table><p class="note" style="margin:8px 0 0">A faixa atingida vale para todas as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Contam vendas pagas e entregues; compras canceladas, reembolsadas ou feitas pelo próprio parceiro não contam.</p></div>` : `<div class="card"><div class="big">${String(c.comissao_pct).replace('.', ',')}% <small>de comissão fixa</small></div></div>`}
+</table><p class="note" style="margin:8px 0 0">A faixa atingida vale para todas as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Contam vendas pagas e entregues; compras canceladas, reembolsadas ou feitas pelo próprio parceiro não contam.</p>${agendado ? `<p class="note" style="margin:6px 0 0;color:var(--orange)">A partir de ${nomeMes(agendado.mes)} as faixas passam a ser: ${agendado.tiers.map((t, i) => `${t.pct}%${i ? ' a partir de ' + brlTxt(t.min) : ''}`).join(' · ')}.</p>` : ''}</div>` : `<div class="card"><div class="big">${String(c.comissao_pct).replace('.', ',')}% <small>de comissão fixa</small></div></div>`}
 <div class="card"><b>Histórico</b><table><tr><th>Mês</th><th>Vendas</th><th>Faturado</th><th>Faixa</th><th>Comissão</th></tr>
 ${hist.map((h) => `<tr><td>${nomeMes(h.m)}</td><td>${h.vendas}</td><td>${brlTxt(h.fat)}</td><td>${h.pct}%</td><td>${brlTxt(h.com)}</td></tr>`).join('')}
 </table></div>
 <div class="card"><div class="k"><div><span>Total ganho</span><b>${brlTxt(ganho)}</b></div><div><span>Já recebido</span><b>${brlTxt(pago)}</b></div></div>
-<p style="margin:10px 0 0">A receber: <b>${brlTxt(Math.max(0, ganho - pago))}</b></p>
+<p style="margin:10px 0 0">A receber (meses fechados): <b>${brlTxt(Math.max(0, fechado - pago))}</b></p>
+${doMes ? `<p class="note" style="margin:4px 0 0">Este mês, em andamento: ${brlTxt(doMes)} (estimado; entra no pagamento do 1º dia útil do mês que vem).</p>` : ''}
 ${pagos.length ? `<table style="margin-top:8px"><tr><th>Pagamento</th><th>Valor</th></tr>${pagos.map((p) => `<tr><td>${localDay(p.paid_at).split('-').reverse().join('/')}${p.nota ? ' · ' + esc(p.nota) : ''}</td><td>${brlTxt(p.cents)}</td></tr>`).join('')}</table>` : ''}</div>
 <p class="note">Atualizado agora. Dúvidas sobre a parceria: fale com a Recarga Flame.</p>
 </div></body></html>`;
@@ -2244,8 +2340,10 @@ if (process.env.NODE_ENV !== 'test') {
   if (env.TG_BOT_TOKEN && env.TG_CHAT_ID) tgPoll(); // botões do aviso de pago
   if (realOn()) { syncStarsReal(true); setInterval(() => syncStarsReal(true), 5 * 60_000); } // saldo real a cada 5 min
   setInterval(summaryTick, 60_000); // resumo diário às SUMMARY_HOUR (23h)
+  // virada do mês: congela as faixas do mês fechado; 1º dia útil: comissões a pagar no Telegram
+  setInterval(() => { try { freezeTick(); fechamentoTick(); } catch (e) { console.error('fechamento', e.message); } }, 60_000);
 }
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, makePartnerCtx, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

@@ -92,7 +92,7 @@ globalThis.fetch = async (url, opts) => {
   return realFetch(url, opts); // localhost e demais
 };
 
-let app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, riskOf, _setRefundCaller, reembolsar, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
+let SRV, app, loadProducts, server, base, adminFails, expirePending, db, remindPending, starsForecast, riskOf, _setRefundCaller, reembolsar, RISK, handleTgUpdate, _setStarsReader, _setInvoiceChecker, conferir, _setInvoicePayer, _setReceiptChecker, dailySummary, summaryTick;
 let COOKIE = '';
 async function login() {
   const post = (u, b) => fetch(base + u, { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
@@ -109,7 +109,7 @@ const freshIP = () => ({ 'X-Forwarded-For': `10.0.${(ipSeq >> 8) & 255}.${ipSeq+
 
 before(async () => {
   const mod = await import('../server.js?test=' + Date.now());
-  app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; riskOf = mod.riskOf; _setRefundCaller = mod._setRefundCaller; reembolsar = mod.reembolsar; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
+  SRV = mod; app = mod.app; loadProducts = mod.loadProducts; adminFails = mod.adminFails; expirePending = mod.expirePending; db = mod.db; remindPending = mod.remindPending; starsForecast = mod.starsForecast; riskOf = mod.riskOf; _setRefundCaller = mod._setRefundCaller; reembolsar = mod.reembolsar; RISK = mod.RISK; handleTgUpdate = mod.handleTgUpdate; _setStarsReader = mod._setStarsReader; _setInvoiceChecker = mod._setInvoiceChecker; conferir = mod.conferir; _setInvoicePayer = mod._setInvoicePayer; _setReceiptChecker = mod._setReceiptChecker; dailySummary = mod.dailySummary; summaryTick = mod.summaryTick;
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}`;
   process.env.PUBLIC_URL = base; // para checagens same-origin
@@ -500,9 +500,16 @@ test('analytics: vendas, conversão, lucro após comissão, entrega e estornos',
 });
 
 test('comissão: pagamento registrado abate o saldo; desfazer devolve; % fica congelado no pedido', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
   const saldo = async () => (await (await adm('GET', '/api/admin/coupons/report')).json()).cupons.find((c) => c.code === 'AQUILA');
+  // venda do mês atual: ainda não entra no "a pagar" (só no estimado do mês)
+  const m0 = await saldo();
+  assert.equal(m0.total, 20); assert.equal(m0.mesCom, 20); assert.equal(m0.fechado, 0); assert.equal(m0.saldo, 0); assert.equal(m0.minimo, 2000);
+  // leva as vendas do AQUILA para o mês passado: viram "a pagar" (restaurado no fim do teste)
+  const orig = db.prepare("SELECT id, paid_at FROM orders WHERE coupon='AQUILA' AND paid_at IS NOT NULL").all();
+  db.prepare("UPDATE orders SET paid_at=datetime(paid_at, '-40 days') WHERE coupon='AQUILA' AND paid_at IS NOT NULL").run();
   const a0 = await saldo();
-  assert.equal(a0.total, 20); assert.equal(a0.pago, 0); assert.equal(a0.saldo, 20);
+  assert.equal(a0.total, 20); assert.equal(a0.pago, 0); assert.equal(a0.saldo, 20); assert.equal(a0.mesCom, 0);
   // editar o % do cupom depois não muda o que a venda antiga já gerou
   await adm('PUT', '/api/admin/coupons/AQUILA', { desconto_pct: 5, comissao_pct: 50, ativo: true });
   assert.equal((await saldo()).total, 20);
@@ -520,6 +527,7 @@ test('comissão: pagamento registrado abate o saldo; desfazer devolve; % fica co
   // sem sessão não registra pagamento
   assert.equal((await fetch(base + '/api/admin/coupons/AQUILA/payouts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-painel': '1' }, body: '{"cents":100}' })).status, 401);
   await adm('PUT', '/api/admin/coupons/AQUILA', { desconto_pct: 5, comissao_pct: 20, ativo: true });
+  for (const o of orig) db.prepare('UPDATE orders SET paid_at=? WHERE id=?').run(o.paid_at, o.id);
 });
 
 test('painel: lista de pedidos para atualização automática exige sessão', async () => {
@@ -1635,4 +1643,76 @@ test('excluir cupom: só sem vendas pagas nem pagamentos; com histórico pede pa
   assert.ok(db.prepare('SELECT 1 FROM coupons WHERE code=?').get(comVenda.coupon));
   // sem sessão: 401
   assert.equal((await fetch(base + '/api/admin/coupons/' + comVenda.coupon, { method: 'DELETE', headers: { 'x-painel': '1', ...freshIP() } })).status, 401);
+});
+
+test('fechamento: a pagar só de meses fechados; faixas agendadas p/ o mês que vem; congela antes de mudar; aviso mensal', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  const PADRAO = [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 400000, pct: 40 }, { min: 1000000, pct: 45 }];
+  const BAIXAS = [{ min: 0, pct: 10 }, { min: 150000, pct: 11 }, { min: 400000, pct: 12 }, { min: 1000000, pct: 13 }];
+  await adm('PUT', '/api/admin/tiers', PADRAO);
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano, ptoken) VALUES ('FECH1', 5, 0, 1, 'metas', 'tokfech1tokfech1tokfech1')").run();
+  const mes = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7);
+  const [y, m] = mes.split('-').map(Number);
+  const ant = new Date(Date.UTC(y, m - 2, 15)).toISOString().slice(0, 10) + ' 15:00:00';
+  const agora = new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' ');
+  const ins = (gid, cents, paid) => db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon, star_cost)
+    VALUES (?, 'c1000', ?, ?, 'p', 'f@f.com', 'delivered', ?, ?, 'x', 0, 'FECH1', 0.0875)`).run('f' + gid, cents, gid, paid, paid);
+  ins('330001', 450000, ant);   // mês passado: R$ 4.500 → 40%
+  ins('330002', 100000, agora); // mês atual: R$ 1.000 → garantida 35%
+  const rep = async () => (await (await adm('GET', '/api/admin/coupons/report')).json()).cupons.find((x) => x.code === 'FECH1');
+  const fech = Math.round(450000 * (1 - 0.0099) * 0.40), est = Math.round(100000 * (1 - 0.0099) * 0.35);
+  let c = await rep();
+  assert.ok(Math.abs(c.fechado - fech) <= 1 && Math.abs(c.mesCom - est) <= 1, JSON.stringify(c));
+  assert.equal(c.saldo, c.fechado); // o mês atual NÃO entra no a pagar
+  // página do parceiro: a receber só dos meses fechados + estimado do mês à parte
+  let h = await (await fetch(base + '/parceiro/tokfech1tokfech1tokfech1', { headers: freshIP() })).text();
+  assert.match(h, /A receber \(meses fechados\)/); assert.match(h, /Este mês, em andamento/);
+
+  // 2) agendar faixas para o mês que vem: hoje nada muda; parceiro é avisado; dá para cancelar
+  const prox = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+  assert.equal((await adm('PUT', '/api/admin/tiers?quando=proximo', BAIXAS)).status, 200);
+  assert.deepEqual((await (await adm('GET', '/api/admin/tiers/agendado')).json()).agendado, { mes: prox, tiers: BAIXAS });
+  assert.deepEqual((await (await adm('GET', '/api/admin/tiers')).json()).map((t) => t.pct), [30, 35, 40, 45]);
+  assert.ok(Math.abs((await rep()).mesCom - est) <= 1);
+  h = await (await fetch(base + '/parceiro/tokfech1tokfech1tokfech1', { headers: freshIP() })).text();
+  assert.match(h, /A partir de \w{3}\/\d{4} as faixas passam a ser: 10%/);
+  assert.equal((await adm('DELETE', '/api/admin/tiers/agendado')).status, 200);
+  assert.equal((await (await adm('GET', '/api/admin/tiers/agendado')).json()).agendado, null);
+
+  // 3) "aplicar já" congela o mês fechado com as faixas antigas antes de trocar
+  db.exec("DELETE FROM partner_months WHERE code='FECH1'");
+  await adm('PUT', '/api/admin/tiers', BAIXAS);
+  assert.equal(db.prepare("SELECT pct FROM partner_months WHERE code='FECH1' AND mes=?").get(ant.slice(0, 7)).pct, 40);
+  assert.ok(Math.abs((await rep()).fechado - fech) <= 1);
+  await adm('PUT', '/api/admin/tiers', PADRAO);
+  // virada do mês com faixas agendadas: congela com as antigas, depois troca
+  db.exec("DELETE FROM partner_months WHERE code='FECH1'");
+  db.prepare("INSERT INTO settings (k, v) VALUES ('tiers_next', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(JSON.stringify({ mes, tiers: BAIXAS }));
+  SRV.makePartnerCtx();
+  assert.equal(db.prepare("SELECT pct FROM partner_months WHERE code='FECH1' AND mes=?").get(ant.slice(0, 7)).pct, 40);
+  assert.deepEqual((await (await adm('GET', '/api/admin/tiers')).json()).map((t) => t.pct), [10, 11, 12, 13]);
+  assert.equal(db.prepare("SELECT 1 FROM settings WHERE k='tiers_next'").get(), undefined);
+  await adm('PUT', '/api/admin/tiers', PADRAO);
+
+  // 6) fechamento mensal: pagar ≥ mínimo; abaixo do mínimo acumula
+  assert.match(SRV.fechamentoMsg(), /Pagar hoje por Pix[\s\S]*FECH1: R\$\s?1\.782,1\d/);
+  db.prepare("INSERT INTO coupon_payouts (code, cents) VALUES ('FECH1', ?)").run(c.fechado - 500);
+  assert.match(SRV.fechamentoMsg(), /Abaixo do mínimo de R\$\s?20,00[\s\S]*FECH1: R\$\s?5,00/);
+  // dispara 1x no 1º dia útil a partir das 9h (horário de Brasília)
+  const du = String(SRV.primeiroDiaUtil(mes)).padStart(2, '0');
+  const em = (hh) => Date.parse(`${mes}-${du}T${hh}:00:00Z`) + 3 * 3600_000;
+  db.prepare("DELETE FROM settings WHERE k='fechamento_mes'").run();
+  assert.equal(SRV.fechamentoTick(em('08')), false);
+  const n = tgSent.length;
+  assert.equal(SRV.fechamentoTick(em('10')), true);
+  await ateQue(() => tgSent.length > n);
+  assert.match(tgSent.at(-1).text, /💸 Comissões dos parceiros — fechamento de/);
+  assert.equal(SRV.fechamentoTick(em('11')), false); // já enviado neste mês
+  // 1º dia útil: pula fim de semana e 1º/jan, 1º/mai
+  assert.equal(SRV.primeiroDiaUtil('2026-11'), 2); // 01/11/2026 é domingo
+  assert.equal(SRV.primeiroDiaUtil('2027-01'), 4); // 01/01 feriado, 02 e 03 fim de semana
+  assert.equal(SRV.primeiroDiaUtil('2026-05'), 4); // 01/05 feriado (sexta)
+  assert.equal(SRV.primeiroDiaUtil('2026-12'), 1);
+  db.exec("DELETE FROM orders WHERE coupon='FECH1'"); db.exec("DELETE FROM coupon_payouts WHERE code='FECH1'");
+  db.exec("DELETE FROM partner_months WHERE code='FECH1'"); db.exec("DELETE FROM coupons WHERE code='FECH1'");
 });

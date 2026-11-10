@@ -155,6 +155,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .tiers .tt input{width:96px;padding:7px 8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:7px;font:inherit;font-size:13px}
 .tiers .tt input[data-k="pct"]{width:54px}.tiers .undo{background:none;border:0;color:var(--red);font:inherit;font-size:12px;cursor:pointer;padding:0}
 .tiers .tt td{vertical-align:middle}.tiers .ops{display:flex;gap:8px;margin-top:10px}
+.tiers .ops.col{flex-direction:column}.tiers .ops button.pri{white-space:nowrap;background:var(--orange);color:#160a04;border-color:var(--orange)}.tiers .metabox{margin:0 0 10px}.rep .top .due.low{color:var(--mut);font-weight:600}
 .tiers .ops button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;padding:9px;font:inherit;font-weight:700;cursor:pointer}
 .rep .plk{font-size:11.5px;color:var(--dim);margin-top:6px}.rep .ops{flex-wrap:wrap}
 .rep .tot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.rep .tot b{color:var(--txt)}
@@ -222,7 +223,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
     <div id="secMeta"><div class="tiers" id="tiersBox"></div></div>
     <div id="secCom"><div class="rephead"><b>Comissões</b><select id="repPer" onchange="loadRep()"><option value="m0">Este mês</option><option value="m1">Mês passado</option><option value="all">Tudo</option></select></div>
     <div id="repBox"><div class="empty">Carregando…</div></div>
-    <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro: no plano de metas, a faixa do mês (pelo faturamento do parceiro) vale para todas as vendas do mês; no plano fixo, o % do dia da venda. O período muda só a primeira linha; <b>a pagar</b> = ganho total − pagamentos registrados.</p></div>
+    <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro: no plano de metas, a faixa do mês (pelo faturamento do parceiro) vale para todas as vendas do mês; no plano fixo, o % do dia da venda. O período muda só a primeira linha. <b>A pagar</b> = comissão dos meses já fechados − pagamentos registrados (pago no 1º dia útil; abaixo do mínimo, acumula). O mês atual aparece como estimado.</p></div>
     <div id="secCup"><button class="newbtn" onclick="openCup()">+ Novo cupom</button>
     <div id="cupList" style="margin-top:12px"></div></div>
   </div>
@@ -732,7 +733,7 @@ async function loadCups(){
   catch(e){$$('cupList').innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
 function renderCups(){
-  renderCupTabs();
+  renderCupTabs();if(TIERS.length)renderTiers();
   $$('cupList').innerHTML=CUPS.map(function(c){
     return '<div class="prow cup"><div class="pi"><div class="nm mono">'+esc(c.code)+(c.ativo?'<span class="cuptag">ATIVO</span>':'<span class="cuptag off">INATIVO</span>')+'</div>'+
       '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · '+(c.plano==='fixo'?'comissão fixa <b>'+pct(c.comissao_pct)+'</b> do lucro':'<b>plano de metas</b>'+(c.tiers?' (faixas próprias)':''))+(c.nota?' · '+esc(c.nota):'')+'</div>'+
@@ -770,12 +771,21 @@ function perRange(){
 let TIERS=[];const REP_OPEN=new Set();
 function tiersResumo(){return TIERS.map(function(t,i){return String(t.pct).replace('.',',')+'%'+(i?' a partir de '+brlFromCents(t.min):'');}).join(' · ');}
 function irParaFaixas(){closeCup();setCupTab('metas');}
-async function loadTiers(){try{TIERS=await api('/api/admin/tiers');renderTiers();}catch(e){$$('tiersBox').textContent=e.message;}}
+let TNEXT=null;
+const mesNome=function(m){return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+m.slice(5)-1]+'/'+m.slice(0,4);};
+function proxMes(){const d=new Date(new Date().toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));const n=new Date(d.getFullYear(),d.getMonth()+1,1);return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');}
+function tiersTxt(T){return T.map(function(t,i){return String(t.pct).replace('.',',')+'%'+(i?' a partir de '+brlFromCents(t.min):'');}).join(' · ');}
+function usamPadrao(){return CUPS.filter(function(c){return c.plano!=='fixo'&&!c.tiers;}).map(function(c){return c.code+(c.ativo?'':' (inativo)');});}
+async function loadTiers(){try{TIERS=await api('/api/admin/tiers');try{TNEXT=(await api('/api/admin/tiers/agendado')).agendado;}catch(e){TNEXT=null;}renderTiers();}catch(e){$$('tiersBox').textContent=e.message;}}
+async function cancelNext(){if(!confirm('Cancelar a mudança de faixas agendada para '+mesNome(TNEXT.mes)+'?'))return;
+  try{await api('/api/admin/tiers/agendado',{method:'DELETE'});TNEXT=null;renderTiers();}catch(e){alert(e.message);}}
 function renderTiers(){
   const B=$$('tiersBox');B.textContent='';
   const d=el('div','tcard');
   d.appendChild(el('div','ttl','Metas padrão · faixas de comissão (para cupons do plano de metas sem faixas próprias)'));
-  d.appendChild(el('p','hint','Faturamento do parceiro no mês → % do lucro em TODAS as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Mudanças valem para o mês atual em diante (meses fechados não mudam).'));
+  d.appendChild(el('p','hint','Faturamento do parceiro no mês → % do lucro em TODAS as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Meses fechados nunca mudam.'));
+  const us=usamPadrao();d.appendChild(el('p','hint','Usam estas faixas: '+(us.length?us.join(', '):'nenhum parceiro')+'. Quem tem faixas próprias não muda.'));
+  if(TNEXT){const ag=el('div','metabox');ag.appendChild(el('span',null,'Agendado para '+mesNome(TNEXT.mes)+': '+tiersTxt(TNEXT.tiers)));const cb=el('button',null,'Cancelar');cb.type='button';cb.onclick=cancelNext;ag.appendChild(cb);d.appendChild(ag);}
   const t=el('table','ttab tt');const h=el('tr');['Vendas no mês a partir de','Comissão',''].forEach(function(x){h.appendChild(el('th',null,x));});t.appendChild(h);
   TIERS.forEach(function(x,i){
     const tr=el('tr');
@@ -788,23 +798,31 @@ function renderTiers(){
   d.appendChild(t);
   const ops=el('div','ops');
   const add=el('button',null,'+ faixa');add.onclick=function(){const l=TIERS[TIERS.length-1];TIERS.push({min:l.min+100000,pct:l.pct+5});renderTiers();};
-  const sv=el('button',null,'Salvar faixas');sv.onclick=saveTiers;
-  if(TIERS.length<6)ops.appendChild(add);ops.appendChild(sv);d.appendChild(ops);
+  if(TIERS.length<6){ops.appendChild(add);d.appendChild(ops);}
+  const ops2=el('div','ops col');
+  const sv2=el('button','sec','Aplicar já');sv2.onclick=function(){saveTiers('agora');};
+  const sv=el('button','pri','Salvar a partir de '+mesNome(proxMes()));sv.onclick=function(){saveTiers('proximo');};
+  ops2.appendChild(sv);ops2.appendChild(sv2);d.appendChild(ops2);
   B.appendChild(d);
 }
-async function saveTiers(){
+async function saveTiers(quando){
   const rows=$$('tiersBox').querySelectorAll('table tr');const out=[];
   const num=function(v){let t=String(v).replace(/[^0-9,.]/g,'');if(t.indexOf(',')>=0)t=t.split('.').join('').replace(',','.');return parseFloat(t);};
   rows.forEach(function(r,i){if(!i)return;const ins=r.querySelectorAll('input');out.push({min:Math.round(num(ins[0].value)*100)||0,pct:num(ins[1].value)});});
-  try{TIERS=await api('/api/admin/tiers',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(out)});renderTiers();loadRep();alert('Faixas salvas.');}
+  const us=usamPadrao(),quem='Afeta: '+(us.length?us.join(', '):'nenhum parceiro')+'.';
+  if(!confirm(quando==='proximo'?'Agendar as novas faixas para '+mesNome(proxMes())+'? Até lá continuam as de hoje. '+quem:
+    'Aplicar as novas faixas JÁ, inclusive nas vendas deste mês? '+quem+' O acordo prevê aviso de 7 dias antes de mudar as faixas.'))return;
+  try{TIERS=await api('/api/admin/tiers'+(quando==='proximo'?'?quando=proximo':''),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(out)});
+    try{TNEXT=(await api('/api/admin/tiers/agendado')).agendado;}catch(e){TNEXT=null;}
+    renderTiers();loadRep();alert(quando==='proximo'?'Faixas agendadas para '+mesNome(TNEXT?TNEXT.mes:proxMes())+'.':'Faixas salvas.');}
   catch(e){alert(e.message);}
 }
 async function loadRep(){
   $$('repBox').innerHTML='<div class="empty">Carregando…</div>';
   try{const r=await api('/api/admin/coupons/report'+perRange());
-    REP_DUE=r.cupons.filter(function(c){return c.saldo>0;}).length;renderCupTabs();
+    REP_DUE=r.cupons.filter(function(c){return c.saldo>=c.minimo;}).length;renderCupTabs();
     $$('repBox').innerHTML=r.cupons.map(function(c){
-      const st=c.saldo>0?'<span class="due">a pagar '+brlFromCents(c.saldo)+'</span>':
+      const st=c.saldo>0?(c.saldo<c.minimo?'<span class="due low">'+brlFromCents(c.saldo)+' · acumula</span>':'<span class="due">a pagar '+brlFromCents(c.saldo)+'</span>'):
         c.saldo<0?'<span class="due">crédito '+brlFromCents(-c.saldo)+'</span>':'<span class="ok">em dia ✓</span>';
       const pays=c.pagamentos.map(function(p){
         return '<tr><td>'+esc(p.data.split('-').reverse().join('/'))+'</td><td>'+brlFromCents(p.cents)+'</td><td style="text-align:left">'+esc(p.nota)+'</td>'+
@@ -819,6 +837,7 @@ async function loadRep(){
         '<div class="nums"><span>faturado <b>'+brlFromCents(c.faturado)+'</b></span>'+
         '<span>descontos <b>'+brlFromCents(c.desconto)+'</b></span><span>lucro <b>'+brlFromCents(c.lucro)+'</b></span>'+
         '<span>comissão <b>'+brlFromCents(c.comissao)+'</b></span><span>fica para a loja <b>'+brlFromCents(c.lucroLoja)+'</b></span></div>'+
+        '<div class="tot"><span>a pagar (meses fechados) <b>'+brlFromCents(Math.max(0,c.saldo))+'</b></span><span>este mês (estimado) <b>'+brlFromCents(c.mesCom)+'</b></span>'+(c.saldo>0&&c.saldo<c.minimo?'<span>abaixo do mínimo de '+brlFromCents(c.minimo)+': acumula</span>':'')+'</div>'+
         '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>'+(c.plano==='fixo'?'fixo: '+pct(c.comissao_pct)+' do lucro':'plano de metas')+'</span></div>'+
         '<div class="ops"><button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button>'+
         (c.linkParceiro?'<button data-plink="'+esc(c.linkParceiro)+'">Copiar link do parceiro</button>':'')+'</div>'+
