@@ -1765,7 +1765,7 @@ test('dados do parceiro no cupom e mês de referência no pagamento; Pix nunca v
   assert.equal((await adm('POST', '/api/admin/coupons/DADOS1/payouts', { cents: 700 })).status, 200);
   const rep = (await (await adm('GET', '/api/admin/coupons/report')).json()).cupons.find((x) => x.code === 'DADOS1');
   assert.deepEqual(rep.pagamentos.map((p) => p.ref).sort(), ['2026-09', ant].sort());
-  assert.deepEqual(rep.parceiro, { nome: 'Fulano Teste', pix: 'pix-secreto-123' });
+  assert.deepEqual(rep.parceiro, { nome: 'Fulano Teste', pix: 'pix-secreto-123', email: true });
   // página do parceiro: mostra a referência; nunca o Pix nem o e-mail
   const tk = db.prepare("SELECT ptoken FROM coupons WHERE code='DADOS1'").get().ptoken;
   const h = await (await fetch(base + '/parceiro/' + tk, { headers: freshIP() })).text();
@@ -1774,4 +1774,66 @@ test('dados do parceiro no cupom e mês de referência no pagamento; Pix nunca v
   // fechamento mostra o nome do parceiro (crédito, pois não há venda)
   assert.match(SRV.fechamentoMsg(), /DADOS1 \(Fulano Teste\): R\$\s?12,00/);
   db.exec("DELETE FROM coupon_payouts WHERE code='DADOS1'"); db.exec("DELETE FROM coupons WHERE code='DADOS1'");
+});
+
+test('registro de alterações: cupom, pagamentos, link e faixas padrão — sem Pix/e-mail no texto', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  const log = async (code) => (await (await adm('GET', '/api/admin/cupons-log?code=' + encodeURIComponent(code))).json()).map((r) => r.acao);
+  await adm('POST', '/api/admin/coupons', { code: 'LOG1', desconto_pct: 5, comissao_pct: 0, ativo: true });
+  await adm('PUT', '/api/admin/coupons/LOG1', { desconto_pct: 10, comissao_pct: 0, ativo: false, parceiro_nome: 'Beltrano', parceiro_pix: 'pix-log-999', parceiro_email: 'b@log.com',
+    tiers: [{ min: 0, pct: 30 }, { min: 100000, pct: 40 }] });
+  await adm('PUT', '/api/admin/coupons/LOG1', { desconto_pct: 10, comissao_pct: 0, ativo: false }); // nada mudou → nada registrado
+  const { id } = await (await adm('POST', '/api/admin/coupons/LOG1/payouts', { cents: 2500, ref_mes: '2026-10' })).json();
+  await adm('DELETE', '/api/admin/payouts/' + id);
+  await adm('POST', '/api/admin/coupons/LOG1/ptoken');
+  const L = await log('log1');
+  assert.equal(L.length, 5, JSON.stringify(L));
+  assert.match(L[4], /^criado: desconto 5%, plano metas/);
+  assert.match(L[3], /desconto 5% → 10%; desativado; faixas padrão → próprias \(30% · 40% a partir de R\$\s?1\.000,00\); nome do parceiro: — → Beltrano; chave Pix cadastrada; e-mail do parceiro cadastrado/);
+  assert.match(L[2], /pagamento registrado: R\$\s?25,00 \(ref\. out\/2026\)/);
+  assert.match(L[1], /pagamento desfeito: R\$\s?25,00 \(ref\. out\/2026\)/);
+  assert.match(L[0], /link do parceiro trocado/);
+  assert.doesNotMatch(JSON.stringify(L), /pix-log-999|b@log\.com/);
+  // excluir fica registrado (o registro sobrevive ao cupom)
+  await adm('DELETE', '/api/admin/coupons/LOG1');
+  assert.equal((await log('LOG1'))[0], 'excluído');
+  // faixas padrão
+  const T = [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 400000, pct: 40 }, { min: 1000000, pct: 45 }];
+  await adm('PUT', '/api/admin/tiers?quando=proximo', [{ min: 0, pct: 31 }]);
+  await adm('DELETE', '/api/admin/tiers/agendado');
+  await adm('PUT', '/api/admin/tiers', T);
+  const G = await log('*');
+  assert.match(G[0], /^faixas padrão aplicadas já: /); assert.match(G[1], /^agendamento p\/ \w{3}\/\d{4} cancelado/); assert.match(G[2], /^faixas padrão agendadas p\/ \w{3}\/\d{4}: 31%/);
+  assert.equal((await fetch(base + '/api/admin/cupons-log?code=*', { headers: freshIP() })).status, 401);
+  db.exec("DELETE FROM coupon_log WHERE code IN ('LOG1','*')");
+});
+
+test('extrato mensal por e-mail: só p/ parceiro com e-mail e movimento; nunca lucro/custos; prévia no painel', async () => {
+  const adm = (method, url) => fetch(base + url, { method, headers: { Cookie: COOKIE, 'x-painel': '1', ...freshIP() } });
+  const mes = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7);
+  const [y, m] = mes.split('-').map(Number);
+  const antMes = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7), ant = antMes + '-15 15:00:00';
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano, ptoken, parceiro_nome, parceiro_email) VALUES ('EXT1', 5, 0, 1, 'metas', 'tokext1tokext1tokext1tokext1', 'Cicrano', 'cicrano@ext.com')").run();
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano, ptoken) VALUES ('EXT2', 5, 0, 1, 'metas', 'tokext2tokext2tokext2tokext2')").run(); // sem e-mail
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano, ptoken, parceiro_email) VALUES ('EXT3', 5, 0, 1, 'metas', 'tokext3tokext3tokext3tokext3', 'nada@ext.com')").run(); // sem movimento
+  const ins = (code, gid, cents) => db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon, star_cost)
+    VALUES (?, 'c1000', ?, ?, 'p', 'x@x.com', 'delivered', ?, ?, 'x', 26, ?, 0.0875)`).run('e' + gid, cents, gid, ant, ant, code);
+  ins('EXT1', '350001', 200000); ins('EXT2', '350002', 200000);
+  const n = mailSent.length;
+  const r = await SRV.enviarExtratos(antMes);
+  assert.deepEqual(r.ok, ['EXT1']); assert.deepEqual(r.falha, []);
+  const e = mailSent.slice(n);
+  assert.equal(e.length, 1); assert.deepEqual(e[0].to, ['cicrano@ext.com']);
+  assert.match(e[0].from, /parcerias@recargaflame\.com\.br/); assert.equal(e[0].reply_to, 'parcerias@recargaflame.com.br');
+  assert.match(e[0].subject, /^Seu extrato de \w{3}\/\d{4} — cupom EXT1$/);
+  assert.match(e[0].html, /Olá, <b[^>]*>Cicrano<\/b>/); assert.match(e[0].html, /35%/); assert.match(e[0].html, /\/parceiro\/tokext1tokext1tokext1tokext1/);
+  assert.match(e[0].text, /O pagamento de R\$\s?[\d.,]+ é feito por Pix/);
+  for (const proibido of [/lucro/i, /margem/i, /custo/i, /stars/i, /★/]) { assert.doesNotMatch(e[0].html, proibido); assert.doesNotMatch(e[0].text, proibido); }
+  await ateQue(() => tgSent.some((t) => /📧 Extrato de \w{3}\/\d{4} por e-mail: enviado para EXT1/.test(t.text)));
+  // prévia no painel (exige sessão)
+  const p = await adm('GET', '/api/admin/coupons/ext1/extrato?mes=' + antMes);
+  assert.equal(p.status, 200); assert.match(await p.text(), /Seu extrato de/);
+  assert.equal((await fetch(base + '/api/admin/coupons/EXT1/extrato', { headers: freshIP() })).status, 401);
+  db.exec("DELETE FROM orders WHERE coupon IN ('EXT1','EXT2')"); db.exec("DELETE FROM partner_months WHERE code IN ('EXT1','EXT2','EXT3')");
+  db.exec("DELETE FROM coupons WHERE code IN ('EXT1','EXT2','EXT3')");
 });

@@ -139,6 +139,31 @@ function priceWith(p, coupon) {
 }
 
 try { db.exec('ALTER TABLE coupon_payouts ADD COLUMN ref_mes TEXT'); } catch { /* já existe */ } // mês que o pagamento cobre (AAAA-MM)
+// Registro de alterações de cupons, faixas e pagamentos (code '*' = faixas padrão). Nunca guarda Pix nem e-mail.
+db.exec('CREATE TABLE IF NOT EXISTS coupon_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT CURRENT_TIMESTAMP, code TEXT NOT NULL, acao TEXT NOT NULL)');
+const logCup = (code, acao) => {
+  if (!acao) return;
+  try { db.prepare('INSERT INTO coupon_log (code, acao) VALUES (?,?)').run(code, String(acao).slice(0, 400)); } catch (e) { console.error('coupon_log', e.message); }
+};
+const tiersTxtS = (t) => t.map((x, i) => `${String(x.pct).replace('.', ',')}%${i ? ' a partir de ' + brlTxt(x.min) : ''}`).join(' · ');
+// o que mudou num cupom (texto curto para o registro; Pix e e-mail só como "alterado")
+function diffCup(a, c) {
+  const pc = (n) => String(n).replace('.', ',') + '%';
+  const tt = (t) => { try { return t ? 'próprias (' + tiersTxtS(JSON.parse(t)) + ')' : 'padrão'; } catch { return 'próprias'; } };
+  const s = (v) => v || '—', m = [];
+  if (a.desconto_pct !== c.desconto_pct) m.push(`desconto ${pc(a.desconto_pct)} → ${pc(c.desconto_pct)}`);
+  if (a.comissao_pct !== c.comissao_pct && (a.plano === 'fixo' || c.plano === 'fixo')) m.push(`comissão fixa ${pc(a.comissao_pct)} → ${pc(c.comissao_pct)}`);
+  if (!!a.ativo !== !!c.ativo) m.push(c.ativo ? 'ativado' : 'desativado');
+  if ((a.plano || 'metas') !== c.plano) m.push(`plano ${a.plano || 'metas'} → ${c.plano}`);
+  if ((a.tiers || null) !== (c.tiers || null)) m.push(`faixas ${tt(a.tiers)} → ${tt(c.tiers)}`);
+  if ((a.ids_proprios || '') !== (c.ids_proprios || '')) m.push('IDs do parceiro alterados');
+  if ((a.nota || '') !== (c.nota || '')) m.push('nota alterada');
+  if ((a.parceiro_nome || '') !== c.parceiro_nome) m.push(`nome do parceiro: ${s(a.parceiro_nome)} → ${s(c.parceiro_nome)}`);
+  if ((a.parceiro_canal || '') !== c.parceiro_canal) m.push(`canal: ${s(a.parceiro_canal)} → ${s(c.parceiro_canal)}`);
+  if ((a.parceiro_pix || '') !== c.parceiro_pix) m.push(c.parceiro_pix ? (a.parceiro_pix ? 'chave Pix alterada' : 'chave Pix cadastrada') : 'chave Pix removida');
+  if ((a.parceiro_email || '') !== c.parceiro_email) m.push(c.parceiro_email ? (a.parceiro_email ? 'e-mail do parceiro alterado' : 'e-mail do parceiro cadastrado') : 'e-mail do parceiro removido');
+  return m.join('; ');
+}
 const findOrder = db.prepare('SELECT * FROM orders WHERE token = ?');
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
@@ -977,14 +1002,14 @@ async function tgSend(text) {
 // Remetente: MAIL_FROM (padrão pedidos@recargaflame.com.br); respostas vão para MAIL_REPLY_TO (suporte@…).
 const MAIL_FROM = env.MAIL_FROM || 'pedidos@recargaflame.com.br';
 const MAIL_REPLY_TO = env.MAIL_REPLY_TO || 'suporte@recargaflame.com.br';
-async function sendMail(to, subject, html, text, replyTo = MAIL_REPLY_TO) {
+async function sendMail(to, subject, html, text, replyTo = MAIL_REPLY_TO, fromAddr = MAIL_FROM) {
   if (!env.RESEND_API_KEY) return false;
   try {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST', signal: AbortSignal.timeout(10000),
       headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `Recarga Flame <${MAIL_FROM}>`, reply_to: replyTo,
+        from: `Recarga Flame <${fromAddr}>`, reply_to: replyTo,
         to: [to], subject, html, text,
       }),
     });
@@ -1847,6 +1872,7 @@ app.post('/api/admin/coupons', admin, (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, crypto.randomBytes(18).toString('base64url'),
       c.parceiro_nome, c.parceiro_canal, c.parceiro_pix, c.parceiro_email);
+  logCup(c.code, `criado: desconto ${String(c.desconto_pct).replace('.', ',')}%, plano ${c.plano}${c.tiers ? ', faixas próprias' : ''}${c.ativo ? '' : ', inativo'}`);
   res.json({ ok: true });
 });
 app.put('/api/admin/coupons/:code', admin, (req, res) => {
@@ -1864,6 +1890,7 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
   db.prepare(`UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=?, tiers=?,
     parceiro_nome=?, parceiro_canal=?, parceiro_pix=?, parceiro_email=? WHERE code=?`)
     .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, c.parceiro_nome, c.parceiro_canal, c.parceiro_pix, c.parceiro_email, c.code);
+  logCup(c.code, diffCup(atual, c));
   res.json({ ok: true });
 });
 // Excluir só cupom sem histórico: com venda paga/entregue ou pagamento registrado, o certo é desativar
@@ -1879,6 +1906,7 @@ app.delete('/api/admin/coupons/:code', admin, (req, res) => {
     db.prepare('DELETE FROM partner_months WHERE code=?').run(code);
     db.prepare('DELETE FROM coupons WHERE code=?').run(code);
   })();
+  logCup(code, 'excluído');
   res.json({ ok: true });
 });
 // ---------- Plano de metas dos parceiros ----------
@@ -1975,6 +2003,7 @@ function rollTiers() {
   freezeClosedMonths(buildPartnerCtx());
   setSetting('tiers', JSON.stringify(n.tiers));
   db.prepare("DELETE FROM settings WHERE k='tiers_next'").run();
+  logCup('*', `faixas agendadas entraram em vigor em ${nomeMesBR(n.mes)}: ${tiersTxtS(n.tiers)}`);
 }
 // Grava (partner_months) a faixa de todo mês fechado com venda que ainda não foi gravado, do mais antigo
 // para o mais novo (a faixa garantida de um mês depende do anterior). Mês gravado não muda mais.
@@ -2061,7 +2090,7 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
       saldo: Math.round(r.fechado) - r.pago, minimo: PAYOUT_MIN,
       mesAtual: r.plano === 'fixo' || !ctx.cupons[r.code] ? null : mesAtual(ctx, r.code),
       linkParceiro: ctx.cupons[r.code]?.ptoken ? `${SITE_URL}/parceiro/${ctx.cupons[r.code].ptoken}` : null,
-      parceiro: { nome: ctx.cupons[r.code]?.parceiro_nome || '', pix: ctx.cupons[r.code]?.parceiro_pix || '' } };
+      parceiro: { nome: ctx.cupons[r.code]?.parceiro_nome || '', pix: ctx.cupons[r.code]?.parceiro_pix || '', email: !!ctx.cupons[r.code]?.parceiro_email } };
   });
   // cupons do plano de metas sem venda ainda também aparecem (mostram a faixa e a meta)
   for (const c of Object.values(ctx.cupons)) {
@@ -2081,22 +2110,32 @@ app.put('/api/admin/tiers', admin, (req, res) => {
   // ?quando=proximo: agenda para o mês que vem (o mês atual segue com as faixas de hoje)
   if (req.query.quando === 'proximo') {
     setSetting('tiers_next', JSON.stringify({ mes: nextMes(curMes()), tiers: t }));
+    logCup('*', `faixas padrão agendadas p/ ${nomeMesBR(nextMes(curMes()))}: ${tiersTxtS(t)}`);
     return res.json(getTiers());
   }
   freezeClosedMonths(makePartnerCtx()); // meses fechados ficam com as faixas que valiam neles
+  logCup('*', `faixas padrão aplicadas já: ${tiersTxtS(getTiers())} → ${tiersTxtS(t)}`);
   setSetting('tiers', JSON.stringify(t));
   res.json(t);
 });
 app.get('/api/admin/tiers/agendado', admin, (req, res) => res.json({ agendado: tiersNext() }));
+// registro de alterações de um cupom (?code=X) ou das faixas padrão (?code=*)
+app.get('/api/admin/cupons-log', admin, (req, res) => {
+  const code = req.query.code === '*' ? '*' : normCode(req.query.code);
+  res.json(db.prepare('SELECT ts, acao FROM coupon_log WHERE code=? ORDER BY id DESC LIMIT 100').all(code).map((r) => ({ data: r.ts, acao: r.acao })));
+});
 app.delete('/api/admin/tiers/agendado', admin, (req, res) => {
   if (!guard(req, res)) return;
+  const n = tiersNext();
   db.prepare("DELETE FROM settings WHERE k='tiers_next'").run();
+  if (n) logCup('*', `agendamento p/ ${nomeMesBR(n.mes)} cancelado`);
   res.json({ ok: true });
 });
 // gera um novo link do parceiro (o antigo para de funcionar)
 app.post('/api/admin/coupons/:code/ptoken', admin, (req, res) => {
   if (!guard(req, res)) return;
   const r = db.prepare('UPDATE coupons SET ptoken=? WHERE code=?').run(crypto.randomBytes(18).toString('base64url'), normCode(req.params.code));
+  if (r.changes) logCup(normCode(req.params.code), 'link do parceiro trocado (o anterior parou de funcionar)');
   res.status(r.changes ? 200 : 404).json(r.changes ? { ok: true } : { error: 'Cupom não encontrado.' });
 });
 
@@ -2143,8 +2182,74 @@ function fechamentoTick(now = Date.now()) {
   freezeClosedMonths(makePartnerCtx());
   const msg = fechamentoMsg();
   if (msg) tgSend(msg);
+  enviarExtratos(prevMes(mes)).catch((e) => console.error('extratos', e.message));
   return !!msg;
 }
+
+// ---------- Extrato mensal do parceiro por e-mail (junto com o fechamento) ----------
+// Mostra só o que a página do parceiro mostra (vendas, faturado, faixa, comissão, a receber) — nunca lucro ou custos.
+const PARC_FROM = env.MAIL_FROM_PARCERIAS || 'parcerias@recargaflame.com.br';
+function mesParceiro(ctx, c, mes) {
+  const d = ctx.dados(c.code), doMes = d.vendas.filter((o) => mesOf(o.paid_at) === mes);
+  const fixo = c.plano === 'fixo', pct = fixo ? null : ctx.info(c.code, mes).pct;
+  const com = Math.round(doMes.reduce((a, o) => a + Math.max(0, orderProfit(o)) * (fixo ? (o.com_pct || 0) : pct) / 100, 0));
+  return { vendas: doMes.length, fat: d.porMes[mes] || 0, pct: fixo ? c.comissao_pct : pct, com };
+}
+// a receber = comissão dos meses fechados − pagamentos (igual ao painel)
+function saldoFechado(ctx, code) {
+  const ganho = ctx.dados(code).vendas.filter((o) => mesOf(o.paid_at) < ctx.cur).reduce((a, o) => a + comOf(o, ctx.pctOf), 0);
+  return Math.round(ganho) - db.prepare('SELECT COALESCE(SUM(cents),0) s FROM coupon_payouts WHERE code=?').get(code).s;
+}
+function extratoEmail(ctx, c, mes) {
+  const m = mesParceiro(ctx, c, mes), saldo = saldoFechado(ctx, c.code), nm = nomeMesBR(mes);
+  const link = `${SITE_URL}/parceiro/${c.ptoken}`, nome = c.parceiro_nome || c.code;
+  const status = saldo >= PAYOUT_MIN ? `O pagamento de ${brlTxt(saldo)} é feito por Pix no 1º dia útil do mês, na chave cadastrada.`
+    : saldo > 0 ? `Você tem ${brlTxt(saldo)} a receber. Como é menos que ${brlTxt(PAYOUT_MIN)}, o valor acumula para o próximo pagamento.`
+      : 'Está tudo em dia: não há valor pendente.';
+  const subject = `Seu extrato de ${nm} — cupom ${c.code}`;
+  const linhas = [['Vendas com o cupom', String(m.vendas)], ['Faturado', brlTxt(m.fat)],
+    [c.plano === 'fixo' ? 'Comissão fixa' : 'Faixa do mês', `${String(m.pct).replace('.', ',')}%`], ['Comissão do mês', brlTxt(m.com)], ['A receber agora', brlTxt(Math.max(0, saldo))]];
+  const text = [`Olá, ${nome}!`, '', `Extrato de ${nm} do cupom ${c.code}:`, ...linhas.map(([k, v]) => `- ${k}: ${v}`), '', status, '',
+    `Acompanhe tudo, atualizado na hora: ${link}`, '', 'Dúvidas? É só responder este e-mail.', 'Equipe de Parcerias · Recarga Flame'].join('\n');
+  const td = 'padding:11px 14px;border-top:1px solid #2a2a2e';
+  const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#0e0e10;padding:24px 12px;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#f4f4f5">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#161618;border:1px solid #2a2a2e;border-radius:14px">
+<tr><td style="padding:22px 22px 6px"><img src="${SITE_URL}/img/brand-mark.png" width="36" height="36" alt="" style="border-radius:8px;vertical-align:middle">
+<span style="font-size:17px;font-weight:700;vertical-align:middle;margin-left:8px">Recarga <span style="color:#ff5a1f">Flame</span></span></td></tr>
+<tr><td style="padding:14px 22px 4px"><h1 style="margin:0 0 8px;font-size:20px">Seu extrato de ${nm}</h1>
+<p style="margin:0;color:#9b9ba3;font-size:14px;line-height:1.55">Olá, <b style="color:#f4f4f5">${esc(nome)}</b>! Aqui está o resumo do cupom <b style="color:#f4f4f5">${esc(c.code)}</b> no mês.</p></td></tr>
+<tr><td style="padding:16px 22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0e0e10;border:1px solid #2a2a2e;border-radius:10px;font-size:14px">
+${linhas.map(([k, v], i) => `<tr><td style="${i ? td : 'padding:11px 14px'};color:#9b9ba3">${k}</td><td align="right" style="${i ? td : 'padding:11px 14px'};font-weight:700">${esc(v)}</td></tr>`).join('')}
+</table>
+<p style="margin:14px 0 0;font-size:14px;line-height:1.55">${esc(status)}</p></td></tr>
+<tr><td style="padding:0 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">Ver minha página de parceiro</a></td></tr>
+<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">Dúvidas sobre a parceria? É só responder este e-mail.<br>
+O link da sua página é pessoal: não compartilhe.<br><br>Equipe de Parcerias · Recarga Flame</td></tr>
+</table></td></tr></table></body></html>`;
+  return { subject, html, text };
+}
+// manda o extrato do mês fechado a cada parceiro com e-mail cadastrado que teve venda ou tem saldo; avisa no Telegram
+async function enviarExtratos(mes) {
+  const ctx = makePartnerCtx(), ok = [], falha = [];
+  for (const c of Object.values(ctx.cupons)) {
+    if (!c.parceiro_email || !c.ptoken) continue;
+    if (!mesParceiro(ctx, c, mes).vendas && !saldoFechado(ctx, c.code)) continue; // nada a contar
+    const e = extratoEmail(ctx, c, mes);
+    (await sendMail(c.parceiro_email, e.subject, e.html, e.text, PARC_FROM, PARC_FROM) ? ok : falha).push(c.code);
+  }
+  if (ok.length || falha.length) {
+    tgSend(`📧 Extrato de ${nomeMesBR(mes)} por e-mail: ${[ok.length ? 'enviado para ' + ok.join(', ') : '', falha.length ? '⚠️ falhou para ' + falha.join(', ') : ''].filter(Boolean).join(' · ')}`);
+  }
+  return { ok, falha };
+}
+// prévia do extrato no painel (mesmo e-mail que o parceiro recebe; padrão: mês passado)
+app.get('/api/admin/coupons/:code/extrato', admin, (req, res) => {
+  const ctx = makePartnerCtx(), c = ctx.cupons[normCode(req.params.code)];
+  if (!c) return res.status(404).json({ error: 'Cupom não encontrado.' });
+  const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query.mes || '')) ? req.query.mes : prevMes(ctx.cur);
+  res.set('Cache-Control', 'no-store').type('html').send(extratoEmail(ctx, c, mes).html);
+});
 
 // ---------- Página do parceiro (link privado, só leitura; nunca mostra lucro, margem ou custos) ----------
 app.get('/parceiro/:token', limit(30), (req, res) => {
@@ -2234,12 +2339,15 @@ app.post('/api/admin/coupons/:code/payouts', admin, (req, res) => {
   const ref = String(req.body?.ref_mes || '');
   if (ref && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ref) || ref > curMes())) return res.status(400).json({ error: 'Mês de referência inválido.' });
   const r = db.prepare('INSERT INTO coupon_payouts (code, cents, nota, ref_mes) VALUES (?,?,?,?)').run(code, cents, nota, ref || prevMes(curMes()));
+  logCup(code, `pagamento registrado: ${brlTxt(cents)} (ref. ${nomeMesBR(ref || prevMes(curMes()))})`);
   res.json({ ok: true, id: Number(r.lastInsertRowid) });
 });
 app.delete('/api/admin/payouts/:id', admin, (req, res) => {
   if (!guard(req, res)) return;
-  const r = db.prepare('DELETE FROM coupon_payouts WHERE id=?').run(Number(req.params.id));
-  if (!r.changes) return res.status(404).json({ error: 'Pagamento não encontrado.' });
+  const p = db.prepare('SELECT * FROM coupon_payouts WHERE id=?').get(Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Pagamento não encontrado.' });
+  db.prepare('DELETE FROM coupon_payouts WHERE id=?').run(p.id);
+  logCup(p.code, `pagamento desfeito: ${brlTxt(p.cents)}${p.ref_mes ? ` (ref. ${nomeMesBR(p.ref_mes)})` : ''}`);
   res.json({ ok: true });
 });
 
@@ -2374,4 +2482,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

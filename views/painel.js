@@ -155,7 +155,8 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .tiers .tt input{width:96px;padding:7px 8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:7px;font:inherit;font-size:13px}
 .tiers .tt input[data-k="pct"]{width:54px}.tiers .undo{background:none;border:0;color:var(--red);font:inherit;font-size:12px;cursor:pointer;padding:0}
 .tiers .tt td{vertical-align:middle}.tiers .ops{display:flex;gap:8px;margin-top:10px}
-.tiers .ops.col{flex-direction:column}.tiers .ops button.pri{white-space:nowrap;background:var(--orange);color:#160a04;border-color:var(--orange)}.tiers .metabox{margin:0 0 10px}.rep .top .due.low{color:var(--mut);font-weight:600}
+.tiers .ops.col{flex-direction:column}.clog{margin:10px 0 4px;font-size:12.5px}.clog summary{cursor:pointer;color:var(--mut);font-weight:600}.clog .lg{padding:6px 0;border-top:1px solid var(--line);color:var(--txt)}.clog .lg span{display:block;color:var(--dim);font-size:11.5px}
+.tiers .ops button.pri{white-space:nowrap;background:var(--orange);color:#160a04;border-color:var(--orange)}.tiers .metabox{margin:0 0 10px}.rep .top .due.low{color:var(--mut);font-weight:600}
 .tiers .ops button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;padding:9px;font:inherit;font-weight:700;cursor:pointer}
 .rep .plk{font-size:11.5px;color:var(--dim);margin-top:6px}.rep .ops{flex-wrap:wrap}
 .rep .tot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.rep .tot b{color:var(--txt)}
@@ -248,6 +249,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="frow"><input id="c_pnome" placeholder="Nome" autocomplete="off"><input id="c_pcanal" placeholder="Canal ou perfil" autocomplete="off"></div>
       <div class="frow" style="margin-top:8px"><input id="c_ppix" placeholder="Chave Pix" autocomplete="off"><input id="c_pemail" type="email" placeholder="E-mail" autocomplete="off"></div>
       <div class="hint">Ficam só no painel. A chave Pix nunca aparece na página do parceiro.</div></div>
+    <details class="clog" id="c_logbox"><summary>Histórico de alterações</summary><div id="c_log" class="hint">Carregando…</div></details>
     <label class="fchk"><button type="button" class="sw" id="c_ativo" onclick="this.classList.toggle('on');cupAtivoTxt()"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
     <p class="merr" id="cerr"></p>
     <div class="mbtns"><button class="cancel" onclick="closeCup()">Cancelar</button><button class="save" id="csave" onclick="saveCup()">Salvar</button></div>
@@ -807,6 +809,8 @@ function renderTiers(){
   const sv2=el('button','sec','Aplicar já');sv2.onclick=function(){saveTiers('agora');};
   const sv=el('button','pri','Salvar a partir de '+mesNome(proxMes()));sv.onclick=function(){saveTiers('proximo');};
   ops2.appendChild(sv);ops2.appendChild(sv2);d.appendChild(ops2);
+  const lgd=document.createElement('details');lgd.className='clog';lgd.appendChild(el('summary',null,'Histórico das faixas padrão'));
+  const lgb=el('div','hint');lgd.appendChild(lgb);lgd.ontoggle=function(){if(lgd.open)logInto(lgb,'*');};d.appendChild(lgd);
   B.appendChild(d);
 }
 async function saveTiers(quando){
@@ -844,13 +848,14 @@ async function loadRep(){
         '<div class="tot"><span>a pagar (meses fechados) <b>'+brlFromCents(Math.max(0,c.saldo))+'</b></span><span>este mês (estimado) <b>'+brlFromCents(c.mesCom)+'</b></span>'+(c.saldo>0&&c.saldo<c.minimo?'<span>abaixo do mínimo de '+brlFromCents(c.minimo)+': acumula</span>':'')+'</div>'+
         '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>'+(c.plano==='fixo'?'fixo: '+pct(c.comissao_pct)+' do lucro':'plano de metas')+'</span></div>'+
         (c.parceiro&&(c.parceiro.nome||c.parceiro.pix)?'<div class="nums">'+(c.parceiro.nome?'<span>parceiro <b>'+esc(c.parceiro.nome)+'</b></span>':'')+(c.parceiro.pix?'<span>Pix <b class="mono">'+esc(c.parceiro.pix)+'</b></span>':'<span>Pix não cadastrado</span>')+'</div>':'<div class="nums"><span>dados do parceiro não cadastrados (Cupons → Editar)</span></div>')+
-        '<div class="ops">'+(c.parceiro&&c.parceiro.pix?'<button data-cpix="'+esc(c.parceiro.pix)+'">Copiar Pix</button>':'')+'<button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button>'+
+        '<div class="ops">'+(c.parceiro&&c.parceiro.pix?'<button data-cpix="'+esc(c.parceiro.pix)+'">Copiar Pix</button>':'')+(c.parceiro&&c.parceiro.email?'<button data-ext="'+esc(c.code)+'">Prévia do extrato</button>':'')+'<button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button>'+
         (c.linkParceiro?'<button data-plink="'+esc(c.linkParceiro)+'">Copiar link do parceiro</button>':'')+'</div>'+
         (c.linkParceiro?'<div class="plk">Página do parceiro (só leitura, sem lucro/margem) · <button class="undo" data-pnew="'+esc(c.code)+'">gerar novo link</button></div>':'')+
         (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Ref.</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
         '</details>';
     }).join('')||'<div class="empty" style="padding:24px">Nenhuma venda com cupom ainda.</div>';
     $$('repBox').querySelectorAll('details.rep').forEach(function(d){d.ontoggle=function(){if(d.open)REP_OPEN.add(d.dataset.code);else REP_OPEN.delete(d.dataset.code);};});
+    $$('repBox').querySelectorAll('[data-ext]').forEach(function(b){b.onclick=function(){window.open('/api/admin/coupons/'+encodeURIComponent(b.dataset.ext)+'/extrato','_blank','noopener');};});
     $$('repBox').querySelectorAll('[data-cpix]').forEach(function(b){b.onclick=function(){const v=b.dataset.cpix;
       (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(function(){alert('Chave Pix copiada.');},function(){prompt('Copie a chave Pix:',v);});};});
     $$('repBox').querySelectorAll('[data-pay]').forEach(function(b){b.onclick=function(){payCup(b.dataset.pay,Number(b.dataset.saldo));};});
@@ -897,7 +902,7 @@ function openCup(code){
   $$('c_nota').value=c?(c.nota||''):'';
   $$('c_pnome').value=c?(c.parceiro_nome||''):'';$$('c_pcanal').value=c?(c.parceiro_canal||''):'';$$('c_ppix').value=c?(c.parceiro_pix||''):'';$$('c_pemail').value=c?(c.parceiro_email||''):'';
   $$('c_ativo').classList.toggle('on',c?!!c.ativo:true);
-  $$('cerr').textContent='';cupLink();cupAtivoTxt();$$('cmodal').classList.add('on');
+  $$('cerr').textContent='';cupLink();cupAtivoTxt();cupLog(c?c.code:null);$$('cmodal').classList.add('on');
 }
 let CT=null; // faixas próprias do cupom em edição (null = padrão)
 function cupTmode(){
@@ -928,6 +933,12 @@ function cupAtivoTxt(){$$('c_ativo_txt').textContent=$$('c_ativo').classList.con
 function cupLink(){$$('c_link').textContent=location.origin+'/?cupom='+($$('c_code').value.trim().toUpperCase()||'CODIGO');}
 $$('c_code').oninput=cupLink;
 function closeCup(){$$('cmodal').classList.remove('on');}
+function fmtTs(ts){try{return new Date(ts.replace(' ','T')+'Z').toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(e){return ts;}}
+async function logInto(box,code){box.textContent='Carregando…';
+  try{const L=await api('/api/admin/cupons-log?code='+encodeURIComponent(code));
+    box.innerHTML=L.length?L.map(function(r){return '<div class="lg"><span>'+esc(fmtTs(r.data))+'</span>'+esc(r.acao)+'</div>';}).join(''):'Nenhuma alteração registrada ainda.';}
+  catch(e){box.textContent=e.message;}}
+function cupLog(code){const d=$$('c_logbox');d.style.display=code?'':'none';d.open=false;d.ontoggle=function(){if(d.open)logInto($$('c_log'),code);};}
 $$('cmodal').onclick=function(e){if(e.target.id==='cmodal')closeCup();};
 async function saveCup(){
   $$('cerr').textContent='';const b=$$('csave');b.disabled=true;
