@@ -531,7 +531,7 @@ function starsShortMsg() {
 
 // paid → delivered (painel ou Telegram): e-mail ao cliente + atualiza o aviso. true se mudou.
 // via: 'auto' (sem toque) | 'toque' (1 toque) | 'aprovado' (aprovar e pagar) | 'painel'/'telegram' (manual)
-function markDelivered(id, via) {
+function markDelivered(id, via, extras = []) {
   const tipo = ['auto', 'toque', 'aprovado'].includes(via) ? via : 'manual';
   const r = db.prepare("UPDATE orders SET status='delivered', delivered_at=CURRENT_TIMESTAMP, entrega_via=? WHERE id=? AND status='paid'").run(tipo, id);
   if (!r.changes) return false;
@@ -548,7 +548,11 @@ function markDelivered(id, via) {
     if (realOn()) { const t = setTimeout(() => syncStarsReal(true), env.NODE_ENV === 'test' ? 0 : 5000); t.unref?.(); }
     else if (antes.n && antes.s >= STARS_LOW && depois < STARS_LOW) tgSend(`🔻 Saldo de Stars baixo: ${depois}★ (limite ${STARS_LOW}★). Fila: ${starsFila()}★.`);
   }
-  tgMarkup(o, doneKeyboard(`✅ Entregue às ${hhmmSP()}${via === 'painel' ? ' (painel)' : via === 'auto' ? ' (pago no bot)' : ''}`));
+  // edita o aviso "💰 Pedido pago" (sem mensagem nova)
+  const st_ = starsOf(o);
+  tgEntregue(id, { auto: 'entregue automaticamente', toque: `pago no bot (${st_}★) e entregue`,
+    aprovado: `aprovado por você, pago no bot (${st_}★) e entregue`, painel: 'entregue manualmente (painel)' }[via] || 'entregue manualmente', extras,
+    tipo !== 'manual'); // entrega manual sem aviso salvo: não manda mensagem nova (como antes)
   return true;
 }
 async function handleTgUpdate(u) {
@@ -616,8 +620,7 @@ async function handleTgUpdate(u) {
     await setKb(doneKeyboard('⏳ Pagando…'));
     const r = await autopay(o.id, { aprovar });
     if (r.ok) {
-      await tgEntregue(o.id, `${aprovar ? 'aprovado por você, ' : ''}pago no bot (${r.stars}★) e entregue`,
-        [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`]);
+      // o aviso já foi editado pelo markDelivered
     } else {
       const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(o.id);
       if (cur.status === 'paid' && cur.autopay !== 'incerto') await setKb(paidKeyboard(cur));
@@ -658,7 +661,7 @@ function paidText(o) {
 }
 // Entrega paga no bot com sucesso: EDITA o aviso "💰 Pedido pago" (sem mensagem nova; o aviso já notificou).
 // Sem aviso salvo ou se a edição falhar, manda mensagem nova (fallback) com o mesmo texto.
-async function tgEntregue(id, titulo, extras = []) {
+async function tgEntregue(id, titulo, extras = [], fallback = true) {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   const text = [
     `✅ Pedido #${o.id} · ${titulo} às ${hhmmSP()}`,
@@ -672,7 +675,7 @@ async function tgEntregue(id, titulo, extras = []) {
       disable_web_page_preview: true, reply_markup: doneKeyboard(`✅ Entregue às ${hhmmSP()}`) });
     if (j?.ok) return;
   }
-  tgSend(text);
+  if (fallback) tgSend(text);
 }
 async function notifyPaid(o) {
   const j = await tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true, reply_markup: paidKeyboard(o), text: paidText(o) });
@@ -751,7 +754,7 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
     const r = await invoicePayer({ startParam: `s_${code}_${o.game_id}`, expectStars: starsOf(o), expectAccount: o.nickname,
       onInvoice: (m) => { invMsgId = m; db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ invMsgId: m }), id); } }, env);
     save('sent', r);
-    markDelivered(id, via);
+    markDelivered(id, via, [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`]);
     syncStarsReal(true);
     return { ok: true, ...r };
   } catch (e) {
@@ -845,9 +848,7 @@ async function entregaAuto(id, attempt = 1) {
     const t = setTimeout(() => entregaAuto(id, attempt + 1), RETRY_MS); t.unref?.(); return;
   }
   await syncStarsReal(true);
-  if (r.ok) await tgEntregue(id, 'entregue automaticamente',
-    [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`]);
-  else if (r.incerto) tgSend(`🚨 Entrega automática INCERTA ${head} — veja o alerta acima.\n${saldoLine()}`);
+  if (r.ok) { /* aviso já editado pelo markDelivered */ } else if (r.incerto) tgSend(`🚨 Entrega automática INCERTA ${head} — veja o alerta acima.\n${saldoLine()}`);
   else { setMotivo(id, 'pagamento falhou: ' + r.why); tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`); }
 }
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)

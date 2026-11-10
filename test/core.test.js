@@ -705,21 +705,27 @@ test('entrega pelo Telegram: aviso com botões → confirmar → entregue + e-ma
   assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(id).status, 'delivered');
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(mailSent.length, mails + 1);
-  assert.match(lastCall('editMessageReplyMarkup').body.reply_markup.inline_keyboard[0][0].text, /Entregue/);
+  const ed = lastCall('editMessageText').body;
+  assert.equal(ed.message_id, msgId); assert.match(ed.text, new RegExp('Pedido #' + id + ' · entregue manualmente às'));
+  assert.match(ed.reply_markup.inline_keyboard[0][0].text, /Entregue/);
   // toque repetido não reenvia e-mail
   await cb('D:' + id, msgId);
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(mailSent.length, mails + 1);
 });
 
-test('entrega pelo painel também atualiza os botões do aviso no Telegram', async () => {
+test('entrega pelo painel edita o aviso no Telegram (texto e botões, sem mensagem nova)', async () => {
   const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '222222', email: 'tp@x.com' })).json();
   await pagar(token);
   await new Promise((r) => setTimeout(r, 20));
   const msgId = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(id).tg_msg;
   await adm('POST', '/painel/' + id + '/entregue');
-  const e = lastCall('editMessageReplyMarkup').body;
-  assert.equal(e.message_id, msgId); assert.match(e.reply_markup.inline_keyboard[0][0].text, /Entregue.*painel/);
+  const n = tgSent.length;
+  await adm('POST', '/painel/' + id + '/entregue'); // de novo: nada muda
+  const e = lastCall('editMessageText').body;
+  assert.equal(e.message_id, msgId); assert.match(e.text, /entregue manualmente \(painel\) às/); assert.match(e.text, /Saldo/);
+  assert.match(e.reply_markup.inline_keyboard[0][0].text, /Entregue/);
+  assert.equal(tgSent.length, n); // sem mensagem nova
 });
 
 // ---------- saldo de Stars ----------
