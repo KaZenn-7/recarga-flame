@@ -659,6 +659,22 @@ test('antifraude: aparelho (cookie), conta/CPF do pagador e IP após estorno', a
   assert.equal((await (await fetch(base + '/api/orders/' + c.token, { headers: freshIP() })).json()).status, 'refund');
   assert.equal((await comprar('444444', 'g4b@x.com', null, '10.4.4.4')).status, 403); // ID do pedido bloqueado também ficou bloqueado
   mpPayer = null;
+  // desbloquear o pedido bloqueado: edita o aviso 🚫 (mantém o botão de reembolso), sem mensagem nova
+  await new Promise((r) => setTimeout(r, 20));
+  const cMsg = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(c.id).tg_msg;
+  const nB = tgSent.length;
+  assert.equal((await adm('POST', '/api/admin/orders/' + c.id + '/unblock')).status, 200);
+  const ub = lastCall('editMessageText').body;
+  assert.equal(ub.message_id, cMsg); assert.match(ub.text, new RegExp('🔓 Pedido #' + c.id + ' · cliente desbloqueado'));
+  assert.match(ub.text, /conta bancária que pagou já teve estorno/); assert.match(ub.text, /devolva R\$/);
+  assert.equal(ub.reply_markup.inline_keyboard[0][0].callback_data, 'r:' + c.id);
+  assert.equal(tgSent.length, nB);
+  // reembolsar depois: o aviso guarda o motivo do bloqueio
+  _setRefundCaller(async () => ({ ok: true, id: 1, estado: 'approved' }));
+  try { assert.equal((await adm('POST', '/api/admin/orders/' + c.id + '/reembolsar')).status, 200); } finally { _setRefundCaller(null); }
+  const rb = lastCall('editMessageText').body;
+  assert.equal(rb.message_id, cMsg); assert.match(rb.text, /reembolsado às/); assert.match(rb.text, /Tinha sido bloqueado automaticamente: a conta bancária/);
+  assert.equal(tgSent.length, nB);
   // desbloquear libera o aparelho também
   assert.equal((await adm('POST', '/api/admin/orders/' + id + '/unblock')).status, 200);
   assert.equal((await comprar('444445', 'g5@x.com', dev, '10.5.5.5')).status, 200);

@@ -312,7 +312,8 @@ async function reembolsar(id) {
   if (r.ok) {
     db.prepare("UPDATE orders SET refund_state='done', refund_at=?, refund_info=? WHERE id=?").run(Date.now(), JSON.stringify({ id: r.id, estado: r.estado }), id);
     tgAviso(id, { icone: '💸', titulo: 'reembolsado', saldo: false, botao: `💸 Reembolsado ${brlTxt(o.cents)}`,
-      extras: [`${brlTxt(o.cents)} devolvidos ao cliente via Mercado Pago. Pedido cancelado (não entregar).`] });
+      extras: [`${brlTxt(o.cents)} devolvidos ao cliente via Mercado Pago. Pedido cancelado (não entregar).`,
+        bloqAuto(o) && `🚫 Tinha sido bloqueado automaticamente: ${bloqAuto(o)}.`] });
     return { ok: true, cents: o.cents };
   }
   db.prepare("UPDATE orders SET refund_state='erro', refund_info=? WHERE id=?").run(JSON.stringify({ erro: r.erro }), id);
@@ -327,6 +328,17 @@ function estornoSinal(o) {
   if (blockedIn('acct', o.payer_acct)) return 'a conta bancária que pagou já teve estorno';
   if (blockedIn('device', o.device)) return 'o aparelho está ligado a um estorno';
   return null;
+}
+// motivo do bloqueio automático do pedido (ou null)
+const bloqAuto = (o) => (String(o?.manual_motivo || '').startsWith('bloqueado: ') ? o.manual_motivo.slice(11) : null);
+// desbloqueio pelo painel de um pedido bloqueado automaticamente: edita o aviso 🚫 (sem mensagem nova)
+function tgDesbloqueado(o) {
+  if (!o?.tg_msg || !bloqAuto(o)) return;
+  const pode = podeReembolsar(o), v = brlTxt(o.cents);
+  tgAviso(o.id, { icone: '🔓', titulo: 'cliente desbloqueado', saldo: false, fallback: false,
+    kb: pode ? refundKb(o) : doneKeyboard(o.refund_state === 'done' ? `💸 Reembolsado ${v}` : '🔓 Desbloqueado'),
+    extras: [`Bloqueio automático desfeito: ${bloqAuto(o)}.`,
+      pode ? `Pedido cancelado e NÃO entregue: devolva ${v} (botão abaixo ou app do Mercado Pago).` : o.refund_state === 'done' ? `${v} já devolvidos ao cliente.` : ''] });
 }
 function bloquearPedido(o, motivo) {
   const r = db.prepare("UPDATE orders SET status='cancelled', manual_motivo=? WHERE id=? AND status='paid'").run('bloqueado: ' + motivo, o.id);
@@ -674,7 +686,7 @@ function tgEntregue(id, titulo, extras = [], fallback = true) {
 }
 // Reescreve o aviso do pedido (texto + 1 botão inerte), sem mensagem nova. Sem aviso salvo ou se a edição
 // falhar: manda mensagem nova com o mesmo texto (se fallback).
-async function tgAviso(id, { icone, titulo, extras = [], botao, saldo = true, fallback = true }) {
+async function tgAviso(id, { icone, titulo, extras = [], botao, kb, saldo = true, fallback = true }) {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   const text = [
     `${icone} Pedido #${o.id} · ${titulo} às ${hhmmSP()}`,
@@ -685,7 +697,7 @@ async function tgAviso(id, { icone, titulo, extras = [], botao, saldo = true, fa
   ].filter(Boolean).join('\n');
   if (o.tg_msg) {
     const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, text,
-      disable_web_page_preview: true, reply_markup: doneKeyboard(botao) });
+      disable_web_page_preview: true, reply_markup: kb || doneKeyboard(botao) });
     if (j?.ok) return;
   }
   if (fallback) tgSend(text);
@@ -1774,6 +1786,7 @@ app.post('/api/admin/orders/:id/unblock', admin, (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Pedido não encontrado.' });
   unblockClient(o);
+  tgDesbloqueado(o);
   res.json({ ok: true });
 });
 
