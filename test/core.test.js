@@ -1941,3 +1941,32 @@ test('erro depois de enviar o pagamento: só "nada cobrado" se a fatura não tem
   assert.equal(decideAfterSendError(new Error('timeout'), false), 'incerto');       // rede: nunca "seguro"
   assert.equal(decideAfterSendError({ errorMessage: 'INTERNAL', code: 500 }, false), 'incerto');
 });
+
+test('desligamento seguro: recusa pagamento novo, espera o pagamento em andamento terminar e só então sai', async () => {
+  const { gracefulStop, _resetStopping, autopay } = SRV;
+  mpShouldApprove = true;
+  const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '333391', email: 'gs@x.com' })).json();
+  await pagar(token);
+  await new Promise((r) => setTimeout(r, 20));
+  db.prepare("UPDATE orders SET autopay='paying' WHERE id=?").run(id); // pagamento em andamento
+  let saiu = null;
+  const p = gracefulStop({ exit: (c) => { saiu = c; }, stepMs: 10, maxMs: 2000 });
+  try {
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(saiu, null); // ainda esperando
+    // durante o desligamento, nenhum pagamento novo começa
+    const o2 = await (await postJ('/api/orders', { product: 'c1000', gameId: '333392', email: 'gs2@x.com' })).json();
+    await pagar(o2.token);
+    const r = await autopay(o2.id);
+    assert.equal(r.ok, false); assert.match(r.why, /reiniciando/);
+    // terminou o pagamento → sai
+    db.prepare("UPDATE orders SET autopay='sent' WHERE id=?").run(id);
+    await p;
+    assert.equal(saiu, 0);
+    // teto de espera: sai mesmo com pagamento travado
+    _resetStopping(); saiu = null;
+    db.prepare("UPDATE orders SET autopay='paying' WHERE id=?").run(id);
+    await gracefulStop({ exit: (c) => { saiu = c; }, stepMs: 10, maxMs: 50 });
+    assert.equal(saiu, 0);
+  } finally { db.prepare("UPDATE orders SET autopay='sent' WHERE id=?").run(id); _resetStopping(); }
+});

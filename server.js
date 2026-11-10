@@ -755,6 +755,7 @@ const autopay24 = () => db.prepare("SELECT * FROM orders WHERE autopay='sent' AN
   .reduce((a, o) => a + starsOf(o), 0);
 // pode pagar com 1 toque? { ok, why }
 function canAutopay(o) {
+  if (stopping) return { ok: false, why: 'loja reiniciando — tente de novo em 1 min' };
   if (!autopayOn()) return { ok: false, why: 'pagamento automático desligado' };
   if (sessionDown(REAL.err)) return { ok: false, why: 'sessão da conta separada caiu — refaça o login' };
   if (o.status !== 'paid') return { ok: false, why: 'pedido não está aguardando entrega' };
@@ -2584,11 +2585,33 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erro interno. Tente novamente.' });
 });
 
+// ---------- Desligamento seguro (deploy/reinício) ----------
+// Ao receber SIGINT/SIGTERM (pm2 restart/stop): para de aceitar pagamentos novos no bot (canAutopay recusa), espera
+// o pagamento em andamento terminar (autopay='paying') e só então sai. Sem isso, um reinício no meio do pagamento
+// vira "incerto". Teto de espera: STOP_MAX_MS (o kill_timeout do pm2 precisa ser maior).
+let stopping = false;
+const STOP_MAX_MS = 25_000;
+const payingNow = () => db.prepare("SELECT COUNT(*) n FROM orders WHERE autopay='paying'").get().n;
+async function gracefulStop({ exit = (c) => process.exit(c), maxMs = STOP_MAX_MS, stepMs = 250, server } = {}) {
+  if (stopping) return;
+  stopping = true;
+  server?.close();
+  const t0 = Date.now();
+  let n = payingNow();
+  if (n) console.log(`Desligando: esperando ${n} pagamento(s) em andamento…`);
+  while (n && Date.now() - t0 < maxMs) { await new Promise((r) => setTimeout(r, stepMs)); n = payingNow(); }
+  if (n) console.error(`Desligando com ${n} pagamento(s) ainda em andamento (viram "incerto" ao subir)`);
+  else console.log('Desligando: nenhum pagamento em andamento');
+  exit(0);
+}
+const _resetStopping = () => { stopping = false; };
+
 // Sobe o servidor só quando executado diretamente (não durante os testes).
 if (process.env.NODE_ENV !== 'test') {
   // Só aceita conexões da própria máquina (nginx). Ninguém fala com o Node direto,
   // mesmo se o firewall mudar — assim não dá pra forjar X-Forwarded-For e burlar rate limits.
-  app.listen(env.PORT || 3000, '127.0.0.1', () => console.log('Loja no ar'));
+  const server = app.listen(env.PORT || 3000, '127.0.0.1', () => console.log('Loja no ar'));
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => gracefulStop({ server }));
   if (env.TG_BOT_TOKEN && env.TG_CHAT_ID) tgPoll(); // botões do aviso de pago
   if (realOn()) { syncStarsReal(true); setInterval(() => syncStarsReal(true), 5 * 60_000); } // saldo real a cada 5 min
   setInterval(summaryTick, 60_000); // resumo diário às SUMMARY_HOUR (23h)
@@ -2598,4 +2621,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
