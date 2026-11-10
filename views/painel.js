@@ -244,6 +244,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="hint">Faixas próprias valem só para este parceiro; as padrão valem para todos que as usam. Meses fechados não mudam.</div></div>
     <div class="fg"><label>IDs do próprio parceiro (não contam)</label><input id="c_ids" inputmode="numeric" placeholder="ex.: 749125, 1310329" autocomplete="off"><div class="hint">Compras feitas nesses IDs não contam para a meta nem geram comissão.</div></div>
     <div class="fg"><label>Nota (opcional)</label><input id="c_nota" placeholder="ex.: youtuber aquilagado" autocomplete="off"></div>
+    <div class="fg"><label>Dados do parceiro (para o acordo e o pagamento)</label>
+      <div class="frow"><input id="c_pnome" placeholder="Nome" autocomplete="off"><input id="c_pcanal" placeholder="Canal ou perfil" autocomplete="off"></div>
+      <div class="frow" style="margin-top:8px"><input id="c_ppix" placeholder="Chave Pix" autocomplete="off"><input id="c_pemail" type="email" placeholder="E-mail" autocomplete="off"></div>
+      <div class="hint">Ficam só no painel. A chave Pix nunca aparece na página do parceiro.</div></div>
     <label class="fchk"><button type="button" class="sw" id="c_ativo" onclick="this.classList.toggle('on');cupAtivoTxt()"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
     <p class="merr" id="cerr"></p>
     <div class="mbtns"><button class="cancel" onclick="closeCup()">Cancelar</button><button class="save" id="csave" onclick="saveCup()">Salvar</button></div>
@@ -825,7 +829,7 @@ async function loadRep(){
       const st=c.saldo>0?(c.saldo<c.minimo?'<span class="due low">'+brlFromCents(c.saldo)+' · acumula</span>':'<span class="due">a pagar '+brlFromCents(c.saldo)+'</span>'):
         c.saldo<0?'<span class="due">crédito '+brlFromCents(-c.saldo)+'</span>':'<span class="ok">em dia ✓</span>';
       const pays=c.pagamentos.map(function(p){
-        return '<tr><td>'+esc(p.data.split('-').reverse().join('/'))+'</td><td>'+brlFromCents(p.cents)+'</td><td style="text-align:left">'+esc(p.nota)+'</td>'+
+        return '<tr><td>'+esc(p.data.split('-').reverse().join('/'))+'</td><td>'+(p.ref?mesNome(p.ref):'—')+'</td><td>'+brlFromCents(p.cents)+'</td><td style="text-align:left">'+esc(p.nota)+'</td>'+
           '<td><button class="undo" data-undo="'+p.id+'" data-v="'+esc(brlFromCents(p.cents))+'">desfazer</button></td></tr>';
       }).join('');
       const M=c.mesAtual;
@@ -839,13 +843,16 @@ async function loadRep(){
         '<span>comissão <b>'+brlFromCents(c.comissao)+'</b></span><span>fica para a loja <b>'+brlFromCents(c.lucroLoja)+'</b></span></div>'+
         '<div class="tot"><span>a pagar (meses fechados) <b>'+brlFromCents(Math.max(0,c.saldo))+'</b></span><span>este mês (estimado) <b>'+brlFromCents(c.mesCom)+'</b></span>'+(c.saldo>0&&c.saldo<c.minimo?'<span>abaixo do mínimo de '+brlFromCents(c.minimo)+': acumula</span>':'')+'</div>'+
         '<div class="tot"><span>ganho total <b>'+brlFromCents(c.total)+'</b></span><span>já pago <b>'+brlFromCents(c.pago)+'</b></span><span>'+(c.plano==='fixo'?'fixo: '+pct(c.comissao_pct)+' do lucro':'plano de metas')+'</span></div>'+
-        '<div class="ops"><button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button>'+
+        (c.parceiro&&(c.parceiro.nome||c.parceiro.pix)?'<div class="nums">'+(c.parceiro.nome?'<span>parceiro <b>'+esc(c.parceiro.nome)+'</b></span>':'')+(c.parceiro.pix?'<span>Pix <b class="mono">'+esc(c.parceiro.pix)+'</b></span>':'<span>Pix não cadastrado</span>')+'</div>':'<div class="nums"><span>dados do parceiro não cadastrados (Cupons → Editar)</span></div>')+
+        '<div class="ops">'+(c.parceiro&&c.parceiro.pix?'<button data-cpix="'+esc(c.parceiro.pix)+'">Copiar Pix</button>':'')+'<button data-pay="'+esc(c.code)+'" data-saldo="'+Math.max(0,c.saldo)+'">Registrar pagamento</button>'+
         (c.linkParceiro?'<button data-plink="'+esc(c.linkParceiro)+'">Copiar link do parceiro</button>':'')+'</div>'+
         (c.linkParceiro?'<div class="plk">Página do parceiro (só leitura, sem lucro/margem) · <button class="undo" data-pnew="'+esc(c.code)+'">gerar novo link</button></div>':'')+
-        (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
+        (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Ref.</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
         '</details>';
     }).join('')||'<div class="empty" style="padding:24px">Nenhuma venda com cupom ainda.</div>';
     $$('repBox').querySelectorAll('details.rep').forEach(function(d){d.ontoggle=function(){if(d.open)REP_OPEN.add(d.dataset.code);else REP_OPEN.delete(d.dataset.code);};});
+    $$('repBox').querySelectorAll('[data-cpix]').forEach(function(b){b.onclick=function(){const v=b.dataset.cpix;
+      (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(function(){alert('Chave Pix copiada.');},function(){prompt('Copie a chave Pix:',v);});};});
     $$('repBox').querySelectorAll('[data-pay]').forEach(function(b){b.onclick=function(){payCup(b.dataset.pay,Number(b.dataset.saldo));};});
     $$('repBox').querySelectorAll('[data-plink]').forEach(function(b){b.onclick=function(){const u=b.dataset.plink;
       (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(function(){alert('Link do parceiro copiado. Envie só para ele — quem tiver o link vê os números da parceria.');},function(){prompt('Copie o link do parceiro:',u);});};});
@@ -862,9 +869,15 @@ async function payCup(code,saldo){
   if(t.indexOf(',')>=0)t=t.split('.').join('').replace(',','.');
   const cents=Math.round(parseFloat(t)*100);
   if(!(cents>0)){alert('Valor inválido.');return;}
+  const pm=proxMes(),py=+pm.slice(0,4),pmm=+pm.slice(5),am=pmm<=2?new Date(py-1,pmm+9,1):new Date(py,pmm-3,1);
+  const def=String(am.getMonth()+1).padStart(2,'0')+'/'+am.getFullYear();
+  const rv=prompt('Referente a qual mês? (mm/aaaa)',def);
+  if(rv==null)return;
+  const mm=[''].concat(String(rv).trim().split('/'));if(mm.length!==3||!/^[0-9]{1,2}$/.test(mm[1])||!/^[0-9]{4}$/.test(mm[2])||+mm[1]<1||+mm[1]>12){alert('Mês inválido. Use mm/aaaa, ex.: '+def);return;}
+  const ref=mm[2]+'-'+mm[1].padStart(2,'0');
   const nota=prompt('Observação (opcional), ex.: Pix 07/11','');
   if(nota==null)return;
-  try{await api('/api/admin/coupons/'+code+'/payouts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cents:cents,nota:nota})});loadRep();}
+  try{await api('/api/admin/coupons/'+code+'/payouts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cents:cents,nota:nota,ref_mes:ref})});loadRep();}
   catch(e){alert(e.message);}
 }
 async function undoPay(id,v){
@@ -882,6 +895,7 @@ function openCup(code){
   CT=null;try{CT=c&&c.tiers?JSON.parse(c.tiers):null;}catch(e){CT=null;}
   $$('c_tmode').value=CT?'proprias':'padrao';cupPlano();cupTmode();
   $$('c_nota').value=c?(c.nota||''):'';
+  $$('c_pnome').value=c?(c.parceiro_nome||''):'';$$('c_pcanal').value=c?(c.parceiro_canal||''):'';$$('c_ppix').value=c?(c.parceiro_pix||''):'';$$('c_pemail').value=c?(c.parceiro_email||''):'';
   $$('c_ativo').classList.toggle('on',c?!!c.ativo:true);
   $$('cerr').textContent='';cupLink();cupAtivoTxt();$$('cmodal').classList.add('on');
 }
@@ -920,6 +934,7 @@ async function saveCup(){
   const num=function(id){return Number(($$(id).value||'0').replace(',','.'));};
   const payload={code:$$('c_code').value.trim(),desconto_pct:num('c_desc'),comissao_pct:num('c_com'),nota:$$('c_nota').value.trim(),ativo:$$('c_ativo').classList.contains('on'),
     plano:$$('c_plano').value,ids_proprios:$$('c_ids').value.trim(),
+    parceiro_nome:$$('c_pnome').value.trim(),parceiro_canal:$$('c_pcanal').value.trim(),parceiro_pix:$$('c_ppix').value.trim(),parceiro_email:$$('c_pemail').value.trim(),
     tiers:$$('c_plano').value==='metas'&&$$('c_tmode').value==='proprias'&&CT?CT:null};
   try{
     if(editCup)await api('/api/admin/coupons/'+editCup,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});

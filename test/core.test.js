@@ -1743,3 +1743,35 @@ test('códigos reservados e página do parceiro: visitas/conversão, aviso de de
   for (const proibido of [/lucro/i, /margem/i, /custo/i, /stars/i, /★/]) assert.doesNotMatch(h, proibido, String(proibido));
   db.exec("DELETE FROM orders WHERE coupon='VIS1'"); db.exec("DELETE FROM events WHERE coupon='VIS1'"); db.exec("DELETE FROM coupons WHERE code='VIS1'");
 });
+
+test('dados do parceiro no cupom e mês de referência no pagamento; Pix nunca vai para a página do parceiro', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  const dados = { parceiro_nome: 'Fulano Teste', parceiro_canal: 'Canal X', parceiro_pix: 'pix-secreto-123', parceiro_email: 'Fulano@Ex.com' };
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'DADOS1', desconto_pct: 5, comissao_pct: 0, ativo: true, ...dados })).status, 200);
+  let c = (await (await adm('GET', '/api/admin/coupons')).json()).find((x) => x.code === 'DADOS1');
+  assert.equal(c.parceiro_nome, 'Fulano Teste'); assert.equal(c.parceiro_pix, 'pix-secreto-123'); assert.equal(c.parceiro_email, 'fulano@ex.com');
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'DADOS2', desconto_pct: 5, comissao_pct: 0, ativo: true, parceiro_email: 'sem-arroba' })).status, 400);
+  // ativar/desativar (edição parcial) não apaga os dados do parceiro
+  await adm('PUT', '/api/admin/coupons/DADOS1', { desconto_pct: 5, comissao_pct: 0, ativo: false });
+  c = (await (await adm('GET', '/api/admin/coupons')).json()).find((x) => x.code === 'DADOS1');
+  assert.equal(c.parceiro_pix, 'pix-secreto-123'); assert.equal(c.parceiro_canal, 'Canal X');
+  // pagamento: mês de referência informado, padrão (mês passado) e inválidos
+  const mes = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7);
+  const [y, m] = mes.split('-').map(Number);
+  const ant = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7), prox = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+  assert.equal((await adm('POST', '/api/admin/coupons/DADOS1/payouts', { cents: 500, ref_mes: '2026-13' })).status, 400);
+  assert.equal((await adm('POST', '/api/admin/coupons/DADOS1/payouts', { cents: 500, ref_mes: prox })).status, 400); // mês futuro
+  assert.equal((await adm('POST', '/api/admin/coupons/DADOS1/payouts', { cents: 500, ref_mes: '2026-09', nota: 'Pix A' })).status, 200);
+  assert.equal((await adm('POST', '/api/admin/coupons/DADOS1/payouts', { cents: 700 })).status, 200);
+  const rep = (await (await adm('GET', '/api/admin/coupons/report')).json()).cupons.find((x) => x.code === 'DADOS1');
+  assert.deepEqual(rep.pagamentos.map((p) => p.ref).sort(), ['2026-09', ant].sort());
+  assert.deepEqual(rep.parceiro, { nome: 'Fulano Teste', pix: 'pix-secreto-123' });
+  // página do parceiro: mostra a referência; nunca o Pix nem o e-mail
+  const tk = db.prepare("SELECT ptoken FROM coupons WHERE code='DADOS1'").get().ptoken;
+  const h = await (await fetch(base + '/parceiro/' + tk, { headers: freshIP() })).text();
+  assert.match(h, /ref\. set\/2026/);
+  assert.doesNotMatch(h, /pix-secreto-123/); assert.doesNotMatch(h, /fulano@ex\.com/);
+  // fechamento mostra o nome do parceiro (crédito, pois não há venda)
+  assert.match(SRV.fechamentoMsg(), /DADOS1 \(Fulano Teste\): R\$\s?12,00/);
+  db.exec("DELETE FROM coupon_payouts WHERE code='DADOS1'"); db.exec("DELETE FROM coupons WHERE code='DADOS1'");
+});

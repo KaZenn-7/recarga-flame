@@ -76,7 +76,8 @@ async function main() {
     d = {
       cupom: c.code, desconto: c.desconto_pct, plano: c.plano === 'fixo' ? 'fixo' : 'metas', comissaoFixa: c.comissao_pct, tiers,
       tiersProprias: !!proprias && JSON.stringify(proprias) !== JSON.stringify(globais),
-      parceiroNome: o.nome || null, canal: o.canal || null, chavePix: o.pix || null, responsavel: o.responsavel || null,
+      // o que não vier por parâmetro sai dos dados do parceiro cadastrados no cupom (painel)
+      parceiroNome: o.nome || c.parceiro_nome || null, canal: o.canal || c.parceiro_canal || null, chavePix: o.pix || c.parceiro_pix || null, responsavel: o.responsavel || null,
       semResponsavel: !!o['sem-responsavel'], minimo: Math.round(num('minimo', 20) * 100), avisoDias: num('aviso', 7),
       data: o.data || hoje(), geradoEm: hoje(), exemplos: exemplosDe(c.desconto_pct),
     };

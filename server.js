@@ -138,6 +138,7 @@ function priceWith(p, coupon) {
   return Math.min(p.cents, Math.max(disc, floorCents(p.stars)));
 }
 
+try { db.exec('ALTER TABLE coupon_payouts ADD COLUMN ref_mes TEXT'); } catch { /* já existe */ } // mês que o pagamento cobre (AAAA-MM)
 const findOrder = db.prepare('SELECT * FROM orders WHERE token = ?');
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
@@ -1828,7 +1829,10 @@ function parseCoupon(b, codeFixed) {
     if (!validTiers(t)) return { err: 'Faixas do parceiro inválidas: a 1ª começa em R$ 0; metas e % crescentes; de 1 a 6 faixas.' };
     tiers = JSON.stringify(t);
   }
-  return { code, desconto_pct: desconto, comissao_pct: comissao, ativo: b.ativo ? 1 : 0, nota: String(b.nota || '').trim().slice(0, 80), plano, ids_proprios: ids.join(', '), tiers };
+  const txt = (v, n) => String(v ?? '').trim().slice(0, n);
+  const parceiro = { parceiro_nome: txt(b.parceiro_nome, 80), parceiro_canal: txt(b.parceiro_canal, 80), parceiro_pix: txt(b.parceiro_pix, 120), parceiro_email: txt(b.parceiro_email, 120).toLowerCase() };
+  if (parceiro.parceiro_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parceiro.parceiro_email)) return { err: 'E-mail do parceiro inválido.' };
+  return { code, desconto_pct: desconto, comissao_pct: comissao, ativo: b.ativo ? 1 : 0, nota: String(b.nota || '').trim().slice(0, 80), plano, ids_proprios: ids.join(', '), tiers, ...parceiro };
 }
 app.get('/api/admin/coupons', admin, (req, res) => {
   res.json(db.prepare('SELECT * FROM coupons ORDER BY created_at DESC').all().map((c) => ({ ...c, ativo: !!c.ativo })));
@@ -1839,8 +1843,10 @@ app.post('/api/admin/coupons', admin, (req, res) => {
   try { c = parseCoupon(req.body ?? {}); } catch { return res.status(400).json({ error: 'Faixas do parceiro inválidas.' }); }
   if (c.err) return res.status(400).json({ error: c.err });
   if (db.prepare('SELECT 1 FROM coupons WHERE code=?').get(c.code)) return res.status(409).json({ error: 'Já existe um cupom com esse código.' });
-  db.prepare('INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, nota, plano, ids_proprios, tiers, ptoken) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, crypto.randomBytes(18).toString('base64url'));
+  db.prepare(`INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, nota, plano, ids_proprios, tiers, ptoken, parceiro_nome, parceiro_canal, parceiro_pix, parceiro_email)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(c.code, c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, crypto.randomBytes(18).toString('base64url'),
+      c.parceiro_nome, c.parceiro_canal, c.parceiro_pix, c.parceiro_email);
   res.json({ ok: true });
 });
 app.put('/api/admin/coupons/:code', admin, (req, res) => {
@@ -1849,12 +1855,15 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
   if (!atual) return res.status(404).json({ error: 'Cupom não encontrado.' });
   // campos que não vierem mantêm o valor atual (edição parcial nunca troca o plano sem querer)
   let c;
-  try { c = parseCoupon({ plano: atual.plano, ids_proprios: atual.ids_proprios, tiers: atual.tiers, ...(req.body ?? {}) }, req.params.code); }
+  const keep = { plano: atual.plano, ids_proprios: atual.ids_proprios, tiers: atual.tiers, parceiro_nome: atual.parceiro_nome, parceiro_canal: atual.parceiro_canal,
+    parceiro_pix: atual.parceiro_pix, parceiro_email: atual.parceiro_email };
+  try { c = parseCoupon({ ...keep, ...(req.body ?? {}) }, req.params.code); }
   catch { return res.status(400).json({ error: 'Faixas do parceiro inválidas.' }); }
   if (c.err) return res.status(400).json({ error: c.err });
   freezeClosedMonths(makePartnerCtx()); // meses fechados ficam com as faixas que valiam neles
-  db.prepare('UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=?, tiers=? WHERE code=?')
-    .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, c.code);
+  db.prepare(`UPDATE coupons SET desconto_pct=?, comissao_pct=?, ativo=?, nota=?, plano=?, ids_proprios=?, tiers=?,
+    parceiro_nome=?, parceiro_canal=?, parceiro_pix=?, parceiro_email=? WHERE code=?`)
+    .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, c.parceiro_nome, c.parceiro_canal, c.parceiro_pix, c.parceiro_email, c.code);
   res.json({ ok: true });
 });
 // Excluir só cupom sem histórico: com venda paga/entregue ou pagamento registrado, o certo é desativar
@@ -1877,7 +1886,9 @@ app.delete('/api/admin/coupons/:code', admin, (req, res) => {
 // próprio parceiro) e vale para TODAS as vendas do mês. Faixa garantida: quem atingiu uma faixa começa o mês
 // seguinte uma faixa abaixo (só no mês seguinte). Meses fechados ficam congelados (partner_months), então editar
 // as faixas não muda comissão passada. Cupom com plano 'fixo' usa o % do pedido (com_pct), como antes.
-for (const col of ["plano TEXT DEFAULT 'metas'", 'ids_proprios TEXT', 'ptoken TEXT', 'tiers TEXT']) { // tiers: faixas próprias (JSON) ou NULL = padrão
+// parceiro_*: dados do parceiro para o acordo e o pagamento (só no painel; o Pix nunca vai para a página do parceiro)
+for (const col of ["plano TEXT DEFAULT 'metas'", 'ids_proprios TEXT', 'ptoken TEXT', 'tiers TEXT', // tiers: faixas próprias (JSON) ou NULL = padrão
+  'parceiro_nome TEXT', 'parceiro_canal TEXT', 'parceiro_pix TEXT', 'parceiro_email TEXT']) {
   try { db.exec(`ALTER TABLE coupons ADD COLUMN ${col}`); } catch { /* já existe */ }
 }
 db.exec("UPDATE coupons SET plano='metas' WHERE plano IS NULL");
@@ -2040,7 +2051,7 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
   for (const p of db.prepare('SELECT * FROM coupon_payouts ORDER BY paid_at DESC, id DESC').all()) {
     const r = get(p.code);
     r.pago += p.cents;
-    r.pagamentos.push({ id: p.id, cents: p.cents, nota: p.nota || '', data: localDay(p.paid_at) });
+    r.pagamentos.push({ id: p.id, cents: p.cents, nota: p.nota || '', data: localDay(p.paid_at), ref: p.ref_mes || null });
   }
   const list = Object.values(by).map((r) => {
     const total = Math.round(r.total);
@@ -2049,7 +2060,8 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
       conversao: r.visitas ? r.pedidos / r.visitas : null, total, fechado: Math.round(r.fechado), mesCom: Math.round(r.mesCom),
       saldo: Math.round(r.fechado) - r.pago, minimo: PAYOUT_MIN,
       mesAtual: r.plano === 'fixo' || !ctx.cupons[r.code] ? null : mesAtual(ctx, r.code),
-      linkParceiro: ctx.cupons[r.code]?.ptoken ? `${SITE_URL}/parceiro/${ctx.cupons[r.code].ptoken}` : null };
+      linkParceiro: ctx.cupons[r.code]?.ptoken ? `${SITE_URL}/parceiro/${ctx.cupons[r.code].ptoken}` : null,
+      parceiro: { nome: ctx.cupons[r.code]?.parceiro_nome || '', pix: ctx.cupons[r.code]?.parceiro_pix || '' } };
   });
   // cupons do plano de metas sem venda ainda também aparecem (mostram a faixa e a meta)
   for (const c of Object.values(ctx.cupons)) {
@@ -2113,7 +2125,7 @@ function fechamentoMsg() {
     if (s >= PAYOUT_MIN) pagar.push([c, s]); else if (s > 0) acumula.push([c, s]); else if (s < 0) credito.push([c, -s]);
   }
   if (!pagar.length && !acumula.length && !credito.length) return null;
-  const L = (a) => a.map(([c, s]) => `• ${c}: ${brlTxt(s)}`).join('\n');
+  const L = (a) => a.map(([c, s]) => `• ${c}${ctx.cupons[c]?.parceiro_nome ? ` (${ctx.cupons[c].parceiro_nome})` : ''}: ${brlTxt(s)}`).join('\n');
   return [
     `💸 Comissões dos parceiros — fechamento de ${nomeMesBR(prevMes(ctx.cur))}`,
     pagar.length ? `Pagar hoje por Pix (total ${brlTxt(pagar.reduce((a, [, s]) => a + s, 0))}):\n${L(pagar)}` : '✅ Nenhum parceiro atingiu o mínimo para pagamento.',
@@ -2161,7 +2173,7 @@ app.get('/parceiro/:token', limit(30), (req, res) => {
   const visQ = (extra) => db.prepare(`SELECT COUNT(DISTINCT dev) n FROM events WHERE ev='visit' AND coupon=?${extra}`);
   const vis = { mes: visQ(" AND strftime('%Y-%m', ts, '-3 hours')=?").get(c.code, ctx.cur).n, total: visQ('').get(c.code).n };
   const vendasMes = hist.find((h) => h.m === ctx.cur)?.vendas || 0;
-  const pagos = db.prepare('SELECT cents, nota, paid_at FROM coupon_payouts WHERE code=? ORDER BY paid_at DESC').all(c.code);
+  const pagos = db.prepare('SELECT cents, nota, paid_at, ref_mes FROM coupon_payouts WHERE code=? ORDER BY paid_at DESC').all(c.code);
   const pago = pagos.reduce((a, p) => a + p.cents, 0);
   const nomeMes = (m) => { const [y, mm] = m.split('-'); return ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+mm - 1] + '/' + y; };
   const link = `${SITE_URL}/${c.code.toLowerCase()}`;
@@ -2206,7 +2218,7 @@ ${hist.map((h) => `<tr><td>${nomeMes(h.m)}</td><td>${h.vendas}</td><td>${brlTxt(
 <div class="card"><div class="k"><div><span>Total ganho</span><b>${brlTxt(ganho)}</b></div><div><span>Já recebido</span><b>${brlTxt(pago)}</b></div></div>
 <p style="margin:10px 0 0">A receber (meses fechados): <b>${brlTxt(Math.max(0, fechado - pago))}</b></p>
 ${doMes ? `<p class="note" style="margin:4px 0 0">Este mês, em andamento: ${brlTxt(doMes)} (estimado; entra no pagamento do 1º dia útil do mês que vem).</p>` : ''}
-${pagos.length ? `<table style="margin-top:8px"><tr><th>Pagamento</th><th>Valor</th></tr>${pagos.map((p) => `<tr><td>${localDay(p.paid_at).split('-').reverse().join('/')}${p.nota ? ' · ' + esc(p.nota) : ''}</td><td>${brlTxt(p.cents)}</td></tr>`).join('')}</table>` : ''}</div>
+${pagos.length ? `<table style="margin-top:8px"><tr><th>Pagamento</th><th>Valor</th></tr>${pagos.map((p) => `<tr><td>${localDay(p.paid_at).split('-').reverse().join('/')}${p.ref_mes ? ' · ref. ' + nomeMes(p.ref_mes) : ''}${p.nota ? ' · ' + esc(p.nota) : ''}</td><td>${brlTxt(p.cents)}</td></tr>`).join('')}</table>` : ''}</div>
 <p class="note">Atualizado agora. Dúvidas: <a href="/como-funciona">como funciona</a> · <a href="/perguntas-frequentes">perguntas frequentes</a> · <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a></p>
 </div></body></html>`;
   res.type('html').send(html);
@@ -2219,7 +2231,9 @@ app.post('/api/admin/coupons/:code/payouts', admin, (req, res) => {
   const cents = Math.round(Number(req.body?.cents));
   if (!Number.isInteger(cents) || cents <= 0 || cents > 10_000_000) return res.status(400).json({ error: 'Valor inválido.' });
   const nota = String(req.body?.nota || '').trim().slice(0, 80);
-  const r = db.prepare('INSERT INTO coupon_payouts (code, cents, nota) VALUES (?,?,?)').run(code, cents, nota);
+  const ref = String(req.body?.ref_mes || '');
+  if (ref && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ref) || ref > curMes())) return res.status(400).json({ error: 'Mês de referência inválido.' });
+  const r = db.prepare('INSERT INTO coupon_payouts (code, cents, nota, ref_mes) VALUES (?,?,?,?)').run(code, cents, nota, ref || prevMes(curMes()));
   res.json({ ok: true, id: Number(r.lastInsertRowid) });
 });
 app.delete('/api/admin/payouts/:id', admin, (req, res) => {
