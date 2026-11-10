@@ -99,7 +99,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .sync{font-size:11px;color:var(--dim);padding:0 14px 7px}
 .htop .st{color:var(--gold);font-weight:700}.htop .st.lo{color:#160a04;background:var(--gold);border-color:var(--gold)}.htop .st.no{color:#fff;background:var(--red);border-color:var(--red)}
 @media(max-width:400px){#htitle{display:none}}
-@media(max-width:480px){.prow.cup{flex-wrap:wrap}.prow.cup .pi{flex:1 1 100%}.prow.cup .rt{flex:1;flex-direction:row;align-items:center;justify-content:space-between}}
+@media(max-width:480px){.prow.cup{flex-wrap:wrap}.prow.cup .pi{flex:1 1 100%}.prow.cup .rt{flex:1;flex-direction:row;align-items:center;justify-content:space-between}.prow.cup .ops button{white-space:nowrap;padding:7px 9px}}
 .sbar{margin:10px 14px 0;padding:10px 12px;border-radius:9px;background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.4);font-size:13px;display:flex;align-items:center;gap:10px}
 .sbar span{flex:1}.sbar button{border:0;border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;background:var(--gold);color:#160a04;cursor:pointer}
 .nost{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(227,179,65,.18);color:var(--gold);vertical-align:1px}
@@ -161,6 +161,9 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .rep .ops{display:flex;gap:6px;margin-top:10px}
 .rep .ops button{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:7px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .rep .top .ok{color:var(--green)}
+.rep>summary.top{list-style:none;cursor:pointer;color:var(--txt);align-items:center;gap:10px}.rep>summary.top::-webkit-details-marker{display:none}
+.rep>summary.top .mono{flex:1}.rep>summary.top::after{content:'▾';color:var(--mut);font-size:13px;transition:transform .15s}
+.rep[open]>summary.top::after{transform:rotate(180deg)}.rep[open]>summary.top{padding-bottom:4px}
 .rep details{margin-top:8px;font-size:12.5px}.rep summary{cursor:pointer;color:var(--mut)}
 .rep .undo{background:none;border:0;color:var(--red);font:inherit;font-size:12px;cursor:pointer;padding:0}
 /* modal */
@@ -735,11 +738,17 @@ function renderCups(){
       '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · '+(c.plano==='fixo'?'comissão fixa <b>'+pct(c.comissao_pct)+'</b> do lucro':'<b>plano de metas</b>'+(c.tiers?' (faixas próprias)':''))+(c.nota?' · '+esc(c.nota):'')+'</div>'+
       '<div class="sub mono">'+esc(location.origin+'/?cupom='+c.code)+'</div></div>'+
       '<div class="rt"><button class="sw '+(c.ativo?'on':'')+'" title="Ativar/desativar" data-tog="'+esc(c.code)+'"></button>'+
-      '<div class="ops"><button data-copy="'+esc(c.code)+'">Copiar link</button><button data-edit="'+esc(c.code)+'">Editar</button></div></div></div>';
+      '<div class="ops"><button data-copy="'+esc(c.code)+'">Copiar link</button><button data-edit="'+esc(c.code)+'">Editar</button><button class="del" data-del="'+esc(c.code)+'">Excluir</button></div></div></div>';
   }).join('')||'<div class="empty">Nenhum cupom ainda.</div>';
   $$('cupList').querySelectorAll('[data-copy]').forEach(function(b){b.onclick=function(){copyCup(b.dataset.copy);};});
   $$('cupList').querySelectorAll('[data-edit]').forEach(function(b){b.onclick=function(){openCup(b.dataset.edit);};});
   $$('cupList').querySelectorAll('[data-tog]').forEach(function(b){b.onclick=function(){togCup(b.dataset.tog);};});
+  $$('cupList').querySelectorAll('[data-del]').forEach(function(b){b.onclick=function(){delCup(b.dataset.del);};});
+}
+async function delCup(code){
+  if(!confirm('Excluir o cupom '+code+'? O link dele para de dar desconto. Isso não pode ser desfeito.'))return;
+  try{await api('/api/admin/coupons/'+encodeURIComponent(code),{method:'DELETE'});loadCups();loadRep();}
+  catch(e){alert(e.message);}
 }
 async function togCup(code){
   const c=CUPS.find(function(x){return x.code===code;});if(!c)return;
@@ -758,7 +767,7 @@ function perRange(){
   return '?from='+f(new Date(d.getFullYear(),m,1))+'&to='+f(new Date(d.getFullYear(),m+1,0));
 }
 // ---- faixas do plano de metas ----
-let TIERS=[];
+let TIERS=[];const REP_OPEN=new Set();
 function tiersResumo(){return TIERS.map(function(t,i){return String(t.pct).replace('.',',')+'%'+(i?' a partir de '+brlFromCents(t.min):'');}).join(' · ');}
 function irParaFaixas(){closeCup();setCupTab('metas');}
 async function loadTiers(){try{TIERS=await api('/api/admin/tiers');renderTiers();}catch(e){$$('tiersBox').textContent=e.message;}}
@@ -804,7 +813,7 @@ async function loadRep(){
       const M=c.mesAtual;
       const meta=M?('<div class="meta"><div class="mt"><b>'+M.pct+'%</b> este mês'+(M.ating<M.garant?' · garantida pelo mês anterior':'')+' · faturado <b>'+brlFromCents(M.faturamento)+'</b> · comissão estimada <b>'+brlFromCents(M.comissao)+'</b></div>'+
         (M.prox?'<div class="pg"><i style="width:'+Math.min(100,Math.round(M.faturamento/M.prox.min*100))+'%"></i></div><div class="mt2">faltam <b>'+brlFromCents(M.prox.falta)+'</b> para '+M.prox.pct+'% em todas as vendas do mês</div>':'<div class="mt2">faixa máxima ✓</div>')+'</div>'):'';
-      return '<div class="rep"><div class="top"><span class="mono">'+esc(c.code)+'</span>'+st+'</div>'+meta+
+      return '<details class="rep" data-code="'+esc(c.code)+'"'+(REP_OPEN.has(c.code)?' open':'')+'><summary class="top"><span class="mono">'+esc(c.code)+'</span>'+st+'</summary>'+meta+
         '<div class="nums"><span><b>'+c.visitas+'</b> visitas pelo link</span><span><b>'+c.pedidos+'</b> vendas</span>'+
         '<span>conversão <b>'+(c.conversao==null?'—':Math.round(c.conversao*100)+'%')+'</b></span></div>'+
         '<div class="nums"><span>faturado <b>'+brlFromCents(c.faturado)+'</b></span>'+
@@ -815,8 +824,9 @@ async function loadRep(){
         (c.linkParceiro?'<button data-plink="'+esc(c.linkParceiro)+'">Copiar link do parceiro</button>':'')+'</div>'+
         (c.linkParceiro?'<div class="plk">Página do parceiro (só leitura, sem lucro/margem) · <button class="undo" data-pnew="'+esc(c.code)+'">gerar novo link</button></div>':'')+
         (pays?'<details><summary>Pagamentos feitos ('+c.pagamentos.length+')</summary><table class="ttab"><tr><th>Data</th><th>Valor</th><th style="text-align:left">Obs.</th><th></th></tr>'+pays+'</table></details>':'')+
-        '</div>';
+        '</details>';
     }).join('')||'<div class="empty" style="padding:24px">Nenhuma venda com cupom ainda.</div>';
+    $$('repBox').querySelectorAll('details.rep').forEach(function(d){d.ontoggle=function(){if(d.open)REP_OPEN.add(d.dataset.code);else REP_OPEN.delete(d.dataset.code);};});
     $$('repBox').querySelectorAll('[data-pay]').forEach(function(b){b.onclick=function(){payCup(b.dataset.pay,Number(b.dataset.saldo));};});
     $$('repBox').querySelectorAll('[data-plink]').forEach(function(b){b.onclick=function(){const u=b.dataset.plink;
       (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(function(){alert('Link do parceiro copiado. Envie só para ele — quem tiver o link vê os números da parceria.');},function(){prompt('Copie o link do parceiro:',u);});};});

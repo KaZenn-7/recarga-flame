@@ -1620,3 +1620,19 @@ test('página do parceiro: link privado mostra mês, faixa e pagamentos — nunc
   assert.equal((await fetch(base + path, { headers: freshIP() })).status, 404);
   db.exec("DELETE FROM orders WHERE coupon='PAG1'"); db.exec("DELETE FROM coupon_payouts WHERE code='PAG1'"); db.exec("DELETE FROM coupons WHERE code='PAG1'");
 });
+
+test('excluir cupom: só sem vendas pagas nem pagamentos; com histórico pede para desativar', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'APAGAR1', desconto_pct: 5, comissao_pct: 0, ativo: true })).status, 200);
+  assert.equal((await adm('DELETE', '/api/admin/coupons/apagar1')).status, 200);
+  assert.equal(db.prepare("SELECT 1 FROM coupons WHERE code='APAGAR1'").get(), undefined);
+  assert.equal((await adm('DELETE', '/api/admin/coupons/APAGAR1')).status, 404);
+  // com venda paga: recusa e mantém
+  const comVenda = db.prepare("SELECT coupon FROM orders WHERE coupon IS NOT NULL AND status IN ('paid','delivered') LIMIT 1").get();
+  assert.ok(comVenda, 'os testes anteriores criam vendas com cupom');
+  const r = await adm('DELETE', '/api/admin/coupons/' + comVenda.coupon);
+  assert.equal(r.status, 409); assert.match((await r.json()).error, /desative/);
+  assert.ok(db.prepare('SELECT 1 FROM coupons WHERE code=?').get(comVenda.coupon));
+  // sem sessão: 401
+  assert.equal((await fetch(base + '/api/admin/coupons/' + comVenda.coupon, { method: 'DELETE', headers: { 'x-painel': '1', ...freshIP() } })).status, 401);
+});

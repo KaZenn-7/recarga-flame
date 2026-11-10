@@ -1852,6 +1852,21 @@ app.put('/api/admin/coupons/:code', admin, (req, res) => {
     .run(c.desconto_pct, c.comissao_pct, c.ativo, c.nota, c.plano, c.ids_proprios, c.tiers, c.code);
   res.json({ ok: true });
 });
+// Excluir só cupom sem histórico: com venda paga/entregue ou pagamento registrado, o certo é desativar
+// (a comissão e os pagamentos do parceiro dependem do cupom).
+app.delete('/api/admin/coupons/:code', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const code = normCode(req.params.code);
+  if (!db.prepare('SELECT 1 FROM coupons WHERE code=?').get(code)) return res.status(404).json({ error: 'Cupom não encontrado.' });
+  const vendas = db.prepare("SELECT COUNT(*) n FROM orders WHERE coupon=? AND status IN ('paid','delivered')").get(code).n;
+  const pagos = db.prepare('SELECT COUNT(*) n FROM coupon_payouts WHERE code=?').get(code).n;
+  if (vendas || pagos) return res.status(409).json({ error: `O cupom ${code} tem ${vendas} venda(s) e ${pagos} pagamento(s) registrados. Para manter o histórico de comissões, desative em vez de excluir.` });
+  db.transaction(() => {
+    db.prepare('DELETE FROM partner_months WHERE code=?').run(code);
+    db.prepare('DELETE FROM coupons WHERE code=?').run(code);
+  })();
+  res.json({ ok: true });
+});
 // ---------- Plano de metas dos parceiros ----------
 // Comissão = % do LUCRO; a faixa sai do FATURAMENTO do parceiro no mês (vendas pagas/entregues, fora compras do
 // próprio parceiro) e vale para TODAS as vendas do mês. Faixa garantida: quem atingiu uma faixa começa o mês
