@@ -121,6 +121,9 @@ const floorCents = (stars) => Math.ceil(costCents(stars) / (1 - MP_FEE));
 const profitCents = (cents, stars, cost = STAR_NOW) => cents - costCents(stars, cost) - cents * MP_FEE;
 const orderProfit = (o) => profitCents(o.cents, o.prod_stars || 0, o.star_cost ?? STAR_COST);
 const normCode = (c) => String(c ?? '').trim().toUpperCase();
+// Códigos que o link curto nunca alcançaria: páginas, arquivos e rotas do site são resolvidos antes de /:code.
+const RESERVED_CODES = new Set(['API', 'WEBHOOK', 'PAINEL', 'LOGIN', 'LOGOUT', 'PARCEIRO', 'ADMIN', 'IMG',
+  ...fs.readdirSync('public').map((f) => f.replace(/\..*$/, '').toUpperCase())]);
 const validCode = (c) => /^[A-Z0-9_-]{3,20}$/.test(c);
 function getCoupon(code) {
   const c = normCode(code);
@@ -1813,6 +1816,7 @@ function parseCoupon(b, codeFixed) {
   const desconto = Number(b.desconto_pct);
   const comissao = Number(b.comissao_pct);
   if (!validCode(code)) return { err: 'Código inválido (A-Z, 0-9, _ ou -, 3 a 20 caracteres).' };
+  if (codeFixed == null && RESERVED_CODES.has(code)) return { err: `O código ${code} é reservado (é uma página do site, o link curto não funcionaria). Escolha outro.` };
   if (!Number.isFinite(desconto) || desconto < 0 || desconto > 50) return { err: 'Desconto deve ser de 0 a 50%.' };
   if (!Number.isFinite(comissao) || comissao < 0 || comissao > 100) return { err: 'Comissão deve ser de 0 a 100% do lucro.' };
   const plano = b.plano === 'fixo' ? 'fixo' : 'metas';
@@ -2153,6 +2157,10 @@ app.get('/parceiro/:token', limit(30), (req, res) => {
   const fechado = Math.round(hist.filter((h) => h.m < ctx.cur).reduce((a, h) => a + h.raw, 0)); // meses fechados
   const doMes = hist.find((h) => h.m === ctx.cur)?.com || 0;
   const agendado = T === ctx.tiers ? tiersNext() : null; // faixas padrão mudam no mês que vem (aviso ao parceiro)
+  // visitas pelo link (aparelhos distintos, como no funil do painel): mês atual e total
+  const visQ = (extra) => db.prepare(`SELECT COUNT(DISTINCT dev) n FROM events WHERE ev='visit' AND coupon=?${extra}`);
+  const vis = { mes: visQ(" AND strftime('%Y-%m', ts, '-3 hours')=?").get(c.code, ctx.cur).n, total: visQ('').get(c.code).n };
+  const vendasMes = hist.find((h) => h.m === ctx.cur)?.vendas || 0;
   const pagos = db.prepare('SELECT cents, nota, paid_at FROM coupon_payouts WHERE code=? ORDER BY paid_at DESC').all(c.code);
   const pago = pagos.reduce((a, p) => a + p.cents, 0);
   const nomeMes = (m) => { const [y, mm] = m.split('-'); return ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+mm - 1] + '/' + y; };
@@ -2174,10 +2182,13 @@ h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mut);font-size:13px;margin:0 0
 .prog{height:10px;background:var(--bg);border-radius:99px;overflow:hidden;margin:10px 0 6px}.prog i{display:block;height:100%;background:var(--orange)}
 table{width:100%;border-collapse:collapse;font-size:13.5px}td,th{padding:7px 4px;border-top:1px solid var(--line);text-align:right}td:first-child,th:first-child{text-align:left}th{color:var(--mut);font-weight:600}
 .cur{color:var(--orange);font-weight:700}.link{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all;color:var(--orange)}
-.note{font-size:12px;color:var(--dim)}
+.note{font-size:12px;color:var(--dim)}.note a{color:var(--orange)}
+@media(max-width:400px){table{font-size:12px}td,th{padding:6px 2px}}
+.off{border-color:var(--orange);background:rgba(255,90,31,.08)}
 </style></head><body><div class="w">
 <div class="bar"><img src="/img/brand-mark.png" alt=""><b>Recarga <span>Flame</span></b></div>
 <h1>Parceiro ${esc(c.code)}</h1><p class="sub">Seu link: <span class="link">${esc(link)}</span> · cupom <b>${esc(c.code)}</b> (${String(c.desconto_pct).replace('.', ',')}% de desconto para o cliente)</p>
+${c.ativo ? '' : `<div class="card off">⚠️ <b>O cupom ${esc(c.code)} está desativado no momento.</b> O link não dá desconto e não há novas vendas com ele. Seu histórico e o que você tem a receber continuam aqui.</div>`}
 ${atual ? `<div class="card"><div class="note">Este mês (${nomeMes(atual.mes)})</div>
 <div class="big">${atual.pct}% <small>de comissão${atual.garantidaPct && atual.idx === atual.garant && atual.ating < atual.garant ? ' · faixa garantida pelo mês anterior' : ''}</small></div>
 <div class="k" style="margin-top:10px"><div><span>Vendas</span><b>${atual.vendas}</b></div><div><span>Faturado</span><b>${brlTxt(atual.faturamento)}</b></div>
@@ -2187,6 +2198,8 @@ ${atual.prox ? `<div class="prog"><i style="width:${barra}%"></i></div><div clas
 <div class="card"><b>Faixas de comissão</b><table><tr><th>Vendas no mês</th><th>Comissão</th></tr>
 ${T.map((t, i) => `<tr${i === atual.idx ? ' class="cur"' : ''}><td>${i === 0 ? (T[1] ? 'até ' + brlTxt(T[1].min) : 'qualquer valor') : 'a partir de ' + brlTxt(t.min)}</td><td>${t.pct}%</td></tr>`).join('')}
 </table><p class="note" style="margin:8px 0 0">A faixa atingida vale para todas as vendas do mês. Quem atinge uma faixa começa o mês seguinte uma faixa abaixo. Contam vendas pagas e entregues; compras canceladas, reembolsadas ou estornadas não contam.</p>${agendado ? `<p class="note" style="margin:6px 0 0;color:var(--orange)">A partir de ${nomeMes(agendado.mes)} as faixas passam a ser: ${agendado.tiers.map((t, i) => `${t.pct}%${i ? ' a partir de ' + brlTxt(t.min) : ''}`).join(' · ')}.</p>` : ''}</div>` : `<div class="card"><div class="big">${String(c.comissao_pct).replace('.', ',')}% <small>de comissão fixa</small></div></div>`}
+<div class="card"><div class="note">Seu link em ${nomeMes(ctx.cur)}</div><div class="k" style="margin-top:8px"><div><span>Visitas</span><b>${vis.mes}</b></div><div><span>Conversão</span><b>${vis.mes ? Math.round(vendasMes / vis.mes * 100) + '%' : '—'}</b></div></div>
+<p class="note" style="margin:8px 0 0">Visitas = aparelhos diferentes que abriram seu link ou usaram o cupom (${vis.total} desde o início). Conversão = vendas do mês ÷ visitas do mês.</p></div>
 <div class="card"><b>Histórico</b><table><tr><th>Mês</th><th>Vendas</th><th>Faturado</th><th>Faixa</th><th>Comissão</th></tr>
 ${hist.map((h) => `<tr><td>${nomeMes(h.m)}</td><td>${h.vendas}</td><td>${brlTxt(h.fat)}</td><td>${h.pct}%</td><td>${brlTxt(h.com)}</td></tr>`).join('')}
 </table></div>
@@ -2194,7 +2207,7 @@ ${hist.map((h) => `<tr><td>${nomeMes(h.m)}</td><td>${h.vendas}</td><td>${brlTxt(
 <p style="margin:10px 0 0">A receber (meses fechados): <b>${brlTxt(Math.max(0, fechado - pago))}</b></p>
 ${doMes ? `<p class="note" style="margin:4px 0 0">Este mês, em andamento: ${brlTxt(doMes)} (estimado; entra no pagamento do 1º dia útil do mês que vem).</p>` : ''}
 ${pagos.length ? `<table style="margin-top:8px"><tr><th>Pagamento</th><th>Valor</th></tr>${pagos.map((p) => `<tr><td>${localDay(p.paid_at).split('-').reverse().join('/')}${p.nota ? ' · ' + esc(p.nota) : ''}</td><td>${brlTxt(p.cents)}</td></tr>`).join('')}</table>` : ''}</div>
-<p class="note">Atualizado agora. Dúvidas sobre a parceria: fale com a Recarga Flame.</p>
+<p class="note">Atualizado agora. Dúvidas: <a href="/como-funciona">como funciona</a> · <a href="/perguntas-frequentes">perguntas frequentes</a> · <a href="mailto:suporte@recargaflame.com.br">suporte@recargaflame.com.br</a></p>
 </div></body></html>`;
   res.type('html').send(html);
 });
@@ -2316,11 +2329,12 @@ app.get('/api/admin/analytics', admin, (req, res) => {
   });
 });
 
-// Link curto de cupom para divulgação: /aquila → /?cupom=AQUILA (só cupom ATIVO; senão segue para o 404).
+// Link curto de cupom para divulgação: /aquila → /?cupom=AQUILA. Cupom desativado também redireciona: a loja avisa
+// "cupom não disponível, preços sem desconto" e o cliente de um vídeo antigo não cai num 404. Inexistente → 404.
 // Fica por último entre as rotas: /painel, /suporte etc. são resolvidos antes.
 app.get('/:code', (req, res, next) => {
   const c = normCode(req.params.code);
-  if (!validCode(c) || !getCoupon(c)) return next();
+  if (!validCode(c) || !db.prepare('SELECT 1 FROM coupons WHERE code=?').get(c)) return next();
   // mantém a origem da divulgação (ex.: /aquila?src=wa) para o funil
   const extra = ['src', 'utm_source'].filter((k) => /^[a-z0-9_-]{1,20}$/i.test(String(req.query[k] || '')))
     .map((k) => `&${k}=${encodeURIComponent(req.query[k])}`).join('');

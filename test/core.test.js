@@ -1132,10 +1132,12 @@ test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Re
   assert.equal(db.prepare('SELECT COUNT(*) n FROM support_tickets').get().n, 2);
 });
 
-test('link curto de cupom: /aquila → /?cupom=AQUILA; inativo/inexistente → 404; rotas fixas não são afetadas', async () => {
+test('link curto de cupom: /aquila → /?cupom=AQUILA; inativo vai p/ a loja (aviso); inexistente → 404; rotas fixas não são afetadas', async () => {
   const r = await fetch(base + '/aquila', { redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/?cupom=AQUILA');
-  assert.equal((await fetch(base + '/OFF1', { redirect: 'manual' })).status, 404); // cupom desativado
+  const off = await fetch(base + '/OFF1', { redirect: 'manual' }); // cupom desativado: loja avisa e mostra preço cheio
+  assert.equal(off.status, 302); assert.equal(off.headers.get('location'), '/?cupom=OFF1');
+  assert.equal((await fetch(base + '/api/coupon/OFF1', { headers: freshIP() })).status, 404); // e não dá desconto
   assert.equal((await fetch(base + '/naoexiste', { redirect: 'manual' })).status, 404);
   assert.equal((await fetch(base + '/suporte', { redirect: 'manual' })).status, 200);
   assert.equal((await fetch(base + '/login', { redirect: 'manual' })).status, 200);
@@ -1715,4 +1717,29 @@ test('fechamento: a pagar só de meses fechados; faixas agendadas p/ o mês que 
   assert.equal(SRV.primeiroDiaUtil('2026-12'), 1);
   db.exec("DELETE FROM orders WHERE coupon='FECH1'"); db.exec("DELETE FROM coupon_payouts WHERE code='FECH1'");
   db.exec("DELETE FROM partner_months WHERE code='FECH1'"); db.exec("DELETE FROM coupons WHERE code='FECH1'");
+});
+
+test('códigos reservados e página do parceiro: visitas/conversão, aviso de desativado e contato', async () => {
+  const adm = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() }, body: body && JSON.stringify(body) });
+  for (const code of ['suporte', 'PAINEL', 'como-funciona', 'parceiro', 'api', 'ROBOTS']) {
+    const r = await adm('POST', '/api/admin/coupons', { code, desconto_pct: 5, comissao_pct: 0, ativo: true });
+    assert.equal(r.status, 400, code); assert.match((await r.json()).error, /reservado/);
+  }
+  db.prepare("INSERT INTO coupons (code, desconto_pct, comissao_pct, ativo, plano, ptoken) VALUES ('VIS1', 5, 0, 1, 'metas', 'tokvis1tokvis1tokvis1tokvis1')").run();
+  for (const dev of ['d1', 'd2', 'd3', 'd4']) db.prepare("INSERT INTO events (dev, ev, coupon) VALUES (?, 'visit', 'VIS1')").run(dev);
+  db.prepare("INSERT INTO events (dev, ev, coupon) VALUES ('d1', 'visit', 'VIS1')").run(); // mesmo aparelho não conta 2x
+  db.prepare("INSERT INTO events (dev, ev, coupon, ts) VALUES ('d9', 'visit', 'VIS1', '2000-01-01 12:00:00')").run(); // antiga: só no total
+  const agora = new Date(Date.now() - 60_000).toISOString().slice(0, 19).replace('T', ' ');
+  db.prepare(`INSERT INTO orders (token, product, cents, game_id, nickname, email, status, created_at, paid_at, prod_nome, prod_stars, coupon, star_cost)
+    VALUES ('vis1', 'c1000', 1000, '340001', 'p', 'v@v.com', 'delivered', ?, ?, 'x', 0, 'VIS1', 0.0875)`).run(agora, agora);
+  const pg = async () => (await fetch(base + '/parceiro/tokvis1tokvis1tokvis1tokvis1', { headers: freshIP() })).text();
+  let h = await pg();
+  assert.match(h, /<span>Visitas<\/span><b>4<\/b>/); assert.match(h, /<span>Conversão<\/span><b>25%<\/b>/); assert.match(h, /\(5 desde o início\)/);
+  assert.match(h, /mailto:suporte@recargaflame\.com\.br/); assert.match(h, /href="\/perguntas-frequentes"/);
+  assert.doesNotMatch(h, /está desativado/);
+  db.prepare("UPDATE coupons SET ativo=0 WHERE code='VIS1'").run();
+  h = await pg();
+  assert.match(h, /O cupom VIS1 está desativado no momento/);
+  for (const proibido of [/lucro/i, /margem/i, /custo/i, /stars/i, /★/]) assert.doesNotMatch(h, proibido, String(proibido));
+  db.exec("DELETE FROM orders WHERE coupon='VIS1'"); db.exec("DELETE FROM events WHERE coupon='VIS1'"); db.exec("DELETE FROM coupons WHERE code='VIS1'");
 });
