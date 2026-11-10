@@ -311,8 +311,8 @@ async function reembolsar(id) {
   try { r = await refundCaller(o); } catch (e) { r = { ok: false, erro: String(e?.message || e).slice(0, 120) }; }
   if (r.ok) {
     db.prepare("UPDATE orders SET refund_state='done', refund_at=?, refund_info=? WHERE id=?").run(Date.now(), JSON.stringify({ id: r.id, estado: r.estado }), id);
-    tgMarkup(o, doneKeyboard(`💸 Reembolsado ${brlTxt(o.cents)}`));
-    tgSend(`💸 Pedido #${id} reembolsado: ${brlTxt(o.cents)} devolvidos via Mercado Pago (${o.nickname} · ID ${o.game_id}).`);
+    tgAviso(id, { icone: '💸', titulo: 'reembolsado', saldo: false, botao: `💸 Reembolsado ${brlTxt(o.cents)}`,
+      extras: [`${brlTxt(o.cents)} devolvidos ao cliente via Mercado Pago. Pedido cancelado (não entregar).`] });
     return { ok: true, cents: o.cents };
   }
   db.prepare("UPDATE orders SET refund_state='erro', refund_info=? WHERE id=?").run(JSON.stringify({ erro: r.erro }), id);
@@ -367,8 +367,16 @@ async function syncPayment(mpId) {
     if (r.changes && (before === 'paid' || before === 'delivered') && !o.refund_state) {
       const pp = payerPrints(pay);
       blockClient({ ...o, payer_acct: o.payer_acct || pp.acct }, pay.status);
-      tgMarkup(o, doneKeyboard(before === 'delivered' ? '⚠️ Estornado após entrega' : '⛔ Cancelado — não entregar'));
-      tgSend(`⚠️ Pedido #${o.id} ${before === 'delivered' ? 'ESTORNADO após entrega' : 'cancelado após pagamento'} (${pay.status})\n${o.prod_nome || o.product} · ${brlTxt(o.cents)}\n${o.nickname} · ID ${o.game_id}\nBloqueados: ID, e-mail, aparelho e conta que pagou (desbloqueie no painel se for engano).`);
+      tgAviso(o.id, { icone: before === 'delivered' ? '⚠️' : '⛔', saldo: false,
+        titulo: `${before === 'delivered' ? 'ESTORNADO após entrega' : 'cancelado após pagamento'} (${pay.status})`,
+        botao: before === 'delivered' ? '⚠️ Estornado após entrega' : '⛔ Cancelado — não entregar',
+        extras: ['Bloqueados: ID, e-mail, aparelho e conta que pagou (desbloqueie no painel se for engano).'] });
+      // e um alerta curto (a edição não notifica): responde ao aviso original, que tem os detalhes
+      tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true,
+        ...(o.tg_msg ? { reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true } } : {}),
+        text: before === 'delivered'
+          ? `⚠️ Estorno no pedido #${o.id} (${brlTxt(o.cents)}, já entregue · ${pay.status}) — detalhes no aviso original.`
+          : `⛔ Pedido #${o.id} cancelado após pagamento (${brlTxt(o.cents)} · ${pay.status}) — não entregar; detalhes no aviso original.` });
     }
   }
 }
@@ -661,18 +669,23 @@ function paidText(o) {
 }
 // Entrega paga no bot com sucesso: EDITA o aviso "💰 Pedido pago" (sem mensagem nova; o aviso já notificou).
 // Sem aviso salvo ou se a edição falhar, manda mensagem nova (fallback) com o mesmo texto.
-async function tgEntregue(id, titulo, extras = [], fallback = true) {
+function tgEntregue(id, titulo, extras = [], fallback = true) {
+  return tgAviso(id, { icone: '✅', titulo, extras, botao: `✅ Entregue às ${hhmmSP()}`, fallback });
+}
+// Reescreve o aviso do pedido (texto + 1 botão inerte), sem mensagem nova. Sem aviso salvo ou se a edição
+// falhar: manda mensagem nova com o mesmo texto (se fallback).
+async function tgAviso(id, { icone, titulo, extras = [], botao, saldo = true, fallback = true }) {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   const text = [
-    `✅ Pedido #${o.id} · ${titulo} às ${hhmmSP()}`,
+    `${icone} Pedido #${o.id} · ${titulo} às ${hhmmSP()}`,
     `${o.prod_nome || o.product} · ${brlTxt(o.cents)} · ${starsOf(o)}★${o.coupon ? ` · cupom ${o.coupon}` : ''}`,
     `${o.nickname} · ID ${o.game_id}`,
     ...extras.filter(Boolean),
-    saldoLine(),
-  ].join('\n');
+    saldo && saldoLine(),
+  ].filter(Boolean).join('\n');
   if (o.tg_msg) {
     const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, text,
-      disable_web_page_preview: true, reply_markup: doneKeyboard(`✅ Entregue às ${hhmmSP()}`) });
+      disable_web_page_preview: true, reply_markup: doneKeyboard(botao) });
     if (j?.ok) return;
   }
   if (fallback) tgSend(text);

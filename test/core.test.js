@@ -590,7 +590,15 @@ test('antifraude: estorno após pagamento bloqueia ID e e-mail; painel desbloque
     assert.equal(w.status, 200);
   } finally { mpStatus = null; }
   assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(id).status, 'cancelled');
-  assert.match(tgSent.at(-1).text, /Bloqueados:/);
+  // edita o aviso do pedido (sem mensagem nova)
+  const msgEst = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(id).tg_msg;
+  const ed = lastCall('editMessageText').body;
+  assert.equal(ed.message_id, msgEst); assert.match(ed.text, new RegExp('⛔ Pedido #' + id + ' · cancelado após pagamento \\(refunded\\)'));
+  assert.match(ed.text, /Bloqueados:/); assert.match(ed.reply_markup.inline_keyboard[0][0].text, /Cancelado/);
+  assert.ok(!tgSent.some((m) => m.text.includes('#' + id) && /Bloqueados:/.test(m.text)));
+  // + alerta curto respondendo ao aviso (a edição não notifica)
+  const al = tgSent.at(-1);
+  assert.match(al.text, new RegExp('⛔ Pedido #' + id + ' cancelado após pagamento')); assert.equal(al.reply_parameters.message_id, msgEst);
   // mesmo e-mail com outro ID, ou mesmo ID com outro e-mail: recusado
   assert.equal((await pedir('c1000', '666667', 'mal@x.com')).status, 403);
   assert.equal((await pedir('c1000', '666666', 'novo@x.com')).status, 403);
@@ -1499,17 +1507,21 @@ test('reembolso: só pago e não entregue; 1 vez; cliente vê "valor devolvido";
     assert.equal(db.prepare('SELECT refund_state FROM orders WHERE id=?').get(p.id).refund_state, 'done');
     assert.equal((await adm('POST', '/api/admin/orders/' + p.id + '/reembolsar')).status, 409);
     assert.deepEqual(calls, [p.id, p.id]);
-    assert.ok(tgSent.some((m) => m.text.includes(`💸 Pedido #${p.id} reembolsado`)));
+    const edR = lastCall('editMessageText').body;
+    assert.equal(edR.message_id, db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(p.id).tg_msg);
+    assert.match(edR.text, new RegExp(`💸 Pedido #${p.id} · reembolsado às`)); assert.match(edR.reply_markup.inline_keyboard[0][0].text, /Reembolsado/);
+    assert.ok(!tgSent.some((m) => m.text.includes(`#${p.id}`) && /reembolsado/.test(m.text)));
     // cliente
     assert.equal((await (await fetch(base + '/api/orders/' + p.token, { headers: freshIP() })).json()).status, 'refunded');
     // depois o MP avisa "refunded": NÃO bloqueia o cliente (foi a loja que devolveu)
     const before = db.prepare("SELECT COUNT(*) n FROM blocked WHERE value='272701'").get().n;
     const salvo = lastMpBody; lastMpBody = { ...lastMpBody, external_reference: p.token };
     mpStatus = 'refunded';
-    const n0 = tgSent.length;
+    const n0 = tgSent.length, c0 = tgCalls.length;
     try { assert.equal((await webhookMP()).status, 200); } finally { mpStatus = null; lastMpBody = salvo; }
     assert.equal(db.prepare("SELECT COUNT(*) n FROM blocked WHERE value='272701'").get().n, before);
     assert.ok(!tgSent.slice(n0).some((m) => /cancelado após pagamento|ESTORNADO/.test(m.text)));
+    assert.ok(!tgCalls.slice(c0).some((c) => /cancelado após pagamento|ESTORNADO/.test(c.body?.text || '')));
     // painel mostra
     const o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === p.id);
     assert.equal(o.refund, 'done'); assert.equal(o.refundable, false);
