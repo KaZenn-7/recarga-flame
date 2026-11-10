@@ -364,6 +364,28 @@ test('sair invalida a sessão', async () => {
   assert.equal((await fetch(base + '/api/admin/products', { headers: { Cookie: ck } })).status, 401);
 });
 
+test('sessão do painel: 30 dias, renova com o uso e tem teto de 90 dias desde o login', async () => {
+  const ck = await login();
+  const DIA = 86400_000, sid = (await import('node:crypto')).createHash('sha256').update(ck.split('=')[1]).digest('hex');
+  const row = () => db.prepare('SELECT created_at, expires_at FROM admin_sessions WHERE id_hash=?').get(sid);
+  assert.ok(Math.abs(row().expires_at - Date.now() - 30 * DIA) < 60_000, 'nasce com 30 dias');
+  // uso logo após o login: não reescreve a sessão
+  const r0 = await fetch(base + '/api/admin/products', { headers: { Cookie: ck, ...freshIP() } });
+  assert.equal(r0.status, 200); assert.equal(r0.headers.get('set-cookie'), null);
+  // 10 dias depois sem uso: o próximo acesso estica de volta para 30 dias
+  db.prepare('UPDATE admin_sessions SET created_at=?, expires_at=? WHERE id_hash=?').run(Date.now() - 10 * DIA, Date.now() + 20 * DIA, sid);
+  const r1 = await fetch(base + '/api/admin/products', { headers: { Cookie: ck, ...freshIP() } });
+  assert.match(r1.headers.get('set-cookie'), /Max-Age=259\d{4}; Path=\/; HttpOnly; SameSite=Strict/);
+  assert.ok(Math.abs(row().expires_at - Date.now() - 30 * DIA) < 60_000);
+  // perto do teto: não passa de 90 dias desde o login
+  db.prepare('UPDATE admin_sessions SET created_at=?, expires_at=? WHERE id_hash=?').run(Date.now() - 85 * DIA, Date.now() + 2 * DIA, sid);
+  await fetch(base + '/api/admin/products', { headers: { Cookie: ck, ...freshIP() } });
+  assert.ok(Math.abs(row().expires_at - (row().created_at + 90 * DIA)) < 1000);
+  // vencida: 401
+  db.prepare('UPDATE admin_sessions SET expires_at=? WHERE id_hash=?').run(Date.now() - 1, sid);
+  assert.equal((await fetch(base + '/api/admin/products', { headers: { Cookie: ck, ...freshIP() } })).status, 401);
+});
+
 // ---------- notificação de pago + expiração ----------
 test('pedido pago avisa o operador no Telegram uma única vez', async () => {
   mpShouldApprove = true;

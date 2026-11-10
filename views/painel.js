@@ -41,7 +41,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .empty{text-align:center;color:var(--dim);padding:70px 16px}
 /* nav topo */
 .nav{display:flex;gap:4px;padding:0 10px}
-.nav button{flex:1;border:0;background:transparent;color:var(--mut);font:inherit;font-weight:700;padding:12px;border-bottom:2px solid transparent;cursor:pointer}
+.nav button{flex:1 1 0;min-width:0;white-space:nowrap;border:0;background:transparent;color:var(--mut);font:inherit;font-weight:700;padding:12px 4px;border-bottom:2px solid transparent;cursor:pointer}
 .nav button.on{color:var(--txt);border-bottom-color:var(--orange)}
 /* produtos */
 .padd{padding:12px 16px}
@@ -99,6 +99,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .sync{font-size:11px;color:var(--dim);padding:0 14px 7px}
 .htop .st{color:var(--gold);font-weight:700}.htop .st.lo{color:#160a04;background:var(--gold);border-color:var(--gold)}.htop .st.no{color:#fff;background:var(--red);border-color:var(--red)}
 @media(max-width:400px){#htitle{display:none}}
+@media(max-width:480px){.prow.cup{flex-wrap:wrap}.prow.cup .pi{flex:1 1 100%}.prow.cup .rt{flex:1;flex-direction:row;align-items:center;justify-content:space-between}}
 .sbar{margin:10px 14px 0;padding:10px 12px;border-radius:9px;background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.4);font-size:13px;display:flex;align-items:center;gap:10px}
 .sbar span{flex:1}.sbar button{border:0;border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;background:var(--gold);color:#160a04;cursor:pointer}
 .nost{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(227,179,65,.18);color:var(--gold);vertical-align:1px}
@@ -730,7 +731,7 @@ async function loadCups(){
 function renderCups(){
   renderCupTabs();
   $$('cupList').innerHTML=CUPS.map(function(c){
-    return '<div class="prow"><div class="pi"><div class="nm mono">'+esc(c.code)+(c.ativo?'<span class="cuptag">ATIVO</span>':'<span class="cuptag off">INATIVO</span>')+'</div>'+
+    return '<div class="prow cup"><div class="pi"><div class="nm mono">'+esc(c.code)+(c.ativo?'<span class="cuptag">ATIVO</span>':'<span class="cuptag off">INATIVO</span>')+'</div>'+
       '<div class="sub">desconto <b>'+pct(c.desconto_pct)+'</b> · '+(c.plano==='fixo'?'comissão fixa <b>'+pct(c.comissao_pct)+'</b> do lucro':'<b>plano de metas</b>'+(c.tiers?' (faixas próprias)':''))+(c.nota?' · '+esc(c.nota):'')+'</div>'+
       '<div class="sub mono">'+esc(location.origin+'/?cupom='+c.code)+'</div></div>'+
       '<div class="rt"><button class="sw '+(c.ativo?'on':'')+'" title="Ativar/desativar" data-tog="'+esc(c.code)+'"></button>'+

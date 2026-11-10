@@ -1028,7 +1028,11 @@ Recarga Flame é uma revenda independente, sem vínculo com a Valve nem com a eq
 db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   id_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, ip TEXT, ua TEXT
 )`);
-const SESSION_TTL = 12 * 3600_000; // 12h
+// Sessão deslizante: vale 30 dias sem uso e renova sozinha a cada uso (no máx. 1×/h),
+// com teto de 90 dias desde o login — depois disso, senha + código de novo.
+const SESSION_TTL = 30 * 86400_000;
+const SESSION_MAX = 90 * 86400_000;
+const SESSION_RENEW = 3600_000;
 const CODE_TTL = 5 * 60_000;       // código vale 5 min
 const CODE_MAX_TRIES = 5;          // por desafio
 const COOKIE = 'cf_sess';
@@ -1045,8 +1049,17 @@ function getCookie(req, name) {
 function sessionOk(req) {
   const tok = getCookie(req, COOKIE);
   if (!tok || !/^[A-Za-z0-9_-]{43}$/.test(tok)) return false;
-  const row = db.prepare('SELECT expires_at FROM admin_sessions WHERE id_hash=?').get(hashHex(tok));
-  return !!row && row.expires_at > Date.now();
+  const row = db.prepare('SELECT created_at, expires_at FROM admin_sessions WHERE id_hash=?').get(hashHex(tok));
+  if (!row || row.expires_at <= Date.now()) return false;
+  return { tok, ...row };
+}
+// Renova a sessão em uso (prazo e cookie), sem passar do teto desde o login.
+function renewSession(s, res) {
+  const now = Date.now();
+  const exp = Math.min(now + SESSION_TTL, s.created_at + SESSION_MAX);
+  if (exp - s.expires_at < SESSION_RENEW) return;
+  db.prepare('UPDATE admin_sessions SET expires_at=? WHERE id_hash=?').run(exp, hashHex(s.tok));
+  res.append('Set-Cookie', `${COOKIE}=${s.tok}; Max-Age=${Math.floor((exp - now) / 1000)}; ${cookieAttrs()}`);
 }
 const cookieAttrs = () => `Path=/; HttpOnly; SameSite=Strict${env.NODE_ENV === 'test' ? '' : '; Secure'}`;
 
@@ -1057,7 +1070,8 @@ setInterval(() => {
 }, 10 * 60_000).unref();
 
 function admin(req, res, next) {
-  if (sessionOk(req)) return next();
+  const s = sessionOk(req);
+  if (s) { renewSession(s, res); return next(); }
   // página do painel: manda pro login; API: 401
   if (req.method === 'GET' && req.path === '/painel') return res.redirect(302, '/login');
   res.status(401).json({ error: 'Sessão expirada. Entre novamente.' });
@@ -1401,7 +1415,7 @@ app.post('/login/senha', limit(30), async (req, res) => {
   res.json({ challenge: id });
 });
 
-// Passo 2: código. Certo → cria sessão (cookie HttpOnly/Secure/SameSite=Strict, 12h).
+// Passo 2: código. Certo → cria sessão (cookie HttpOnly/Secure/SameSite=Strict, 30 dias renováveis, teto 90).
 app.post('/login/codigo', limit(30), (req, res) => {
   const ip = req.ip;
   const { challenge, code } = req.body ?? {};
