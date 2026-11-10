@@ -643,9 +643,10 @@ async function handleTgUpdate(u) {
       // o aviso já foi editado pelo markDelivered
     } else {
       const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(o.id);
-      if (cur.status === 'paid' && cur.autopay !== 'incerto') await setKb(paidKeyboard(cur));
-      else if (cur.autopay === 'incerto') await setKb(doneKeyboard('🚨 Pagamento incerto — confira'));
-      if (!r.incerto) tgSend(`⚠️ Pedido #${o.id}: ${r.why}`);
+      if (cur.autopay === 'incerto') await setKb(doneKeyboard('🚨 Pagamento incerto — confira'));
+      else if (cur.status === 'paid' && msgId === cur.tg_msg) await tgFalha(o.id, `⚠️ Pagamento com 1 toque falhou às ${hhmmSP()}: ${r.why}`);
+      else if (cur.status === 'paid') { await setKb(paidKeyboard(cur)); tgSend(`⚠️ Pedido #${o.id}: ${r.why}`); }
+      else tgSend(`⚠️ Pedido #${o.id}: ${r.why}`);
     }
     return;
   }
@@ -870,13 +871,15 @@ async function entregaAuto(id, attempt = 1) {
   const head = `#${id} · ${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}`;
   if (ck?.status !== 'ok') {
     setMotivo(id, ck?.status === 'diverge' ? 'conferência não bateu' : 'conferência falhou');
-    tgSend(`🖐 Entrega MANUAL necessária ${head}\n${ck ? chkLine(ck) : 'sem conferência'}\n${saldoLine()}`);
+    tgFalha(id, `🖐 Entrega automática não feita: ${ck ? chkLine(ck) : 'sem conferência'} — entregue manualmente.`,
+      `🖐 Entrega MANUAL necessária ${head}: ${ck?.status === 'diverge' ? 'conferência não bateu' : 'conferência falhou'} — detalhes no aviso original.`);
     return;
   }
   const can = canAutopay(o);
   if (!can.ok) {
     setMotivo(id, can.revisar ? 'REVISAR: ' + riskOf(o)[0] : can.why);
-    tgSend(`🖐 Entrega MANUAL necessária ${head}\nMotivo: ${can.why}\n${saldoLine()}`); return;
+    tgFalha(id, `🖐 Entrega automática não feita: ${can.why} — entregue manualmente.`,
+      `🖐 Entrega MANUAL necessária ${head}: ${can.why} — detalhes no aviso original.`); return;
   }
   const r = await autopay(id, { via: 'auto' });
   // recusado ANTES de cobrar por motivo passageiro (bot lento, flood, rede): tenta de novo 1x
@@ -886,7 +889,28 @@ async function entregaAuto(id, attempt = 1) {
   }
   await syncStarsReal(true);
   if (r.ok || r.incerto) { /* aviso já editado (markDelivered / tgIncerto) */ }
-  else { setMotivo(id, 'pagamento falhou: ' + r.why); tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`); }
+  else {
+    setMotivo(id, 'pagamento falhou: ' + r.why);
+    tgFalha(id, `⚠️ Entrega automática falhou: ${r.why} — entregue manualmente.`,
+      `⚠️ Entrega automática falhou ${head}: ${r.why} — detalhes no aviso original.`);
+  }
+}
+// Entrega automática não feita/falhou: edita o aviso do pedido (mantém os botões de entregar) com o motivo e,
+// se houver `alerta`, manda um alerta curto respondendo a ele (a edição não notifica). Sem aviso salvo ou se a
+// edição falhar: mensagem nova completa.
+async function tgFalha(id, linha, alerta) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (!o || o.status !== 'paid') return;
+  const text = `${paidText(o)}\n${linha}\n${saldoLine()}`;
+  let ok = false;
+  if (o.tg_msg) {
+    const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, text,
+      disable_web_page_preview: true, reply_markup: paidKeyboard(o) });
+    ok = !!j?.ok;
+  }
+  if (!ok) { tgSend(alerta ? `${alerta.split(' — ')[0]}\n\n${text}` : text); return; }
+  if (alerta) tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true,
+    reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true }, text: alerta });
 }
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
 const setMotivo = (id, m) => db.prepare('UPDATE orders SET manual_motivo=? WHERE id=? AND manual_motivo IS NULL').run(String(m).slice(0, 160), id);

@@ -979,6 +979,13 @@ test('entrega 100% automática: paga sozinho com ✅; senão manual; cliente e T
     const c = await novo('141413');
     await espera();
     assert.ok(tgSent.some((m) => m.text.includes('Entrega automática falhou #' + c.id) && /BALANCE_TOO_LOW/.test(m.text)));
+    // aviso do pedido editado com o motivo, mantendo os botões de entregar; alerta curto responde a ele
+    const cMsg = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(c.id).tg_msg;
+    const ef = tgCalls.filter((x) => x.method === 'editMessageText' && x.body.message_id === cMsg).at(-1).body;
+    assert.match(ef.text, /💰 Pedido pago/); assert.match(ef.text, /⚠️ Entrega automática falhou: .*BALANCE_TOO_LOW/);
+    assert.ok(ef.reply_markup.inline_keyboard.flat().some((x) => x.callback_data === 'd:' + c.id));
+    const al = tgSent.find((m) => m.text.includes('Entrega automática falhou #' + c.id));
+    assert.equal(al.reply_parameters.message_id, cMsg); assert.ok(al.text.length < 200);
     assert.equal((await cliente(c.token)).entrega, 'manual');
     payErr = null;
     // pedido em REVISAR (1ª compra ≥ R$50) → manual com motivo
