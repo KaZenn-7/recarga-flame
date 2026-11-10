@@ -878,7 +878,7 @@ test('pagamento 1 toque: desligado por padrão; ligado paga 1 vez, entrega e res
     assert.equal(typeof onInvoice, 'function'); // grava a fatura antes de cobrar
     const row = db.prepare('SELECT status, autopay FROM orders WHERE id=?').get(a);
     assert.equal(row.status, 'delivered'); assert.equal(row.autopay, 'sent');
-    assert.ok(tgSent.some((m) => /Pedido #\d+ pago no bot \(26★\)/.test(m.text)));
+    assert.ok(tgCalls.some((c) => c.method === 'editMessageText' && /Pedido #\d+ · pago no bot \(26★\) e entregue/.test(c.body.text)));
     // falha ANTES de cobrar (safe) → 'erro', pode tentar de novo
     const b = await novo('131312');
     payErr = Object.assign(new Error('fatura de 30★, esperado 26★'), { safe: true });
@@ -928,8 +928,12 @@ test('entrega 100% automática: paga sozinho com ✅; senão manual; cliente e T
     await espera();
     assert.equal(db.prepare('SELECT status, autopay FROM orders WHERE id=?').get(a.id).status, 'delivered');
     assert.equal(pays.length, 1);
-    const ok = tgSent.find((m) => m.text.includes('Entregue automaticamente #' + a.id));
-    assert.ok(ok); assert.match(ok.text, /⭐ Saldo:|Saldo de Stars/);
+    // sucesso: EDITA o aviso do pedido (sem mensagem nova)
+    const aMsg = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(a.id).tg_msg;
+    const ok = tgCalls.filter((c) => c.method === 'editMessageText' && c.body.message_id === aMsg).at(-1)?.body;
+    assert.ok(ok); assert.match(ok.text, new RegExp('Pedido #' + a.id + ' · entregue automaticamente')); assert.match(ok.text, /⭐ Saldo:|Saldo de Stars/);
+    assert.match(ok.reply_markup.inline_keyboard[0][0].text, /Entregue às/);
+    assert.ok(!tgSent.some((m) => m.text.includes('#' + a.id) && /entregue/i.test(m.text)));
     assert.equal((await cliente(a.token)).status, 'delivered');
     // conferência diverge → manual, cliente vê "manual" sem motivo, Telegram avisa
     chk = { ...chk, stars: 30 };
@@ -1314,7 +1318,8 @@ test('aprovar e pagar: pedido em REVISAR só paga com aprovação do operador (p
     await cb('A:' + b, msgId);
     assert.equal(pays.length, 2);
     assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(b).status, 'delivered');
-    assert.ok(tgSent.some((m) => m.text.includes(`Pedido #${b} aprovado por você, pago no bot (771★)`)));
+    assert.ok(tgCalls.some((c) => c.method === 'editMessageText' && c.body.message_id === msgId && c.body.text.includes(`Pedido #${b} · aprovado por você, pago no bot (771★) e entregue`)));
+    assert.ok(!tgSent.some((m) => m.text.includes(`#${b}`) && /pago no bot/.test(m.text)));
   } finally { RISK.first = null; _setInvoiceChecker(null); _setInvoicePayer(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
 

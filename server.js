@@ -616,7 +616,8 @@ async function handleTgUpdate(u) {
     await setKb(doneKeyboard('⏳ Pagando…'));
     const r = await autopay(o.id, { aprovar });
     if (r.ok) {
-      tgSend(`⭐ Pedido #${o.id} ${aprovar ? 'aprovado por você, ' : ''}pago no bot (${r.stars}★) e marcado como entregue.${r.botReply ? '\nBot do CF: ' + r.botReply : ''}\n${saldoLine()}`);
+      await tgEntregue(o.id, `${aprovar ? 'aprovado por você, ' : ''}pago no bot (${r.stars}★) e entregue`,
+        [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`]);
     } else {
       const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(o.id);
       if (cur.status === 'paid' && cur.autopay !== 'incerto') await setKb(paidKeyboard(cur));
@@ -654,6 +655,24 @@ function paidText(o) {
     ck && chkLine(ck),
     `Painel: ${env.PUBLIC_URL}/painel`,
   ].filter(Boolean).join('\n');
+}
+// Entrega paga no bot com sucesso: EDITA o aviso "💰 Pedido pago" (sem mensagem nova; o aviso já notificou).
+// Sem aviso salvo ou se a edição falhar, manda mensagem nova (fallback) com o mesmo texto.
+async function tgEntregue(id, titulo, extras = []) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  const text = [
+    `✅ Pedido #${o.id} · ${titulo} às ${hhmmSP()}`,
+    `${o.prod_nome || o.product} · ${brlTxt(o.cents)} · ${starsOf(o)}★${o.coupon ? ` · cupom ${o.coupon}` : ''}`,
+    `${o.nickname} · ID ${o.game_id}`,
+    ...extras.filter(Boolean),
+    saldoLine(),
+  ].join('\n');
+  if (o.tg_msg) {
+    const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, text,
+      disable_web_page_preview: true, reply_markup: doneKeyboard(`✅ Entregue às ${hhmmSP()}`) });
+    if (j?.ok) return;
+  }
+  tgSend(text);
 }
 async function notifyPaid(o) {
   const j = await tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true, reply_markup: paidKeyboard(o), text: paidText(o) });
@@ -826,7 +845,8 @@ async function entregaAuto(id, attempt = 1) {
     const t = setTimeout(() => entregaAuto(id, attempt + 1), RETRY_MS); t.unref?.(); return;
   }
   await syncStarsReal(true);
-  if (r.ok) tgSend(`✅ Entregue automaticamente ${head}${r.botReply ? '\nBot do CF: ' + r.botReply : ''}${r.recuperado ? `\n(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)` : ''}\n${saldoLine()}`);
+  if (r.ok) await tgEntregue(id, 'entregue automaticamente',
+    [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`]);
   else if (r.incerto) tgSend(`🚨 Entrega automática INCERTA ${head} — veja o alerta acima.\n${saldoLine()}`);
   else { setMotivo(id, 'pagamento falhou: ' + r.why); tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`); }
 }
