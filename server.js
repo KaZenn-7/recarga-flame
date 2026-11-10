@@ -597,7 +597,14 @@ async function handleTgUpdate(u) {
   if (m[1] === 'R') {
     await answer('Reembolsando…');
     const r = await reembolsar(o.id);
-    if (!r.ok) { await setKb(refundKb(o)); tgSend(`⚠️ Reembolso do pedido #${o.id}: ${r.why}`); }
+    if (!r.ok) {
+      // recusado: edita a própria mensagem (o operador está nela) com o motivo e devolve o botão; sem mensagem nova
+      const base = String(cq.message?.text || `💸 Pedido #${o.id} · ${o.prod_nome || o.product} · ${brlTxt(o.cents)}\n${o.nickname} · ID ${o.game_id}`)
+        .split('\n').filter((l) => !l.startsWith('⚠️ Reembolso recusado')).join('\n');
+      const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: msgId, disable_web_page_preview: true,
+        text: `${base}\n⚠️ Reembolso recusado às ${hhmmSP()}: ${r.why}`, reply_markup: refundKb(o) });
+      if (!j?.ok) { await setKb(refundKb(o)); tgSend(`⚠️ Reembolso do pedido #${o.id}: ${r.why}`); }
+    }
     else if (msgId !== o.tg_msg) await setKb(doneKeyboard(`💸 Reembolsado ${brlTxt(o.cents)}`));
     return;
   }

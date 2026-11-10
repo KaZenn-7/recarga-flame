@@ -702,6 +702,25 @@ const cb = (data, msgId, from = OP) => handleTgUpdate({ update_id: 1, callback_q
   id: 'cq' + Math.random(), data, from: { id: from }, message: { message_id: msgId, chat: { id: from } } } });
 const lastCall = (m) => tgCalls.filter((c) => c.method === m).at(-1);
 
+test('reembolso recusado pelo MP no botão do Telegram: edita a mensagem com o motivo e devolve o botão, sem mensagem nova', async () => {
+  mpShouldApprove = true;
+  const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '222231', email: 'rr@x.com' })).json();
+  await pagar(token);
+  await new Promise((r) => setTimeout(r, 20));
+  const msgId = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(id).tg_msg;
+  _setRefundCaller(async () => ({ ok: false, erro: 'insufficient_amount' }));
+  try {
+    const n = tgSent.length;
+    const texto = `🚫 Pedido #${id} BLOQUEADO automaticamente: teste.\n⚠️ Reembolso recusado às 10:00: antigo`;
+    await handleTgUpdate({ update_id: 1, callback_query: { id: 'cqr', data: 'R:' + id, from: { id: OP }, message: { message_id: msgId, chat: { id: OP }, text: texto } } });
+    const e = lastCall('editMessageText').body;
+    assert.equal(e.message_id, msgId); assert.match(e.text, /BLOQUEADO automaticamente: teste/); assert.match(e.text, /Reembolso recusado às .*insufficient_amount/);
+    assert.doesNotMatch(e.text, /antigo/); // não acumula recusas
+    assert.equal(e.reply_markup.inline_keyboard[0][0].callback_data, 'r:' + id);
+    assert.equal(tgSent.length, n);
+  } finally { _setRefundCaller(null); }
+});
+
 test('entrega pelo Telegram: aviso com botões → confirmar → entregue + e-mail; estranho não mexe', async () => {
   mpShouldApprove = true;
   const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '222221', email: 'tg@x.com' })).json();
