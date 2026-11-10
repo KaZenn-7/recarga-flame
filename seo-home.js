@@ -51,6 +51,30 @@ export function coinsTable(prods) {
     `<tr><td><span class="pk"><img src="${escH(p.img)}" alt="" width="28" height="28" loading="lazy"><b>${escH(p.nome)}</b></span></td><td><b>${brl(p.cents)}</b></td><td>${n ? brl(Math.round(p.cents * 1000 / n)) : '—'}</td></tr>`).join('')}</tbody></table>`;
 }
 
+// Tabela de níveis de passe, com preço por nível.
+export function niveisTable(prods) {
+  const rows = prods.filter((p) => p.cat === 'Níveis de Passe').map((p) => ({ p, n: Number(String(p.nome).replace(/\D/g, '')) || 0 }))
+    .sort((a, b) => a.n - b.n);
+  if (!rows.length) return '';
+  return `<table class="tbl"><thead><tr><th>Pacote</th><th>Preço</th><th>Por nível</th></tr></thead><tbody>${rows.map(({ p, n }) =>
+    `<tr><td><span class="pk"><img src="${escH(p.img)}" alt="" width="28" height="28" loading="lazy"><b>${escH(p.nome)}</b></span></td><td><b>${brl(p.cents)}</b></td><td>${n ? brl(Math.round(p.cents / n)) : '—'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+// Marcadores: <!--TABELA_COINS-->, <!--TABELA_NIVEIS-->, <!--PRECO:key--> e <!--LD_PRODUTO:key--> (Product + Offer).
 export function pageHtml(html, prods) {
-  return html.replace('<!--TABELA_COINS-->', () => coinsTable(prods));
+  const byKey = Object.fromEntries(prods.map((p) => [p.key, p]));
+  return html
+    .replace('<!--TABELA_COINS-->', () => coinsTable(prods))
+    .replace('<!--TABELA_NIVEIS-->', () => niveisTable(prods))
+    .replace(/<!--PRECO:([a-z0-9_]+)-->/g, (_, k) => (byKey[k] ? brl(byKey[k].cents) : 'consulte na loja'))
+    .replace(/<!--LD_PRODUTO:([a-z0-9_]+)-->/g, (_, k) => {
+      const p = byKey[k];
+      if (!p) return '';
+      const json = JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'Product', name: p.nome + ' — CounterFlame', image: SITE + p.img,
+        description: `${p.nome} do CounterFlame entregue na sua conta pelo ID, pago com Pix.`,
+        offers: { '@type': 'Offer', price: (p.cents / 100).toFixed(2), priceCurrency: 'BRL', availability: 'https://schema.org/InStock', url: SITE + '/', seller: { '@type': 'Organization', name: 'Recarga Flame' } },
+      }).replace(/</g, '\\u003c');
+      return `<script type="application/ld+json">${json}</script>`;
+    });
 }
