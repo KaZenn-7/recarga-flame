@@ -7,7 +7,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="format-detection" content="date=no,address=no,email=no">
 <title>Recarga Flame — recarga de CounterFlame por Pix</title>
-<meta name="description" content="Coins, passes e coleções do CounterFlame pagando por Pix. Entrega na sua conta pelo ID.">
+<meta name="description" content="Recarga de CounterFlame por Pix: Coins, Gold Pass, coleções e níveis de passe. Entrega automática em até 10 minutos, só com o ID da conta.">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Recarga Flame"><meta property="og:locale" content="pt_BR"><meta property="og:url" content="https://recargaflame.com.br/"><meta property="og:title" content="Recarga Flame — Coins e passes do CounterFlame no Pix"><meta property="og:description" content="Compre Coins, passes e coleções do CounterFlame pagando por Pix. Entrega automática em até 10 minutos, só com o ID da conta."><meta property="og:image" content="https://recargaflame.com.br/img/og.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Recarga Flame — Coins e passes do CounterFlame no Pix"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://recargaflame.com.br/">
 <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <style>
@@ -172,7 +172,19 @@ input:focus{outline:0;border-color:#45454c}
 .ft-more{display:block;margin-top:9px;font-size:12px;color:var(--mut);text-decoration:none}
 .ft-docs{font-size:12px;margin:0 0 8px}.ft-docs a{color:var(--mut)}
 .terms{font-size:11.5px;color:var(--dim);text-align:center;margin:10px 0 0;line-height:1.5}.terms a{color:var(--mut)}
+/* título da home + vitrine de preços (renderizada no servidor) */
+.h1{font-size:21px;line-height:1.25;letter-spacing:-.015em;margin:0 0 6px}
+.lead{font-size:13.5px;color:var(--mut);margin:0 0 20px}
+.vit{margin-top:30px;padding-top:20px;border-top:1px solid var(--line)}
+.vit h3{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 8px}
+.vgrid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(min-width:440px){.vgrid{grid-template-columns:repeat(4,1fr)}}
+.vgrid li{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 8px 9px;display:flex;flex-direction:column;gap:3px;cursor:pointer}
+.vgrid img{width:100%;height:auto;aspect-ratio:1/1;object-fit:contain;filter:drop-shadow(0 6px 8px rgba(0,0,0,.5))}
+.vgrid .n{font-weight:600;font-size:12px;line-height:1.2}
+.vgrid .p{margin-top:auto;font-size:13px;font-weight:800}
 </style>
+<!--LDJSON-->
 </head>
 <body>
 <div class="wrap">
@@ -191,6 +203,8 @@ input:focus{outline:0;border-color:#45454c}
 
   <!-- 1: ID da conta -->
   <section id="e1">
+    <h1 class="h1">Recarga de CounterFlame por Pix</h1>
+    <p class="lead">Coins, Gold Pass, coleções e níveis de passe direto na sua conta pelo ID. Entrega automática em até 10 minutos.</p>
     <h2>Informe sua conta</h2>
     <p class="sub">Digite o ID da sua conta no CounterFlame para começar. Primeira vez? <a href="/como-funciona">Veja como funciona</a>.</p>
     <label for="gameId">ID no jogo</label>
@@ -202,6 +216,7 @@ input:focus{outline:0;border-color:#45454c}
     </details>
     <button class="btn btn-go" id="buscar" disabled>Buscar conta</button>
     <p class="err" id="err1"></p>
+    <!--VITRINE-->
   </section>
 
   <!-- 2: escolher produto -->
@@ -342,7 +357,7 @@ function fillPrice(){
   if(f<sel.cents){$('rdcode').textContent=cupom.code;$('rdval').textContent='−'+brl(sel.cents-f);}
   $('cupin').classList.toggle('hide',!!cupom);
 }
-function syncCupFields(){for(const id of['cupin','cupin2'])$(id).classList.toggle('hide',!!cupom);}
+function syncCupFields(){for(const id of['cupin','cupin2'])$(id).classList.toggle('hide',!!cupom);const v=$('precos');if(v)v.classList.toggle('hide',!!cupom);}
 function setCupom(c){
   cupom=c;
   try{c?localStorage.setItem(CUP_KEY,JSON.stringify({code:c.code,ts:Date.now()})):localStorage.removeItem(CUP_KEY);}catch{}
@@ -399,6 +414,7 @@ $('buscar').onclick=async()=>{
 
 $('trocar').onclick=()=>{sel=null;clearOrder();setLink(null);show(1);};
 $('voltar2').onclick=()=>$('trocar').click();
+document.querySelectorAll('.vgrid li').forEach(li=>li.onclick=()=>{scrollTo({top:0,behavior:'smooth'});$('gameId').focus();});
 
 /* etapa 2: catálogo */
 async function loadProds(){

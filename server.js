@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import { userConfig, readStarsBalance, checkInvoice, payInvoice, invoicePaid } from './tg-user.js';
 import { LOGIN_HTML } from './views/login.js';
 import { painelHtml } from './views/painel.js';
+import { homeHtml } from './seo-home.js';
 
 const env = process.env;
 for (const k of ['MP_ACCESS_TOKEN', 'MP_WEBHOOK_SECRET', 'ADMIN_USER', 'ADMIN_PASS', 'PUBLIC_URL']) {
@@ -1135,12 +1136,16 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10kb' }));
 // Prévia do link (WhatsApp/Telegram) personalizada no link de cupom: /?cupom=AQUILA (o /aquila redireciona para cá).
 const INDEX_HTML = fs.readFileSync(path.join('public', 'index.html'), 'utf8');
-app.get('/', (req, res, next) => {
+// Home sempre renderizada aqui: vitrine de preços e dados estruturados vêm dos produtos ativos (seo-home.js).
+const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo)
+  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg` }));
+app.get(['/', '/index.html'], (req, res) => {
+  const home = homeHtml(INDEX_HTML, prodsPublic());
   const c = req.query.cupom ? getCoupon(req.query.cupom) : null;
-  if (!c) return next();
+  if (!c) return res.type('html').set('Cache-Control', 'no-cache').send(home);
   const t = c.desconto_pct > 0 ? `${String(c.desconto_pct).replace('.', ',')}% OFF com o cupom ${c.code} — Recarga Flame` : `Cupom ${c.code} — Recarga Flame`;
   const d = `Coins e passes do CounterFlame no Pix com o cupom ${c.code}. Entrega automática em até 10 minutos, só com o ID da conta.`;
-  const html = INDEX_HTML
+  const html = home
     .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${esc(t)}">`)
     .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${esc(d)}">`)
     .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${SITE_URL}/?cupom=${encodeURIComponent(c.code)}">`);
@@ -1155,11 +1160,7 @@ app.get('/termos-de-uso', (req, res) => res.sendFile('termos-de-uso.html', { roo
 app.get('/politica-de-privacidade', (req, res) => res.sendFile('politica-de-privacidade.html', { root: 'public' }));
 app.use('/api', limit(120));
 
-app.get('/api/products', (req, res) => {
-  res.json(Object.entries(PRODUCTS)
-    .filter(([, p]) => p.ativo)
-    .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg` })));
-});
+app.get('/api/products', (req, res) => res.json(prodsPublic()));
 
 // Valida cupom e devolve o preço final de cada produto ativo (para a loja mostrar o desconto).
 app.get('/api/coupon/:code', limit(20), (req, res) => {
