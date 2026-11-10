@@ -130,7 +130,7 @@ recargaflame.com.br · parcerias@recargaflame.com.br
 ---
 
 ## 5. Quando a pessoa aceitar
-1. Crie o cupom no painel (Cupons → Novo), plano **metas**, e cadastre os **IDs do jogo** do parceiro.
+1. Crie o cupom no painel (Cupons → Novo), plano **metas**.
 2. Gere o acordo com a skill **acordo-parceiro** ("gera o acordo do cupom X").
 3. Envie o acordo e, separado, o **link do parceiro** (painel → Cupons → "Copiar link do parceiro").
 4. Guarde a resposta de aceite ("Li e concordo…").

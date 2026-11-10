@@ -42,7 +42,7 @@ const TIERS_PADRAO = [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 4000
  * d = {
  *   modelo: bool (true = modelo em branco),
  *   cupom, link, desconto, plano: 'metas'|'fixo', comissaoFixa, tiers:[{min,pct}], tiersProprias: bool,
- *   idsProprios, parceiroNome, canal, chavePix, responsavel, semResponsavel, minimo, avisoDias, data,
+ *   parceiroNome, canal, chavePix, responsavel, semResponsavel, minimo, avisoDias, data,
  *   exemplos: { data: 'dd/mm/aaaa', star: 0.0868, linhas: [{ nome, paga, lucro }] }   (centavos)
  * }
  */
@@ -144,7 +144,6 @@ function buildAcordo(d) {
 
         H('4. O que não conta'),
         LI(t(`Pedidos não pagos, cancelados, reembolsados ou estornados (inclusive contestação de Pix/MED) não ${metas ? 'contam para a meta nem geram' : 'geram'} comissão.`)),
-        LI([t('Compras feitas pelo próprio Parceiro (contas do jogo de ID '), v(d.idsProprios, 'IDs DO JOGO DO PARCEIRO'), t(`) não ${metas ? 'contam para a meta nem geram' : 'geram'} comissão.`)]),
         LI(t('Se uma venda já paga ao Parceiro for estornada depois, o valor é descontado do próximo pagamento.')),
 
         H('5. Acompanhamento'),
@@ -167,7 +166,6 @@ function buildAcordo(d) {
 
         H('8. Uso indevido'),
         P(t('Não geram comissão, e podem levar ao encerramento imediato deste acordo:')),
-        LI(t('compras feitas pelo próprio Parceiro ou combinadas com ele só para gerar comissão (inclusive por contas ou Pix de outras pessoas);')),
         LI(t('compras com Pix de terceiros sem autorização, ou que acabem estornadas ou contestadas;')),
         LI(t('spam ou envio de mensagens em massa com o cupom;')),
         LI(t('anúncios pagos usando o nome "Recarga Flame" (por exemplo, no Google) e páginas ou perfis que se passem pela Loja.')),

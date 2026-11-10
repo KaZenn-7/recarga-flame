@@ -76,14 +76,13 @@ async function main() {
     d = {
       cupom: c.code, desconto: c.desconto_pct, plano: c.plano === 'fixo' ? 'fixo' : 'metas', comissaoFixa: c.comissao_pct, tiers,
       tiersProprias: !!proprias && JSON.stringify(proprias) !== JSON.stringify(globais),
-      idsProprios: (c.ids_proprios || '').trim() || null,
       parceiroNome: o.nome || null, canal: o.canal || null, chavePix: o.pix || null, responsavel: o.responsavel || null,
       semResponsavel: !!o['sem-responsavel'], minimo: Math.round(num('minimo', 20) * 100), avisoDias: num('aviso', 7),
       data: o.data || hoje(), geradoEm: hoje(), exemplos: exemplosDe(c.desconto_pct),
     };
     fs.mkdirSync(OUT_DIR, { recursive: true });
     out = o.out || path.join(OUT_DIR, `Acordo de parceria - ${c.code} - ${hoje().split('/').reverse().join('-')}.docx`);
-    const falta = [['nome', d.parceiroNome], ['canal', d.canal], ['pix', d.chavePix], ...(d.semResponsavel ? [] : [['responsavel', d.responsavel]]), ['IDs do parceiro (painel)', d.idsProprios]]
+    const falta = [['nome', d.parceiroNome], ['canal', d.canal], ['pix', d.chavePix], ...(d.semResponsavel ? [] : [['responsavel', d.responsavel]])]
       .filter(([, x]) => !x).map(([k]) => k);
     console.log(JSON.stringify({ cupom: c.code, ativo: !!c.ativo, plano: d.plano, desconto: c.desconto_pct,
       comissao: d.plano === 'fixo' ? c.comissao_pct : tiers.map((x) => x.pct), tiersProprias: d.tiersProprias,
