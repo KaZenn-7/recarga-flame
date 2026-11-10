@@ -1837,3 +1837,16 @@ test('extrato mensal por e-mail: só p/ parceiro com e-mail e movimento; nunca l
   db.exec("DELETE FROM orders WHERE coupon IN ('EXT1','EXT2')"); db.exec("DELETE FROM partner_months WHERE code IN ('EXT1','EXT2','EXT3')");
   db.exec("DELETE FROM coupons WHERE code IN ('EXT1','EXT2','EXT3')");
 });
+
+test('erro depois de enviar o pagamento: só "nada cobrado" se a fatura não tem recibo e a recusa não é duplicidade', async () => {
+  const { decideAfterSendError } = await import('../tg-user.js');
+  const rpc = (m) => ({ errorMessage: m, code: 400 });
+  // incidente #17: FORM_SUBMIT_DUPLICATE com o 1º envio cobrado → recibo existe → pago (não tenta de novo)
+  assert.equal(decideAfterSendError(rpc('FORM_SUBMIT_DUPLICATE'), true), 'paid');
+  assert.equal(decideAfterSendError(rpc('FORM_SUBMIT_DUPLICATE'), false), 'incerto'); // recibo pode atrasar
+  assert.equal(decideAfterSendError(rpc('FORM_SUBMIT_DUPLICATE'), null), 'incerto');
+  assert.equal(decideAfterSendError(rpc('BALANCE_TOO_LOW'), false), 'safe');
+  assert.equal(decideAfterSendError(rpc('BALANCE_TOO_LOW'), null), 'incerto');      // não deu para conferir
+  assert.equal(decideAfterSendError(new Error('timeout'), false), 'incerto');       // rede: nunca "seguro"
+  assert.equal(decideAfterSendError({ errorMessage: 'INTERNAL', code: 500 }, false), 'incerto');
+});

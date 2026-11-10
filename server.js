@@ -825,7 +825,7 @@ async function entregaAuto(id, attempt = 1) {
     const t = setTimeout(() => entregaAuto(id, attempt + 1), RETRY_MS); t.unref?.(); return;
   }
   await syncStarsReal(true);
-  if (r.ok) tgSend(`✅ Entregue automaticamente ${head}${r.botReply ? '\nBot do CF: ' + r.botReply : ''}\n${saldoLine()}`);
+  if (r.ok) tgSend(`✅ Entregue automaticamente ${head}${r.botReply ? '\nBot do CF: ' + r.botReply : ''}${r.recuperado ? `\n(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)` : ''}\n${saldoLine()}`);
   else if (r.incerto) tgSend(`🚨 Entrega automática INCERTA ${head} — veja o alerta acima.\n${saldoLine()}`);
   else { setMotivo(id, 'pagamento falhou: ' + r.why); tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`); }
 }

@@ -133,9 +133,17 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
     try {
       r = await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice })); // ← COBRA
     } catch (e) {
-      // recusa explícita do Telegram (RPCError 4xx: BALANCE_TOO_LOW, FORM_EXPIRED…) = nada cobrado.
-      // Qualquer outra coisa (rede, timeout) = incerto.
-      if (e?.errorMessage && e.code >= 400 && e.code < 500) throw safe(`Telegram recusou: ${e.errorMessage}`);
+      // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
+      // FORM_SUBMIT_DUPLICATE mesmo tendo cobrado o 1º — incidente do pedido #17, 10/11/2026). A única prova é o
+      // recibo da fatura: com recibo = pago; sem recibo + recusa explícita = nada cobrado; resto = incerto.
+      let paid = null;
+      for (let i = 0; i < 3 && paid == null; i++) {
+        await sleep(2000);
+        try { paid = (await receiptOf(c, inv.msgId)).paid; } catch { /* tenta de novo */ }
+      }
+      const d = decideAfterSendError(e, paid);
+      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
+      if (d === 'safe') throw safe(`Telegram recusou: ${e.errorMessage}`);
       throw e;
     }
     if (r.className !== 'payments.PaymentResult') throw new Error(`resposta inesperada ao pagar (${r.className})`);
@@ -155,13 +163,22 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
 // recibo a ELA: media.receiptMsgId na fatura e um MessageActionPaymentSent respondendo à fatura.
 // Não depende de valor/horário (vários pedidos iguais não se confundem). Só leitura.
 export function invoicePaid(msgId, env = process.env) {
-  return serial(async () => {
-    const c = await getClient(env);
-    const [inv] = await c.getMessages(CF_BOT, { ids: [msgId] });
-    if (!inv || inv.media?.className !== 'MessageMediaInvoice') throw new Error(`fatura ${msgId} não encontrada no chat com o bot`);
-    if (inv.media.receiptMsgId) return { paid: true, receiptMsgId: inv.media.receiptMsgId };
-    const recent = await c.getMessages(CF_BOT, { limit: 100, minId: msgId });
-    const rc = recent.find((m) => m.action?.className === 'MessageActionPaymentSent' && m.replyTo?.replyToMsgId === msgId);
-    return rc ? { paid: true, receiptMsgId: rc.id, date: rc.date } : { paid: false };
-  });
+  return serial(async () => receiptOf(await getClient(env), msgId));
+}
+// recibo da fatura msgId (usa um cliente já conectado; não passa pela fila — chamado de dentro do payInvoice)
+async function receiptOf(c, msgId) {
+  const [inv] = await c.getMessages(CF_BOT, { ids: [msgId] });
+  if (!inv || inv.media?.className !== 'MessageMediaInvoice') throw new Error(`fatura ${msgId} não encontrada no chat com o bot`);
+  if (inv.media.receiptMsgId) return { paid: true, receiptMsgId: inv.media.receiptMsgId };
+  const recent = await c.getMessages(CF_BOT, { limit: 100, minId: msgId });
+  const rc = recent.find((m) => m.action?.className === 'MessageActionPaymentSent' && m.replyTo?.replyToMsgId === msgId);
+  return rc ? { paid: true, receiptMsgId: rc.id, date: rc.date } : { paid: false };
+}
+// Erro ao enviar o pagamento: 'paid' (fatura tem recibo), 'safe' (sem recibo e recusa explícita 4xx que não é
+// de duplicidade = nada cobrado, pode tentar de novo) ou 'incerto' (resolver por "verificar cobrança").
+export function decideAfterSendError(e, paid) {
+  if (paid === true) return 'paid';
+  const msg = String(e?.errorMessage || '');
+  if (paid === false && msg && e.code >= 400 && e.code < 500 && !/DUPLICATE/i.test(msg)) return 'safe';
+  return 'incerto';
 }
