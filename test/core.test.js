@@ -1006,6 +1006,13 @@ test('resolver incerto pelo painel: verifica cobrança no histórico → entregu
     const a = await novo('151511');
     await adm('POST', '/api/admin/orders/' + a + '/autopay'); // TIMEOUT → incerto
     assert.equal(db.prepare('SELECT autopay FROM orders WHERE id=?').get(a).autopay, 'incerto');
+    // aviso do pedido editado com os detalhes + alerta curto respondendo a ele
+    const aMsg = db.prepare('SELECT tg_msg FROM orders WHERE id=?').get(a).tg_msg;
+    const ei = lastCall('editMessageText').body;
+    assert.equal(ei.message_id, aMsg); assert.match(ei.text, new RegExp('🚨 Pedido #' + a + ' · pagamento INCERTO')); assert.match(ei.text, /TIMEOUT/);
+    assert.match(ei.reply_markup.inline_keyboard[0][0].text, /incerto/);
+    assert.match(tgSent.at(-1).text, new RegExp('Pagamento INCERTO no pedido #' + a)); assert.equal(tgSent.at(-1).reply_parameters.message_id, aMsg);
+    assert.ok(!tgSent.some((m) => /verificar cobrança/.test(m.text) && m.text.includes('#' + a)));
     // logo após a tentativa: pede para esperar 1 min
     assert.equal((await adm('POST', '/api/admin/orders/' + a + '/verify')).status, 409);
     db.prepare('UPDATE orders SET autopay_at=? WHERE id=?').run(Date.now() - 120_000, a);
@@ -1013,6 +1020,9 @@ test('resolver incerto pelo painel: verifica cobrança no histórico → entregu
     let v = await (await adm('POST', '/api/admin/orders/' + a + '/verify')).json();
     assert.equal(v.cobrado, false);
     assert.equal((await adm('POST', '/api/admin/orders/' + a + '/resolve', { acao: 'liberar' })).status, 200);
+    const el = lastCall('editMessageText').body;
+    assert.equal(el.message_id, aMsg); assert.match(el.text, /💰 Pedido pago/); assert.match(el.text, /nada foi cobrado/);
+    assert.ok(el.reply_markup.inline_keyboard.flat().some((x) => x.callback_data === 'd:' + a));
     let o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === a);
     assert.equal(o.ap, 'erro'); assert.equal(o.canPay.ok, true);
     // outro pedido incerto, mas FOI cobrado → marcar entregue

@@ -786,13 +786,25 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
     const msg = String(e?.errorMessage || e?.message || e).slice(0, 160);
     if (e?.safe) { save('erro', { erro: msg }); return { ok: false, why: 'não pagou: ' + msg }; }
     save('incerto', { erro: msg });
-    tgSend(`🚨 Pagamento INCERTO do pedido #${id} (${starsOf(o)}★): ${msg}\nResolva pelo painel: no pedido, toque em "🔍 verificar cobrança" (a loja confere se a fatura exata deste pedido tem recibo). A loja não vai tentar de novo sozinha.`);
+    tgIncerto(id, msg);
     return { ok: false, why: 'pagamento incerto: ' + msg, incerto: true };
   }
 }
-// pagamento que estava em andamento quando a loja caiu: nunca repete, vira incerto
+// Pagamento incerto: edita o aviso do pedido com os detalhes + alerta curto respondendo a ele (a edição não
+// notifica). Sem aviso salvo: o fallback do tgAviso manda a mensagem completa (que já notifica).
+function tgIncerto(id, motivo) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (!o) return;
+  tgAviso(id, { icone: '🚨', titulo: `pagamento INCERTO (${starsOf(o)}★)`, botao: '🚨 Pagamento incerto — confira',
+    extras: [`Erro: ${motivo}`, 'Resolva pelo painel: no pedido, toque em "🔍 verificar cobrança" (a loja confere se a fatura exata deste pedido tem recibo). A loja não vai tentar de novo sozinha.'] });
+  if (o.tg_msg) tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true,
+    reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true },
+    text: `🚨 Pagamento INCERTO no pedido #${o.id} (${starsOf(o)}★ · ${o.nickname}) — confira no painel; detalhes no aviso original.` });
+}
+// pagamento que estava em andamento quando a loja caiu: nunca repete, vira incerto (e avisa, depois de subir)
 for (const o of db.prepare("SELECT id FROM orders WHERE autopay='paying'").all()) {
   db.prepare("UPDATE orders SET autopay='incerto', autopay_info=? WHERE id=?").run(JSON.stringify({ erro: 'loja reiniciou durante o pagamento' }), o.id);
+  const t = setTimeout(() => tgIncerto(o.id, 'loja reiniciou durante o pagamento'), 3000); t.unref?.();
 }
 
 function chkOf(o) { try { return o?.chk ? JSON.parse(o.chk) : null; } catch { return null; } }
@@ -873,7 +885,7 @@ async function entregaAuto(id, attempt = 1) {
     const t = setTimeout(() => entregaAuto(id, attempt + 1), RETRY_MS); t.unref?.(); return;
   }
   await syncStarsReal(true);
-  if (r.ok) { /* aviso já editado pelo markDelivered */ } else if (r.incerto) tgSend(`🚨 Entrega automática INCERTA ${head} — veja o alerta acima.\n${saldoLine()}`);
+  if (r.ok || r.incerto) { /* aviso já editado (markDelivered / tgIncerto) */ }
   else { setMotivo(id, 'pagamento falhou: ' + r.why); tgSend(`⚠️ Entrega automática falhou ${head}\nMotivo: ${r.why}\nEntregue manualmente.\n${saldoLine()}`); }
 }
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
@@ -1761,6 +1773,10 @@ app.post('/api/admin/orders/:id/resolve', admin, (req, res) => {
     syncStarsReal(true);
   } else if (req.body?.acao === 'liberar') {
     db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=?").run(JSON.stringify({ ...info, erro: 'verificado: sem cobrança — pode pagar de novo' }), id);
+    // volta o aviso ao normal (botões de pagar/entregar), com a nota da verificação
+    const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+    if (cur.tg_msg) tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: cur.tg_msg, disable_web_page_preview: true,
+      text: paidText(cur) + `\n🔍 Verificado às ${hhmmSP()}: nada foi cobrado — pode pagar de novo.`, reply_markup: paidKeyboard(cur) });
   } else return res.status(400).json({ error: 'Ação inválida.' });
   res.json({ ok: true });
 });
