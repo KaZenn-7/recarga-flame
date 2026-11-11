@@ -138,6 +138,7 @@ recargaflame.com.br · parcerias@recargaflame.com.br
 6. QR code para vídeos (quem vê na TV escaneia): `node docs/kit/gen-qr.mjs CUPOM 5 <pasta>`. Aponta para o link curto com `?src=yt`, então as visitas aparecem como YouTube no funil.
 7. Opcional: imagem comparativa com o cupom dele: `node docs/kit/gen-comparativo.mjs <pasta> CUPOM 5` (post 1080×1350 e story). Sem cupom, gera a versão genérica para mandar junto da proposta.
 8. Opcional: vídeo de 20 s (vertical e horizontal) com o cupom dele: `node docs/kit/gen-video.mjs <pasta> CUPOM 5` (~7 min). Sem cupom, gera o vídeo genérico da loja. Se o site mudar, refaça as telas com `node docs/kit/gen-telas.mjs`.
+9. Prévia do link curto com o cupom ("X% OFF com o cupom CODE" no WhatsApp/Telegram): `node docs/kit/gen-og.mjs --cupons` gera só as que faltam em `public/img/og-cupom/`. Rode também ao mudar o desconto (sem imagem do desconto atual, a loja usa a prévia geral). Commit das imagens novas.
 
 ## Cuidados
 - Não prometa valores garantidos: os exemplos são ilustrativos.
