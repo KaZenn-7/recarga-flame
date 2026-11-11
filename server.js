@@ -7,7 +7,8 @@ import rateLimit from 'express-rate-limit';
 import Database from 'better-sqlite3';
 import { migrate } from './src/db.js';
 import { invoicePaid } from './tg-user.js';
-import { LOGIN_HTML } from './views/login.js';
+import { initLogin } from './src/login.js';
+import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
 import { homeHtml, pageHtml } from './seo-home.js';
 import { initParceiros } from './src/parceiros.js';
@@ -212,139 +213,11 @@ function entregaState(o) {
   return canAutopay(o).ok ? 'auto' : 'manual';
 }
 
-// Anti-brute-force no admin: janela deslizante por IP, conta só FALHAS.
-// Login correto sempre passa (não é bloqueado nem conta), então o operador
-// nunca fica trancado fora mesmo que um atacante martele o mesmo IP.
-const ADMIN_MAX_FAILS = 20;
-const ADMIN_WINDOW = 15 * 60_000;
-const adminFails = new Map(); // ip -> [timestamps de falha]
-function tooManyFails(ip) {
-  const now = Date.now();
-  const arr = (adminFails.get(ip) || []).filter((t) => now - t < ADMIN_WINDOW);
-  adminFails.set(ip, arr);
-  return arr.length >= ADMIN_MAX_FAILS;
-}
-function noteFail(ip) {
-  const arr = adminFails.get(ip) || [];
-  arr.push(Date.now());
-  adminFails.set(ip, arr);
-}
-// limpeza periódica pra não vazar memória
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, arr] of adminFails) {
-    const keep = arr.filter((t) => now - t < ADMIN_WINDOW);
-    if (keep.length) adminFails.set(ip, keep); else adminFails.delete(ip);
-  }
-}, ADMIN_WINDOW).unref();
+// ---- Login do painel (senha + código pelo Telegram, sessão, anti-brute-force, middleware admin): src/login.js ----
+const { admin, getCookie, adminFails, challenges, rotasLogin } = initLogin({ env, db, safeEq, limit });
 
-
-// ---------- E-mail ao cliente (Resend, API HTTP — sem dependência nova) ----------
-// Desligado enquanto RESEND_API_KEY não estiver no .env. Falha de envio nunca quebra o fluxo.
-// Remetente: MAIL_FROM (padrão pedidos@recargaflame.com.br); respostas vão para MAIL_REPLY_TO (suporte@…).
-const MAIL_FROM = env.MAIL_FROM || 'pedidos@recargaflame.com.br';
-const MAIL_REPLY_TO = env.MAIL_REPLY_TO || 'suporte@recargaflame.com.br';
-async function sendMail(to, subject, html, text, replyTo = MAIL_REPLY_TO, fromAddr = MAIL_FROM) {
-  if (!env.RESEND_API_KEY) return false;
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST', signal: AbortSignal.timeout(10000),
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: `Recarga Flame <${fromAddr}>`, reply_to: replyTo,
-        to: [to], subject, html, text,
-      }),
-    });
-    if (!r.ok) console.error('Resend respondeu', r.status, (await r.text()).slice(0, 300));
-    return r.ok;
-  } catch (e) { console.error('Falha ao enviar e-mail:', e.message); return false; }
-}
-
-function deliveredEmail(o) {
-  const nome = o.prod_nome || PRODUCTS[o.product]?.nome || o.product;
-  const valor = (o.cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const site = env.PUBLIC_URL;
-  const link = `${site}/#pedido=${o.token}`;
-  const subject = `Pedido #${o.id} entregue — ${nome}`;
-  const text = [
-    `Olá, ${o.nickname}!`, '',
-    `Seu pedido #${o.id} (${nome}, ${valor}) foi entregue na conta ID ${o.game_id}.`,
-    'Abra o CounterFlame para conferir.', '',
-    `Acompanhar o pedido: ${link}`,
-    'Algum problema? É só responder este e-mail (suporte@recargaflame.com.br).', '',
-    'Recarga Flame — revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.',
-  ].join('\n');
-  const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#0e0e10;padding:24px 12px;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#f4f4f5">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#161618;border:1px solid #2a2a2e;border-radius:14px">
-<tr><td style="padding:22px 22px 6px"><img src="${site}/img/brand-mark.png" width="36" height="36" alt="" style="border-radius:8px;vertical-align:middle">
-<span style="font-size:17px;font-weight:700;vertical-align:middle;margin-left:8px">Recarga <span style="color:#ff5a1f">Flame</span></span></td></tr>
-<tr><td style="padding:14px 22px 4px"><h1 style="margin:0 0 8px;font-size:20px">Pedido entregue ✅</h1>
-<p style="margin:0;color:#9b9ba3;font-size:14px;line-height:1.55">Olá, <b style="color:#f4f4f5">${esc(o.nickname)}</b>! Seu pedido já está na sua conta. Abra o CounterFlame para conferir.</p></td></tr>
-<tr><td style="padding:16px 22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0e0e10;border:1px solid #2a2a2e;border-radius:10px;font-size:14px">
-<tr><td style="padding:12px 14px;color:#9b9ba3">Pedido</td><td align="right" style="padding:12px 14px;font-weight:700">#${o.id}</td></tr>
-<tr><td style="padding:12px 14px;color:#9b9ba3;border-top:1px solid #2a2a2e">Produto</td><td align="right" style="padding:12px 14px;font-weight:700;border-top:1px solid #2a2a2e">${esc(nome)}</td></tr>
-<tr><td style="padding:12px 14px;color:#9b9ba3;border-top:1px solid #2a2a2e">Conta</td><td align="right" style="padding:12px 14px;border-top:1px solid #2a2a2e">${esc(o.nickname)} · ID ${esc(o.game_id)}</td></tr>
-<tr><td style="padding:12px 14px;color:#9b9ba3;border-top:1px solid #2a2a2e">Valor</td><td align="right" style="padding:12px 14px;font-weight:700;border-top:1px solid #2a2a2e">${valor}</td></tr>
-</table></td></tr>
-<tr><td style="padding:0 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">Ver pedido</a></td></tr>
-<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">Algum problema? É só responder este e-mail ou escrever para
-<a href="mailto:suporte@recargaflame.com.br" style="color:#9b9ba3">suporte@recargaflame.com.br</a>.<br><br>
-Recarga Flame é uma revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.</td></tr>
-</table></td></tr></table></body></html>`;
-  return { subject, html, text };
-}
-
-// ---------- Login do painel: senha + código pelo Telegram + sessão ----------
-// Sessão deslizante: vale 30 dias sem uso e renova sozinha a cada uso (no máx. 1×/h),
-// com teto de 90 dias desde o login — depois disso, senha + código de novo.
-const SESSION_TTL = 30 * 86400_000;
-const SESSION_MAX = 90 * 86400_000;
-const SESSION_RENEW = 3600_000;
-const CODE_TTL = 5 * 60_000;       // código vale 5 min
-const CODE_MAX_TRIES = 5;          // por desafio
-const COOKIE = 'cf_sess';
-const hashHex = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
-const challenges = new Map(); // id -> { codeHash, exp, tries, ip }
-
-function getCookie(req, name) {
-  for (const part of (req.get('cookie') || '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
-  }
-  return null;
-}
-function sessionOk(req) {
-  const tok = getCookie(req, COOKIE);
-  if (!tok || !/^[A-Za-z0-9_-]{43}$/.test(tok)) return false;
-  const row = db.prepare('SELECT created_at, expires_at FROM admin_sessions WHERE id_hash=?').get(hashHex(tok));
-  if (!row || row.expires_at <= Date.now()) return false;
-  return { tok, ...row };
-}
-// Renova a sessão em uso (prazo e cookie), sem passar do teto desde o login.
-function renewSession(s, res) {
-  const now = Date.now();
-  const exp = Math.min(now + SESSION_TTL, s.created_at + SESSION_MAX);
-  if (exp - s.expires_at < SESSION_RENEW) return;
-  db.prepare('UPDATE admin_sessions SET expires_at=? WHERE id_hash=?').run(exp, hashHex(s.tok));
-  res.append('Set-Cookie', `${COOKIE}=${s.tok}; Max-Age=${Math.floor((exp - now) / 1000)}; ${cookieAttrs()}`);
-}
-const cookieAttrs = () => `Path=/; HttpOnly; SameSite=Strict${env.NODE_ENV === 'test' ? '' : '; Secure'}`;
-
-setInterval(() => {
-  const now = Date.now();
-  db.prepare('DELETE FROM admin_sessions WHERE expires_at < ?').run(now);
-  for (const [id, c] of challenges) if (c.exp < now) challenges.delete(id);
-}, 10 * 60_000).unref();
-
-function admin(req, res, next) {
-  const s = sessionOk(req);
-  if (s) { renewSession(s, res); return next(); }
-  // página do painel: manda pro login; API: 401
-  if (req.method === 'GET' && req.path === '/painel') return res.redirect(302, '/login');
-  res.status(401).json({ error: 'Sessão expirada. Entre novamente.' });
-}
-
+// ---- E-mail ao cliente (Resend; e-mail de pedido entregue): src/email.js ----
+const { sendMail, deliveredEmail } = initEmail({ env, PRODUCTS, esc });
 
 const app = express();
 app.set('trust proxy', 1);
@@ -533,62 +406,7 @@ ${lines.map((l) => `<div>${esc(l)}</div>`).join('')}
   res.json({ ok: true, id: tid });
 });
 
-// Passo 1: senha. Correta → manda código pelo Telegram e devolve um desafio.
-// Senha correta sempre passa (operador nunca fica trancado fora); erradas contam no anti-brute-force.
-app.post('/login/senha', limit(30), async (req, res) => {
-  const ip = req.ip;
-  const { user, pass } = req.body ?? {};
-  const ok = safeEq(String(user ?? ''), env.ADMIN_USER) & safeEq(String(pass ?? ''), env.ADMIN_PASS);
-  if (!ok) {
-    if (tooManyFails(ip)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos.' });
-    noteFail(ip);
-    return res.status(401).json({ error: 'Usuário ou senha incorretos.' });
-  }
-  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-  const id = crypto.randomBytes(24).toString('base64url');
-  challenges.set(id, { codeHash: hashHex(code), exp: Date.now() + CODE_TTL, tries: 0, ip });
-  const sent = await tgSend(`🔐 Código de acesso ao painel: ${code}\nVale 5 minutos. IP: ${ip}\nSe não foi você, troque a senha do admin.`);
-  if (!sent) { challenges.delete(id); return res.status(502).json({ error: 'Não foi possível enviar o código pelo Telegram.' }); }
-  res.json({ challenge: id });
-});
-
-// Passo 2: código. Certo → cria sessão (cookie HttpOnly/Secure/SameSite=Strict, 30 dias renováveis, teto 90).
-app.post('/login/codigo', limit(30), (req, res) => {
-  const ip = req.ip;
-  const { challenge, code } = req.body ?? {};
-  const c = typeof challenge === 'string' ? challenges.get(challenge) : null;
-  if (!c || c.exp < Date.now()) {
-    if (c) challenges.delete(challenge);
-    return res.status(401).json({ error: 'Código expirado. Entre com a senha de novo.', restart: true });
-  }
-  const given = String(code ?? '').trim();
-  if (/^\d{6}$/.test(given) && safeEq(hashHex(given), c.codeHash)) {
-    challenges.delete(challenge); // uso único
-    const tok = crypto.randomBytes(32).toString('base64url');
-    db.prepare('INSERT INTO admin_sessions (id_hash, created_at, expires_at, ip, ua) VALUES (?,?,?,?,?)')
-      .run(hashHex(tok), Date.now(), Date.now() + SESSION_TTL, ip, String(req.get('user-agent') || '').slice(0, 200));
-    res.set('Set-Cookie', `${COOKIE}=${tok}; Max-Age=${SESSION_TTL / 1000}; ${cookieAttrs()}`);
-    return res.json({ ok: true });
-  }
-  noteFail(ip);
-  if (++c.tries >= CODE_MAX_TRIES) {
-    challenges.delete(challenge);
-    return res.status(401).json({ error: 'Código incorreto várias vezes. Entre com a senha de novo.', restart: true });
-  }
-  res.status(401).json({ error: `Código incorreto. Restam ${CODE_MAX_TRIES - c.tries} tentativas.` });
-});
-
-app.post('/logout', (req, res) => {
-  const tok = getCookie(req, COOKIE);
-  if (tok) db.prepare('DELETE FROM admin_sessions WHERE id_hash=?').run(hashHex(tok));
-  res.set('Set-Cookie', `${COOKIE}=; Max-Age=0; ${cookieAttrs()}`);
-  res.json({ ok: true });
-});
-
-app.get('/login', (req, res) => {
-  if (sessionOk(req)) return res.redirect(302, '/painel');
-  res.send(LOGIN_HTML);
-});
+rotasLogin(app); // /login, /login/senha, /login/codigo, /logout: src/login.js
 
 function painelOrders() {
   const rows = db.prepare('SELECT * FROM orders ORDER BY id DESC').all();
