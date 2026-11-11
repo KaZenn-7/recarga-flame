@@ -73,6 +73,15 @@ test('prévia do link: tags Open Graph; link de cupom ativo mostra o desconto', 
   const c = await (await fetch(base + '/?cupom=aquila')).text();
   assert.match(c, /og:title" content="5% OFF com o cupom AQUILA — Recarga Flame"/);
   assert.match(c, /og:url" content="https:\/\/recargaflame\.com\.br\/\?cupom=AQUILA"/);
+  // imagem própria do cupom (public/img/og-cupom/aquila-5.jpg, gerada pelo gen-og.mjs) com o desconto certo
+  assert.match(c, /og:image" content="https:\/\/recargaflame\.com\.br\/img\/og-cupom\/aquila-5\.jpg"/);
+  assert.match(c, /og:image:alt" content="5% OFF com o cupom AQUILA — Recarga Flame"/);
+  assert.equal((await fetch(base + '/img/og-cupom/aquila-5.jpg')).status, 200);
+  // desconto mudou (sem imagem nova ainda) → imagem geral, nunca um desconto errado
+  assert.equal((await adm('PUT', '/api/admin/coupons/AQUILA', { desconto_pct: 7, comissao_pct: 20, ativo: true })).status, 200);
+  const c7 = await (await fetch(base + '/?cupom=aquila')).text();
+  assert.match(c7, /og:title" content="7% OFF com o cupom AQUILA/);
+  assert.match(c7, /og:image" content="https:\/\/recargaflame\.com\.br\/img\/og-v2\.jpg"/);
   const off = await (await fetch(base + '/?cupom=OFF1')).text(); // desativado → prévia padrão
   assert.match(off, /og:title" content="Recarga Flame — Coins e passes/);
   for (const p of ['/como-funciona', '/perguntas-frequentes', '/suporte', '/termos-de-uso', '/politica-de-privacidade'])

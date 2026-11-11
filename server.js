@@ -248,6 +248,11 @@ app.use(express.json({ limit: '10kb' }));
 // Prévia do link (WhatsApp/Telegram) personalizada no link de cupom: /?cupom=AQUILA (o /aquila redireciona para cá).
 const INDEX_HTML = fs.readFileSync(path.join('public', 'index.html'), 'utf8');
 // Home sempre renderizada aqui: vitrine de preços e dados estruturados vêm dos produtos ativos (seo-home.js).
+// imagem da prévia do cupom (gerada por node docs/kit/gen-og.mjs --cupons): só se existir para ESTE desconto
+const ogCupom = (c) => {
+  const f = `og-cupom/${c.code.toLowerCase()}-${String(c.desconto_pct).replace('.', '_')}.jpg`;
+  return /^og-cupom\/[a-z0-9_-]+\.jpg$/.test(f) && fs.existsSync(path.join('public', 'img', f)) ? `${SITE_URL}/img/${f}` : null;
+};
 const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo)
   .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg` }));
 app.get(['/', '/index.html'], (req, res) => {
@@ -256,10 +261,15 @@ app.get(['/', '/index.html'], (req, res) => {
   if (!c) return res.type('html').set('Cache-Control', 'no-cache').send(home);
   const t = c.desconto_pct > 0 ? `${String(c.desconto_pct).replace('.', ',')}% OFF com o cupom ${c.code} — Recarga Flame` : `Cupom ${c.code} — Recarga Flame`;
   const d = `Coins e passes do CounterFlame no Pix com o cupom ${c.code}. Entrega automática em até 10 minutos, só com o ID da conta.`;
-  const html = home
+  const img = ogCupom(c);
+  let html = home
     .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${esc(t)}">`)
     .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${esc(d)}">`)
     .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${SITE_URL}/?cupom=${encodeURIComponent(c.code)}">`);
+  if (img) {
+    html = html.replace(/<meta property="og:image" content="[^"]*">/, `<meta property="og:image" content="${esc(img)}">`)
+      .replace(/<meta property="og:image:alt" content="[^"]*">/, `<meta property="og:image:alt" content="${esc(t)}">`);
+  }
   res.type('html').set('Cache-Control', 'no-cache').send(html);
 });
 // páginas de conteúdo (SEO); a de Coins recebe a tabela de preços dos produtos ativos
