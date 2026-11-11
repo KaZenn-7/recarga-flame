@@ -16,9 +16,10 @@ test('página "Como funciona": responde em /como-funciona e a loja aponta para e
   assert.match(fh, /<h1>Perguntas frequentes<\/h1>/); assert.match(fh, /FAQPage/);
   // rodapé igual nas 3 páginas, marcando a página atual
   const loja = await (await fetch(base + '/')).text();
-  for (const [p, cur] of [[loja, '/'], [h, '/como-funciona'], [fh, '/perguntas-frequentes']]) {
+  for (const [p, cur] of [[loja, null], [h, '/como-funciona'], [fh, '/perguntas-frequentes']]) {
     assert.match(p, /<footer class="ft">/);
-    assert.ok(p.includes(`href="${cur}" aria-current="page"`));
+    assert.match(p, /<a href="\/suporte"( aria-current="page")?>Precisa de ajuda\?<\/a>/); // ajuda → página de suporte
+    if (cur) assert.ok(p.includes(`href="${cur}" aria-current="page"`));
   }
 });
 
@@ -31,7 +32,7 @@ test('termos de uso e política de privacidade: no ar, linkados no rodapé e no 
   assert.match(p, /<h1>Política de privacidade<\/h1>/); assert.match(p, /LGPD/);
   const loja = await (await fetch(base + '/')).text();
   assert.match(loja, /class="terms">Ao gerar o Pix você concorda/);
-  for (const pg of [loja, t, p]) assert.match(pg, /class="ft-docs"><a href="\/termos-de-uso">/);
+  for (const pg of [loja, t, p]) assert.match(pg, /class="ft-docs">© 2026 Recarga Flame · <a href="\/termos-de-uso">/);
 });
 
 test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Responder → cliente) + Telegram', async () => {
