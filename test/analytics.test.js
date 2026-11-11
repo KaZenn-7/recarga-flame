@@ -35,6 +35,14 @@ test('resumo diário: números do dia, autonomia de Stars e envio 1x por dia', a
   assert.match(txt, /💰 \d+ vendas? · R\$/);
   assert.match(txt, /📦 \d+ entregues? \(\d+ automáticas?, \d+ manual\)/);
   assert.match(txt, /⭐ \d+★ gastos no dia/);
+  // comissões do dia = soma da comissão das vendas com cupom do dia; reserva = total do quadro do painel
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const rep = await (await adm('GET', '/api/admin/coupons/report')).json();
+  const brl = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const comHoje = rep.cupons.reduce((a, c) => a + c.mesCom, 0); // todas as vendas com cupom deste arquivo são de hoje
+  assert.ok(comHoje > 0);
+  const linha = dailySummary(hoje).split('\n').find((l) => l.startsWith('🤝'));
+  assert.equal(linha, `🤝 Comissões do dia ${brl(comHoje)} (estimado) · reserva total ${brl(rep.reserva.total)}`);
   // dia sem nada
   const vazio = dailySummary('2000-01-01');
   assert.match(vazio, /💰 0 vendas · R\$\s?0,00/);

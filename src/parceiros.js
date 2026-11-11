@@ -210,11 +210,8 @@ function avisoFaixa(o) {
 // ganho total, já pago e saldo são sempre de todo o histórico.
 const localDay = (t) => new Date(new Date(t.replace(' ', 'T') + 'Z').getTime() - 3 * 3600_000).toISOString().slice(0, 10);
 const comOf = (o, pctOf) => Math.max(0, orderProfit(o)) * (pctOf(o) / 100);
-app.get('/api/admin/coupons/report', admin, (req, res) => {
+function relatorio(from = '0000-01-01', to = '9999-12-31') {
   const ctx = makePartnerCtx();
-  const re = /^\d{4}-\d{2}-\d{2}$/;
-  const from = re.test(req.query.from || '') ? req.query.from : '0000-01-01';
-  const to = re.test(req.query.to || '') ? req.query.to : '9999-12-31';
   const pctNow = Object.fromEntries(db.prepare('SELECT code, comissao_pct FROM coupons').all().map((c) => [c.code, c.comissao_pct]));
   const by = {};
   const get = (code) => (by[code] ||= { code, comissao_pct: pctNow[code] ?? 0, plano: ctx.cupons[code]?.plano || 'metas', pedidos: 0, faturado: 0, desconto: 0, lucro: 0, comissao: 0, total: 0, fechado: 0, mesCom: 0, pago: 0, pagamentos: [] });
@@ -256,8 +253,17 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
       lucroLoja: 0, visitas: 0, conversao: null, total: 0, fechado: 0, mesCom: 0, pago: 0, saldo: 0, minimo: PAYOUT_MIN, pagamentos: [], mesAtual: mesAtual(ctx, c.code),
       linkParceiro: c.ptoken ? `${SITE_URL}/parceiro/${c.ptoken}` : null });
   }
+  return list;
+}
+app.get('/api/admin/coupons/report', admin, (req, res) => {
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const from = re.test(req.query.from || '') ? req.query.from : '0000-01-01';
+  const to = re.test(req.query.to || '') ? req.query.to : '9999-12-31';
+  const list = relatorio(from, to);
   res.json({ from, to, reserva: reservaDe(list), cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
 });
+// mesmo total do quadro "Reservar para comissões" do painel (usado no resumo diário)
+const reservaAtual = () => reservaDe(relatorio());
 // Quanto deixar reservado para comissões: tudo que a loja deve a cada parceiro (meses fechados ainda não pagos,
 // inclusive abaixo do mínimo, que acumula) + a comissão estimada do mês atual (vira devida no fechamento).
 // Crédito de um parceiro (pagou a mais) só abate dele mesmo. Não depende do período escolhido.
@@ -526,5 +532,5 @@ app.delete('/api/admin/payouts/:id', admin, (req, res) => {
 });
 
 
-return { makePartnerCtx, freezeClosedMonths, freezeTick, avisoFaixa, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail };
+return { makePartnerCtx, freezeClosedMonths, freezeTick, avisoFaixa, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, reservaAtual };
 }

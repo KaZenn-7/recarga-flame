@@ -471,12 +471,14 @@ function dailySummary(day = spDay()) {
   const L = (col) => `date(${col}, '-3 hours')`;
   const vendas = db.prepare(`SELECT o.*, o.com_pct AS comissao_pct FROM orders o
     WHERE o.paid_at IS NOT NULL AND o.status IN ('paid','delivered') AND ${L('o.paid_at')} = ?`).all(day);
-  let fat = 0, lucro = 0;
+  let fat = 0, lucro = 0, com = 0;
   const pctOf = makePartnerCtx().pctOf;
   for (const o of vendas) {
-    const l = orderProfit(o);
-    fat += o.cents; lucro += l - (o.coupon ? Math.max(0, l) * (pctOf(o) / 100) : 0);
+    const l = orderProfit(o), c = o.coupon ? Math.max(0, l) * (pctOf(o) / 100) : 0;
+    fat += o.cents; lucro += l - c; com += c;
   }
+  // comissões: as do dia (estimadas: no plano de metas a faixa do mês ainda pode subir) e o total a reservar (= quadro do painel)
+  const reserva = reservaAtual();
   const entregues = db.prepare(`SELECT * FROM orders WHERE status='delivered' AND ${L('delivered_at')} = ?`).all(day);
   const auto = entregues.filter((o) => o.autopay === 'sent' && !JSON.parse(o.autopay_info || '{}').resolvido).length;
   const mins = entregues.filter((o) => o.paid_at)
@@ -503,6 +505,7 @@ function dailySummary(day = spDay()) {
     `💰 ${vendas.length} venda${vendas.length === 1 ? '' : 's'} · ${brlTxt(fat)} · lucro estimado ${brlTxt(Math.round(lucro))}`,
     `📦 ${entregues.length} entregue${entregues.length === 1 ? '' : 's'} (${auto} automática${auto === 1 ? '' : 's'}, ${entregues.length - auto} manual)`
       + (med != null ? ` · mediana ${fmtMin(med)} do pagamento à entrega` : ''),
+    com > 0 || reserva.total > 0 ? `🤝 Comissões do dia ${brlTxt(Math.round(com))} (estimado) · reserva total ${brlTxt(reserva.total)}` : null,
     fila ? `⏳ ${fila} pedido${fila === 1 ? '' : 's'} na fila agora${problemas ? ` (🚨 ${problemas} incerto${problemas === 1 ? '' : 's'})` : ''}` : '✅ Fila vazia',
     `⭐ ${gastoDia}★ gastos no dia · saldo ${e.n ? e.s + '★' : 'não configurado'}`
       + (autonomia != null ? ` · dura ~${autonomia < 1 ? 'menos de 1 dia' : Math.floor(autonomia) + (Math.floor(autonomia) === 1 ? ' dia' : ' dias')} no ritmo atual (${Math.round(porDia)}★/dia)` : '')
@@ -696,7 +699,7 @@ app.delete('/api/admin/products/:key', admin, (req, res) => {
 });
 
 // ---- Parceiros (cupons no painel, metas, fechamento, extrato, página do parceiro): src/parceiros.js ----
-const { makePartnerCtx, freezeClosedMonths, freezeTick, avisoFaixa, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail } = initParceiros({ env, db, app, admin, guard, limit, orderProfit, normCode, RESERVED_CODES, validCode, logCup, tiersTxtS, diffCup, SITE_URL, esc, brlTxt, REAL, getSetting, setSetting, tgSend, sendMail });
+const { makePartnerCtx, freezeClosedMonths, freezeTick, avisoFaixa, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, reservaAtual } = initParceiros({ env, db, app, admin, guard, limit, orderProfit, normCode, RESERVED_CODES, validCode, logCup, tiersTxtS, diffCup, SITE_URL, esc, brlTxt, REAL, getSetting, setSetting, tgSend, sendMail });
 // ---- Analytics (painel) ----
 // Datas no fuso local (America/Sao_Paulo = UTC-3). Vendas = pagos/entregues/estornados pela data do pagamento;
 // conversão = dos Pix gerados no período (com mp_id), quantos foram pagos.
