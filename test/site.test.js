@@ -67,7 +67,7 @@ test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Re
 
 test('prévia do link: tags Open Graph; link de cupom ativo mostra o desconto', async () => {
   const h = await (await fetch(base + '/')).text();
-  assert.match(h, /<meta property="og:image" content="https:\/\/recargaflame\.com\.br\/img\/og\.jpg">/);
+  assert.match(h, /<meta property="og:image" content="https:\/\/recargaflame\.com\.br\/img\/og-v2\.jpg">/);
   assert.match(h, /og:title" content="Recarga Flame — Coins e passes/);
   assert.equal((await adm('POST', '/api/admin/coupons', { code: 'AQUILA', desconto_pct: 5, comissao_pct: 20, ativo: true })).status, 200);
   const c = await (await fetch(base + '/?cupom=aquila')).text();
