@@ -135,6 +135,7 @@ input:focus{outline:0;border-color:#45454c}
 .supb{display:flex;gap:8px;margin-top:9px}
 .supb a{flex:1;padding:11px;border-radius:9px;font-weight:700;text-decoration:none;text-align:center;color:#fff}
 .supb .mail{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+.supb .wa{background:#25D366;color:#06210f}
 .supaddr{margin-top:7px;font-size:12px;color:var(--dim)}
 .onum{font-size:14px;color:var(--mut);font-weight:600;margin-left:6px}
 .timer{font-size:13px;color:var(--mut);text-align:center;margin:12px 0 0}
@@ -288,7 +289,7 @@ input:focus{outline:0;border-color:#45454c}
     </div>
     <div class="linkp"><span>Salve o link deste pedido para acompanhar de outro aparelho.</span><button id="copLink">Copiar link</button></div>
     <div class="sup">Dúvida ou problema com o pedido? Fale com a gente:
-      <div class="supb"><a class="mail" id="supMail" href="/suporte">Pedir ajuda com este pedido</a></div>
+      <div class="supb"><a class="mail" id="supMail" href="/suporte">📝 Formulário</a><a class="wa" id="supWa" href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">💬 WhatsApp</a></div>
     </div>
   </section>
 
@@ -296,7 +297,7 @@ input:focus{outline:0;border-color:#45454c}
     <div class="ft-brand"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b>Recarga <span class="fl">Flame</span></b><span>recarga de CounterFlame<br>por Pix</span></div>
     <nav class="ft-links" aria-label="Páginas"><a href="/" aria-current="page">Fazer pedido</a><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a></nav>
     <div class="ft-grid">
-      <div class="ft-card"><h4>Suporte</h4><a class="ft-btn" href="/suporte">Falar com o suporte</a><a class="ft-btn" style="margin-top:6px;background:none;border:1px solid var(--line);color:var(--txt)" href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">WhatsApp (11) 95485-4560</a></div>
+      <div class="ft-card"><h4>Suporte</h4><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><a class="ft-btn" href="/suporte">📝 Formulário</a><a class="ft-btn" style="background:#25D366;color:#06210f" href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">💬 WhatsApp</a></div></div>
       <div class="ft-card"><h4>Entrega</h4><ul class="ft-rows"><li><span>Automática, 24h</span><b>até 10 min</b></li></ul><a class="ft-more" href="/termos-de-uso#entrega">Prazos e exceções nos Termos de uso ›</a></div>
     </div>
     <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Recarga feita a partir do seu ID. Pagamentos via Pix processados pelo Mercado Pago.</p>
@@ -489,6 +490,7 @@ function showPayment(order){
   $('qr').src='data:image/png;base64,'+order.qrBase64;$('cod').value=order.qr;
   $('onum').textContent=order.id?'#'+order.id:'';
   $('supMail').href='/suporte#pedido='+encodeURIComponent(order.token);
+  $('supWa').href='https://wa.me/5511954854560?text='+encodeURIComponent('Olá! Preciso de ajuda com o meu pedido na Recarga Flame.'+(order.id?'\nPedido #'+order.id:'')+(typeof conta!=='undefined'&&conta&&conta.id?'\nID da conta: '+conta.id:''));
   setStatus('pending');show(4);
   startTimer(order.expiresAt);watch(order.token);
 }

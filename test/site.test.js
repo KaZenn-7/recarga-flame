@@ -38,7 +38,11 @@ test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Re
   const sup = (b) => fetch(base + '/api/suporte', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
   const pg = await fetch(base + '/suporte');
   assert.equal(pg.status, 200);
-  assert.match(await pg.text(), /wa\.me\/5511954854560/); // opção de WhatsApp
+  const pgTxt = await pg.text(); // duas opções: formulário e WhatsApp com mensagem pronta (com o pedido quando vem do link)
+  assert.match(pgTxt, /id="optForm"/);
+  assert.match(pgTxt, /id="optWa" href="https:\/\/wa\.me\/5511954854560\?text=/);
+  assert.ok(pgTxt.includes("\\nPedido #'+o.id"));
+  assert.match(await (await fetch(base + '/')).text(), /id="supWa" href="https:\/\/wa\.me\/5511954854560/);
   assert.equal((await sup({ email: 'x', assunto: 'outro', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'hack', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'outro', msg: 'curta' })).status, 400);
