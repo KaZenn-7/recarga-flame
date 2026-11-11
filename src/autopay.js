@@ -17,7 +17,6 @@ const _setInvoiceChecker = (fn) => { invoiceChecker = fn || checkInvoice; };
 // Só paga com toque + confirmação do operador. Travas: chave geral (desligada por padrão), conferência ✅,
 // pedido sem REVISAR, teto por pedido e por 24h, saldo suficiente. Estados em orders.autopay:
 // null → paying → sent | erro (falha ANTES de cobrar: pode tentar de novo) | incerto (falha depois: nunca repete).
-db.exec('CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)');
 // tetos do pagamento automático: editáveis no painel (settings); o .env é só o padrão inicial
 const AUTOPAY_MAX_DEF = Number(env.AUTOPAY_MAX_STARS ?? 1000);   // ★ por pedido
 const AUTOPAY_DAY_DEF = Number(env.AUTOPAY_DAY_STARS ?? 4000);   // ★ em 24h

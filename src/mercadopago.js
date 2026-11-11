@@ -27,10 +27,6 @@ const RISK = {
   get cap() { return this._cap ?? (env.LIMIT_DAY_BRL ? brlEnv(env.LIMIT_DAY_BRL) : 4 * maxPriceCents() || 70000); },
   set cap(v) { this._cap = v; },
 };
-db.exec(`CREATE TABLE IF NOT EXISTS blocked (
-  kind TEXT NOT NULL, value TEXT NOT NULL, reason TEXT DEFAULT '', order_id INTEGER,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (kind, value)
-)`);
 const lc = (e) => String(e ?? '').trim().toLowerCase();
 // Impressões do cliente: aparelho (cookie aleatório), IP e conta bancária de quem pagou.
 // IP e conta NUNCA são guardados em claro: só HMAC com chave local (.fp_key, fora do banco),
@@ -44,9 +40,6 @@ const FP_KEY = (() => {
   return k;
 })();
 const fp = (v) => (v ? crypto.createHmac('sha256', FP_KEY).update(String(v)).digest('hex').slice(0, 32) : null);
-for (const col of ['device TEXT', 'ip_h TEXT', 'payer_doc TEXT', 'payer_acct TEXT', 'tg_msg INTEGER', 'chk TEXT', 'autopay TEXT', 'autopay_info TEXT', 'autopay_at INTEGER', 'star_cost REAL', 'approved_at INTEGER', 'entrega_via TEXT', 'manual_motivo TEXT', 'refund_state TEXT', 'refund_info TEXT', 'refund_at INTEGER']) {
-  try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
-}
 // conta de origem do Pix vinda do MP (só depois de pago). NÃO usar payer.identification:
 // sem CPF no pedido, o MP devolve ali o CNPJ dele mesmo (igual em todo pagamento) — verificado 2026-11-07.
 function payerPrints(pay) {

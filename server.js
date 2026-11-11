@@ -5,6 +5,7 @@ import path from 'node:path';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import Database from 'better-sqlite3';
+import { migrate } from './src/db.js';
 import { userConfig, readStarsBalance, checkInvoice, payInvoice, invoicePaid } from './tg-user.js';
 import { LOGIN_HTML } from './views/login.js';
 import { painelHtml } from './views/painel.js';
@@ -42,37 +43,9 @@ const SEED_PRODUCTS = [
 ];
 
 const db = new Database(env.DB_PATH || 'loja.db');
-db.exec(`CREATE TABLE IF NOT EXISTS orders (
-  id INTEGER PRIMARY KEY,
-  token TEXT UNIQUE NOT NULL,
-  product TEXT NOT NULL,
-  cents INTEGER NOT NULL,
-  game_id TEXT NOT NULL,
-  nickname TEXT NOT NULL,
-  email TEXT NOT NULL,
-  mp_id TEXT,
-  status TEXT NOT NULL DEFAULT 'pending',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  paid_at TEXT,
-  delivered_at TEXT
-)`);
-// snapshot do produto no momento da compra (sobrevive a edição/exclusão do produto)
-for (const col of ['prod_nome TEXT', 'prod_stars INTEGER', 'prod_code TEXT', 'qr TEXT', 'qr_b64 TEXT', 'expires_at INTEGER']) {
-  try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
-}
+// esquema do banco: migrações numeradas em src/db.js (PRAGMA user_version)
+migrate(db, { starCost: Number(env.STAR_COST_BRL || 0.0875) });
 
-db.exec(`CREATE TABLE IF NOT EXISTS products (
-  key TEXT PRIMARY KEY,
-  nome TEXT NOT NULL,
-  cents INTEGER NOT NULL,
-  stars INTEGER NOT NULL DEFAULT 0,
-  code TEXT NOT NULL,
-  tipo TEXT DEFAULT '',
-  niveis INTEGER DEFAULT 0,
-  img TEXT DEFAULT '',
-  ativo INTEGER NOT NULL DEFAULT 1,
-  sort INTEGER NOT NULL DEFAULT 0
-)`);
 if (db.prepare('SELECT COUNT(*) n FROM products').get().n === 0) {
   const ins = db.prepare('INSERT INTO products (key,nome,cents,stars,code,tipo,niveis,ativo,sort) VALUES (?,?,?,?,?,?,?,?,?)');
   SEED_PRODUCTS.forEach((p, i) => ins.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], i));
@@ -93,28 +66,6 @@ function loadProducts() {
 loadProducts();
 
 // ---------- Cupons (desconto ao cliente + comissão sobre o lucro) ----------
-for (const col of ['coupon TEXT', 'list_cents INTEGER', 'discount_cents INTEGER DEFAULT 0', 'com_pct REAL']) {
-  try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
-}
-db.exec(`CREATE TABLE IF NOT EXISTS coupons (
-  code TEXT PRIMARY KEY,
-  desconto_pct REAL NOT NULL DEFAULT 0,
-  comissao_pct REAL NOT NULL DEFAULT 0,
-  ativo INTEGER NOT NULL DEFAULT 1,
-  nota TEXT DEFAULT '',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-)`);
-// % de comissão fica gravado no pedido: editar o cupom depois não muda o que já foi ganho.
-db.exec(`UPDATE orders SET com_pct = (SELECT comissao_pct FROM coupons WHERE code = orders.coupon)
-  WHERE coupon IS NOT NULL AND com_pct IS NULL`);
-// Pagamentos de comissão feitos ao dono do cupom (saldo = comissão ganha − pagos).
-db.exec(`CREATE TABLE IF NOT EXISTS coupon_payouts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL,
-  cents INTEGER NOT NULL,
-  nota TEXT DEFAULT '',
-  paid_at TEXT DEFAULT CURRENT_TIMESTAMP
-)`);
 // Custos para o piso de preço e o cálculo do lucro (configuráveis no .env).
 // Custo por Star: calculado das COMPRAS de Stars registradas (ver refreshStarCost); STAR_COST_BRL é só o valor
 // inicial, usado enquanto não houver compra registrada. Cada pedido congela o custo da hora da venda (orders.star_cost).
@@ -144,9 +95,7 @@ function priceWith(p, coupon) {
   return Math.min(p.cents, Math.max(disc, floorCents(p.stars)));
 }
 
-try { db.exec('ALTER TABLE coupon_payouts ADD COLUMN ref_mes TEXT'); } catch { /* já existe */ } // mês que o pagamento cobre (AAAA-MM)
 // Registro de alterações de cupons, faixas e pagamentos (code '*' = faixas padrão). Nunca guarda Pix nem e-mail.
-db.exec('CREATE TABLE IF NOT EXISTS coupon_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT CURRENT_TIMESTAMP, code TEXT NOT NULL, acao TEXT NOT NULL)');
 const logCup = (code, acao) => {
   if (!acao) return;
   try { db.prepare('INSERT INTO coupon_log (code, acao) VALUES (?,?)').run(code, String(acao).slice(0, 400)); } catch (e) { console.error('coupon_log', e.message); }
@@ -227,30 +176,7 @@ const starsOf = (o) => o.prod_stars || PRODUCTS[o.product]?.stars || 0;
 // exigiria sessão do Telegram no servidor — recusado no contexto.md). Então: entrega desconta sozinha,
 // "confere o saldo" (ou a leitura real da conta faz isso sozinha). Compras de Stars NÃO entram aqui: ficam em
 // stars_purchases, só para o custo — nunca alteram o saldo.
-db.exec(`CREATE TABLE IF NOT EXISTS stars_ledger (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,            -- ajuste | entrega  (legado: recarga, migrada p/ stars_purchases)
-  delta INTEGER NOT NULL,        -- + entra, − sai
-  cents INTEGER,                 -- legado
-  order_id INTEGER UNIQUE,       -- entrega: 1 desconto por pedido
-  nota TEXT DEFAULT '',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-)`);
 const STARS_LOW = Number(env.STARS_LOW ?? 500); // abaixo disso: aviso de saldo baixo
-// Compras de Stars (Fragment/USDT etc.): SÓ registro de custo. Nunca mexem no saldo (que vem do Telegram).
-db.exec(`CREATE TABLE IF NOT EXISTS stars_purchases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, stars INTEGER NOT NULL, cents INTEGER NOT NULL, nota TEXT DEFAULT '',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-)`);
-// migração: "recargas" antigas do livro-caixa viram compras e saem do saldo (o alinhamento com o Telegram corrige)
-db.transaction(() => {
-  for (const r of db.prepare("SELECT * FROM stars_ledger WHERE kind='recarga'").all()) {
-    if (r.cents > 0 && r.delta > 0) db.prepare('INSERT INTO stars_purchases (stars, cents, nota, created_at) VALUES (?,?,?,?)').run(r.delta, r.cents, r.nota || '', r.created_at);
-    db.prepare('DELETE FROM stars_ledger WHERE id=?').run(r.id);
-  }
-})();
-// pedidos antigos (antes do custo automático) ficam com o custo padrão da época
-db.prepare('UPDATE orders SET star_cost=? WHERE star_cost IS NULL').run(STAR_COST);
 // Custo atual = custo exato das Stars que estão na conta agora: média ponderada das compras mais recentes,
 // contando só a parte de cada uma que ainda compõe o saldo. Sem compra registrada: STAR_COST_BRL.
 function calcStarCost(saldo) {
@@ -431,9 +357,6 @@ function entregaState(o) {
 // ---------- Lembretes de Pix (e-mail transacional sobre o próprio pedido) ----------
 // 1) faltando ≤ 10 min para vencer: "seu Pix vence em X min" (1x)  2) venceu sem pagar: "gere um novo Pix" (1x).
 // Nunca se o cliente já fez um pedido mais novo (mesmo ID ou e-mail) — ele já voltou por conta própria.
-for (const col of ['remind_at INTEGER', 'expired_mail INTEGER']) {
-  try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch { /* já existe */ }
-}
 const hasNewer = (o) => !!db.prepare('SELECT 1 FROM orders WHERE id > ? AND (game_id=? OR lower(email)=?)').get(o.id, o.game_id, lc(o.email));
 function pixMail(o, kind, mins) {
   const nome = o.prod_nome || PRODUCTS[o.product]?.nome || o.product;
@@ -587,9 +510,6 @@ Recarga Flame é uma revenda independente, sem vínculo com a Valve nem com a eq
 }
 
 // ---------- Login do painel: senha + código pelo Telegram + sessão ----------
-db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
-  id_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, ip TEXT, ua TEXT
-)`);
 // Sessão deslizante: vale 30 dias sem uso e renova sozinha a cada uso (no máx. 1×/h),
 // com teto de 90 dias desde o login — depois disso, senha + código de novo.
 const SESSION_TTL = 30 * 86400_000;
@@ -848,11 +768,6 @@ app.get('/api/orders/:token', async (req, res) => {
 // Etapas: visit → lookup (ID buscado) → select (item escolhido) → pix → paid → delivered.
 // Contamos APARELHOS distintos (cookie aleatório cf_dev; sem cookie, IP embaralhado). Robôs/prévias de link não
 // rodam o JS da página, e agentes conhecidos de robô são ignorados.
-db.exec(`CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT CURRENT_TIMESTAMP,
-  dev TEXT NOT NULL, ev TEXT NOT NULL, coupon TEXT, src TEXT, order_id INTEGER
-)`);
-db.exec('CREATE INDEX IF NOT EXISTS events_ts ON events(ts)');
 const EV_CLIENT = new Set(['visit', 'lookup', 'select']);
 const SRCS = new Set(['whatsapp', 'youtube', 'instagram', 'tiktok', 'telegram', 'google', 'facebook', 'discord', 'twitter', 'outro', 'direto']);
 const BOT_UA = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|discord|headless|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|monitor|lighthouse/i;
@@ -877,10 +792,6 @@ app.post('/api/ev', limit(60), (req, res) => {
 });
 
 // ---------- Suporte: formulário → e-mail para suporte@ (Responder vai ao cliente) + aviso no Telegram ----------
-db.exec(`CREATE TABLE IF NOT EXISTS support_tickets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  email TEXT, assunto TEXT, msg TEXT, order_id INTEGER, game_id TEXT, ip_h TEXT, mail_ok INTEGER, tg_ok INTEGER
-)`);
 const SUPPORT_TO = env.SUPPORT_TO || 'suporte@recargaflame.com.br';
 const ASSUNTOS = {
   naochegou: 'Meu pedido não chegou', pagamento: 'Problema com o pagamento', iderrado: 'Informei o ID errado',

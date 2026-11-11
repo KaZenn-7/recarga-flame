@@ -84,18 +84,6 @@ app.delete('/api/admin/coupons/:code', admin, (req, res) => {
 // seguinte uma faixa abaixo (só no mês seguinte). Meses fechados ficam congelados (partner_months), então editar
 // as faixas não muda comissão passada. Cupom com plano 'fixo' usa o % do pedido (com_pct), como antes.
 // parceiro_*: dados do parceiro para o acordo e o pagamento (só no painel; o Pix nunca vai para a página do parceiro)
-for (const col of ["plano TEXT DEFAULT 'metas'", 'ids_proprios TEXT', 'ptoken TEXT', 'tiers TEXT', // tiers: faixas próprias (JSON) ou NULL = padrão
-  'parceiro_nome TEXT', 'parceiro_canal TEXT', 'parceiro_pix TEXT', 'parceiro_email TEXT']) {
-  try { db.exec(`ALTER TABLE coupons ADD COLUMN ${col}`); } catch { /* já existe */ }
-}
-db.exec("UPDATE coupons SET plano='metas' WHERE plano IS NULL");
-for (const c of db.prepare('SELECT code FROM coupons WHERE ptoken IS NULL').all()) {
-  db.prepare('UPDATE coupons SET ptoken=? WHERE code=?').run(crypto.randomBytes(18).toString('base64url'), c.code);
-}
-db.exec(`CREATE TABLE IF NOT EXISTS partner_months (
-  code TEXT NOT NULL, mes TEXT NOT NULL, ating INTEGER NOT NULL, idx INTEGER NOT NULL, pct REAL NOT NULL,
-  PRIMARY KEY (code, mes)
-)`);
 const TIERS_DEF = [{ min: 0, pct: 30 }, { min: 150000, pct: 35 }, { min: 400000, pct: 40 }, { min: 1000000, pct: 45 }];
 function getTiers() {
   try { const t = JSON.parse(getSetting('tiers', '')); if (validTiers(t)) return t; } catch { /* padrão */ }
