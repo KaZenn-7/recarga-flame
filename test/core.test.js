@@ -259,6 +259,12 @@ test('excluir produto não quebra pedido já feito (snapshot)', async () => {
   const html = await painel.text();
   assert.ok(html.includes('Produto Snapshot'), 'nome do snapshot deve aparecer no painel');
   assert.ok(html.includes('<script src="/painel/app.js"></script>'));
+  // painel sem script embutido: CSP só 'self' e nenhum on*="…" / <script> executável no HTML
+  const scriptSrc = painel.headers.get('content-security-policy').split(';').find((d) => d.trim().startsWith('script-src'));
+  assert.equal(scriptSrc.trim(), "script-src 'self'");
+  assert.doesNotMatch(html, /\son[a-z]+=["']/i);
+  assert.deepEqual([...html.matchAll(/<script(?![^>]*(src=|type="application\/json"))[^>]*>/g)].map((m) => m[0]), []);
+  assert.ok(html.includes('<script type="application/json" id="ordersData">'));
   const js = await fetch(base + '/painel/app.js', { headers: { Cookie: COOKIE } });
   assert.equal(js.status, 200);
   assert.match(js.headers.get('content-type'), /javascript/);

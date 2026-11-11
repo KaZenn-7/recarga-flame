@@ -185,12 +185,12 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .merr{color:var(--red);font-size:13px;margin-top:10px;min-height:16px;text-align:center}
 </style></head><body>
 <header>
-  <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" onclick="openStars()" title="Saldo de Stars">★ …</button><button class="rf" id="rfBtn" style="margin-left:6px" onclick="refreshView()">Atualizar</button><button class="rf" style="margin-left:6px" onclick="fetch('/logout',{method:'POST'}).then(()=>location.href='/login')">Sair</button></div>
+  <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" data-act="openStars" title="Saldo de Stars">★ …</button><button class="rf" id="rfBtn" style="margin-left:6px" data-act="refreshView">Atualizar</button><button class="rf" style="margin-left:6px" data-act="logout">Sair</button></div>
   <div class="nav">
-    <button id="navPed" class="on" onclick="setView('pedidos')">Pedidos</button>
-    <button id="navProd" onclick="setView('produtos')">Produtos</button>
-    <button id="navCup" onclick="setView('cupons')">Cupons</button>
-    <button id="navAna" onclick="setView('analytics')">Analytics</button>
+    <button id="navPed" class="on" data-act="setView" data-v="pedidos">Pedidos</button>
+    <button id="navProd" data-act="setView" data-v="produtos">Produtos</button>
+    <button id="navCup" data-act="setView" data-v="cupons">Cupons</button>
+    <button id="navAna" data-act="setView" data-v="analytics">Analytics</button>
   </div>
   <div id="hdrPed">
     <div class="tabs" id="tabs"></div>
@@ -205,10 +205,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
   <div class="sheet">
     <h3>Saldo de Stars</h3>
     <div id="sBody"><div class="empty">Carregando…</div></div>
-    <div class="mbtns"><button class="cancel" onclick="closeStars()">Fechar</button></div>
+    <div class="mbtns"><button class="cancel" data-act="closeStars">Fechar</button></div>
   </div>
 </div>
-<div id="backbar" role="dialog" aria-live="polite"><p id="bbtxt"></p><div class="bb"><button class="n" onclick="closeBack()">Ainda não</button><button class="y" onclick="yesBack()">✅ Sim, marcar entregue</button></div></div>
+<div id="backbar" role="dialog" aria-live="polite"><p id="bbtxt"></p><div class="bb"><button class="n" data-act="closeBack">Ainda não</button><button class="y" data-act="yesBack">✅ Sim, marcar entregue</button></div></div>
 <main id="viewAna" style="display:none">
   <div class="padd">
     <div class="chips" id="anaPer" role="group" aria-label="Período">
@@ -221,10 +221,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 <main id="viewCup" style="display:none">
   <div class="padd">
     <div id="secMeta"><div class="tiers" id="tiersBox"></div></div>
-    <div id="secCom"><div class="rephead"><b>Comissões</b><select id="repPer" onchange="loadRep()"><option value="m0">Este mês</option><option value="m1">Mês passado</option><option value="all">Tudo</option></select></div>
+    <div id="secCom"><div class="rephead"><b>Comissões</b><select id="repPer" data-change="loadRep"><option value="m0">Este mês</option><option value="m1">Mês passado</option><option value="all">Tudo</option></select></div>
     <div id="repBox"><div class="empty">Carregando…</div></div>
     <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro: no plano de metas, a faixa do mês (pelo faturamento do parceiro) vale para todas as vendas do mês; no plano fixo, o % do dia da venda. O período muda só a primeira linha. <b>A pagar</b> = comissão dos meses já fechados − pagamentos registrados (pago no 1º dia útil; abaixo do mínimo, acumula). O mês atual aparece como estimado.</p></div>
-    <div id="secCup"><button class="newbtn" onclick="openCup()">+ Novo cupom</button>
+    <div id="secCup"><button class="newbtn" data-act="openCup">+ Novo cupom</button>
     <div id="cupList" style="margin-top:12px"></div></div>
   </div>
 </main>
@@ -234,12 +234,12 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
     <div class="fg"><label>Código</label><input id="c_code" placeholder="ex.: AQUILA" autocomplete="off" style="text-transform:uppercase"><div class="hint">A-Z, 0-9, _ ou -. Link: <span class="mono" id="c_link"></span></div></div>
     <div class="frow">
       <div class="fg"><label>Desconto ao cliente (%)</label><input id="c_desc" inputmode="decimal" placeholder="5"></div>
-      <div class="fg"><label>Plano de comissão</label><select id="c_plano" onchange="cupPlano()"><option value="metas">Metas (faixas)</option><option value="fixo">Fixo (%)</option></select></div>
+      <div class="fg"><label>Plano de comissão</label><select id="c_plano" data-change="cupPlano"><option value="metas">Metas (faixas)</option><option value="fixo">Fixo (%)</option></select></div>
     </div>
     <div class="fg" id="c_com_fg"><label>Comissão fixa (% do lucro)</label><input id="c_com" inputmode="decimal" placeholder="20"></div>
     <div class="fg" id="c_metas_fg"><label>Faixas deste parceiro</label>
-      <select id="c_tmode" onchange="cupTmode()"><option value="padrao">Usar as faixas padrão</option><option value="proprias">Faixas próprias deste parceiro</option></select>
-      <div id="c_tpad" class="metabox" style="margin-top:8px"><span id="c_metas_txt"></span><button type="button" onclick="irParaFaixas()">Editar padrão</button></div>
+      <select id="c_tmode" data-change="cupTmode"><option value="padrao">Usar as faixas padrão</option><option value="proprias">Faixas próprias deste parceiro</option></select>
+      <div id="c_tpad" class="metabox" style="margin-top:8px"><span id="c_metas_txt"></span><button type="button" data-act="irParaFaixas">Editar padrão</button></div>
       <div id="c_tprop" class="tiers" style="margin-top:8px"></div>
       <div class="hint">Faixas próprias valem só para este parceiro; as padrão valem para todos que as usam. Meses fechados não mudam.</div></div>
     <div class="fg"><label>IDs do próprio parceiro (não contam)</label><input id="c_ids" inputmode="numeric" placeholder="ex.: 749125, 1310329" autocomplete="off"><div class="hint">Compras feitas nesses IDs não contam para a meta nem geram comissão.</div></div>
@@ -249,13 +249,13 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="frow" style="margin-top:8px"><input id="c_ppix" placeholder="Chave Pix" autocomplete="off"><input id="c_pemail" type="email" placeholder="E-mail" autocomplete="off"></div>
       <div class="hint">Ficam só no painel. A chave Pix nunca aparece na página do parceiro.</div></div>
     <details class="clog" id="c_logbox"><summary>Histórico de alterações</summary><div id="c_log" class="hint">Carregando…</div></details>
-    <label class="fchk"><button type="button" class="sw" id="c_ativo" onclick="this.classList.toggle('on');cupAtivoTxt()"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
+    <label class="fchk"><button type="button" class="sw" id="c_ativo" data-act="swCup"></button><span id="c_ativo_txt">Ativo — já pode ser usado</span></label>
     <p class="merr" id="cerr"></p>
-    <div class="mbtns"><button class="cancel" onclick="closeCup()">Cancelar</button><button class="save" id="csave" onclick="saveCup()">Salvar</button></div>
+    <div class="mbtns"><button class="cancel" data-act="closeCup">Cancelar</button><button class="save" id="csave" data-act="saveCup">Salvar</button></div>
   </div>
 </div>
 <main id="viewProd" style="display:none">
-  <div class="padd"><button class="newbtn" onclick="openForm()">+ Novo produto</button></div>
+  <div class="padd"><button class="newbtn" data-act="openForm">+ Novo produto</button></div>
   <div id="prodList" class="padd" style="padding-top:0"></div>
 </main>
 
@@ -280,11 +280,11 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       <div class="fg"><label>Níveis de passe</label><input id="f_niveis" inputmode="numeric" placeholder="0" autocomplete="off"><div class="hint">0 se não for nível.</div></div>
     </div>
     <div class="fg"><label>Imagem (URL/caminho)</label><input id="f_img" placeholder="/img/c1000.jpg" autocomplete="off"></div>
-    <label class="fchk"><button type="button" class="sw" id="f_ativo" onclick="this.classList.toggle('on')"></button><span>Ativo (aparece na loja)</span></label>
+    <label class="fchk"><button type="button" class="sw" id="f_ativo" data-act="sw"></button><span>Ativo (aparece na loja)</span></label>
     <p class="merr" id="merr"></p>
-    <div class="mbtns"><button class="cancel" onclick="closeForm()">Cancelar</button><button class="save" id="msave" onclick="saveForm()">Salvar</button></div>
+    <div class="mbtns"><button class="cancel" data-act="closeForm">Cancelar</button><button class="save" id="msave" data-act="saveForm">Salvar</button></div>
   </div>
 </div>
-<script>const ORDERS=${data};</script>
+<script type="application/json" id="ordersData">${data}</script>
 <script src="/painel/app.js"></script>
 </body></html>`;

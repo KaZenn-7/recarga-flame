@@ -21,7 +21,7 @@ export default [
   {
     // JS do painel: roda no navegador, script comum (funções chamadas por onclick no HTML)
     files: ['views/painel.client.js'],
-    languageOptions: { sourceType: 'script', globals: { ...globals.browser, ORDERS: 'readonly' } },
+    languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
     rules: { 'no-unused-vars': 'off' },
   },
 ];

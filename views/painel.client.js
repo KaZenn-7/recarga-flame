@@ -1,5 +1,32 @@
 // JS do painel do operador (servido só com sessão, em /painel/app.js). Arquivo JS comum: pode usar crase e ${}.
-// ORDERS (pedidos iniciais) vem num <script> inline do views/painel.js.
+// O painel roda com CSP sem script embutido: nada de onclick="…" no HTML. Botões usam data-act="nome" (e data-id,
+// data-key… para os dados); selects usam data-change="nome". As ações ficam em ACTS/CHANGES abaixo.
+// Pedidos iniciais: JSON em <script type="application/json" id="ordersData"> (não executa).
+const ORDERS=JSON.parse(document.getElementById('ordersData').textContent);
+const ACTS={
+  openStars:()=>openStars(), refreshView:()=>refreshView(),
+  logout:()=>fetch('/logout',{method:'POST'}).then(()=>location.href='/login'),
+  setView:t=>setView(t.dataset.v), closeStars:()=>closeStars(), closeBack:()=>closeBack(), yesBack:()=>yesBack(),
+  openCup:()=>openCup(), irParaFaixas:()=>irParaFaixas(), closeCup:()=>closeCup(), saveCup:()=>saveCup(),
+  swCup:t=>{t.classList.toggle('on');cupAtivoTxt();}, sw:t=>t.classList.toggle('on'),
+  openForm:t=>t.dataset.key===undefined?openForm():openForm(t.dataset.key), closeForm:()=>closeForm(), saveForm:()=>saveForm(),
+  toggle:t=>toggle(t.dataset.key), delProd:t=>delProd(t.dataset.key,t.dataset.nome),
+  backFrom:t=>{backFrom=Number(t.dataset.id);}, deliver:t=>deliver(Number(t.dataset.id)),
+  payNow:t=>payNow(Number(t.dataset.id),t), approveNow:t=>approveNow(Number(t.dataset.id),t), verifyPay:t=>verifyPay(Number(t.dataset.id),t),
+  unblock:t=>unblock(Number(t.dataset.id)), refundNow:t=>refundNow(Number(t.dataset.id),t), recheck:t=>recheck(Number(t.dataset.id),t),
+};
+const CHANGES={loadRep:()=>loadRep(), cupPlano:()=>cupPlano(), cupTmode:()=>cupTmode()};
+document.addEventListener('click',function(e){
+  const t=e.target.closest&&e.target.closest('[data-act]');
+  if(t&&ACTS[t.dataset.act])ACTS[t.dataset.act](t,e);
+});
+document.addEventListener('change',function(e){
+  const t=e.target;if(t.dataset&&CHANGES[t.dataset.change])CHANGES[t.dataset.change](t,e);
+});
+// imagem que não carregou (avatar/produto): some, como antes (o evento error não sobe: captura)
+document.addEventListener('error',function(e){
+  const t=e.target;if(t&&t.tagName==='IMG'&&t.hasAttribute('data-hide-err'))t.style.visibility='hidden';
+},true);
 let STARS=null;const NOST=new Set();
 const CATS={'':'Coins',wildfire:'Coleções',arsenal:'Passes',gold:'Passes'};
 const LABEL={pending:'Pendentes',paid:'Na fila',delivered:'Entregues',cancelled:'Cancelados',reversed:'Estornados'};
@@ -23,35 +50,35 @@ function card(o){
   if(o.delivered)tl.push('Entregue '+o.delivered);
   let acts='';
   if(o.status==='paid'){
-    acts=`<div class="acts">${o.tg?`<a class="a-tg" href="${esc(o.tg)}" target="_blank" rel="noopener" onclick="backFrom=${o.id}">Abrir no Telegram · ${o.stars}★</a>`:''}
-      <button class="a-ok" onclick="deliver(${o.id})">Marcar entregue</button></div>`;
+    acts=`<div class="acts">${o.tg?`<a class="a-tg" href="${esc(o.tg)}" target="_blank" rel="noopener" data-act="backFrom" data-id="${o.id}">Abrir no Telegram · ${o.stars}★</a>`:''}
+      <button class="a-ok" data-act="deliver" data-id="${o.id}">Marcar entregue</button></div>`;
   }
-  if(o.status==='paid'&&o.canPay&&o.canPay.ok)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" onclick="payNow('+o.id+',this)">⭐ Pagar '+o.stars+'★</button>');
-  else if(o.status==='paid'&&o.canApprove)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" onclick="approveNow('+o.id+',this)">✅ Aprovar e pagar</button>');
+  if(o.status==='paid'&&o.canPay&&o.canPay.ok)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" data-act="payNow" data-id="'+o.id+'">⭐ Pagar '+o.stars+'★</button>');
+  else if(o.status==='paid'&&o.canApprove)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" data-act="approveNow" data-id="'+o.id+'">✅ Aprovar e pagar</button>');
   const apb=o.status!=='paid'?(o.ap==='incerto'?'<div class="chk">Pagamento automático ficou incerto — resolvido manualmente.</div>':''):
-    o.ap==='incerto'?'<div class="chk diverge">🚨 Pagamento incerto: '+esc((o.apInfo&&o.apInfo.erro)||'')+'. <button class="rechk" onclick="verifyPay('+o.id+',this)">🔍 verificar cobrança</button></div>':
+    o.ap==='incerto'?'<div class="chk diverge">🚨 Pagamento incerto: '+esc((o.apInfo&&o.apInfo.erro)||'')+'. <button class="rechk" data-act="verifyPay" data-id="'+o.id+'">🔍 verificar cobrança</button></div>':
     o.ap==='paying'?'<div class="chk wait">⏳ Pagando no bot…</div>':
     o.ap==='erro'?'<div class="chk erro">Pagamento não feito: '+esc((o.apInfo&&o.apInfo.erro)||'')+' — pague de novo ou entregue na mão e toque em Marcar entregue.</div>':
     o.ap==='sent'?'<div class="chk ok">⭐ Pago no bot ('+((o.apInfo&&o.apInfo.stars)||'')+'★)'+(o.apInfo&&o.apInfo.botReply?' · '+esc(o.apInfo.botReply):'')+'</div>':'';
-  if(o.blocked)acts='<div class="acts"><span class="blk">🚫 Cliente bloqueado</span><button class="a-unb" onclick="unblock('+o.id+')">Desbloquear</button></div>';
+  if(o.blocked)acts='<div class="acts"><span class="blk">🚫 Cliente bloqueado</span><button class="a-unb" data-act="unblock" data-id="'+o.id+'">Desbloquear</button></div>';
   // reembolso: pago e não entregue
   const rf=o.refund==='done'?'<div class="chk ok">💸 Reembolsado ('+brl(o.cents)+') pelo Mercado Pago</div>':
     o.refund==='erro'?'<div class="chk erro">Reembolso não concluído — pode tentar de novo (não devolve em dobro).</div>':
     o.status==='cancelled'&&o.refundable?'<div class="chk diverge">💸 Pago e não entregue: o cliente deve ser reembolsado.</div>':'';
-  if(o.refundable&&o.status==='paid')acts+='<div class="refrow"><button class="lnk" onclick="refundNow('+o.id+',this)">cancelar e reembolsar</button></div>';
-  else if(o.refundable)acts=(acts||'<div class="acts"></div>').replace('</div>','<button class="a-ref" onclick="refundNow('+o.id+',this)">💸 Reembolsar '+brl(o.cents)+'</button></div>');
+  if(o.refundable&&o.status==='paid')acts+='<div class="refrow"><button class="lnk" data-act="refundNow" data-id="'+o.id+'">cancelar e reembolsar</button></div>';
+  else if(o.refundable)acts=(acts||'<div class="acts"></div>').replace('</div>','<button class="a-ref" data-act="refundNow" data-id="'+o.id+'">💸 Reembolsar '+brl(o.cents)+'</button></div>');
   const ck=o.chk;
   const chk=o.status!=='paid'||!o.chkOn?'':'<div class="chk '+(ck?ck.status:'wait')+'">'+(
     !ck?'🔎 Conferindo no bot do CF…':
     ck.status==='ok'?'🔎 Conferido no bot: <b>'+ck.stars+'★</b> · '+esc(ck.account)+' · '+esc(ck.produto||'')+' ✅':
     ck.status==='diverge'?'❌ Conferência não bateu: '+esc(ck.motivo):
     '⚠ Conferência falhou: '+esc(ck.motivo))+
-    ' <button class="rechk" onclick="recheck('+o.id+',this)">conferir de novo</button></div>';
+    ' <button class="rechk" data-act="recheck" data-id="'+o.id+'">conferir de novo</button></div>';
   const risk=(o.risk&&o.risk.length)?'<div class="risk"><b>⚠ Revisar antes de entregar</b>'+o.risk.map(function(r){return '<span>· '+esc(r)+'</span>';}).join('')+'</div>':'';
   return `<div class="card${NEWS.has(o.id)?' new':''}">
     <div class="chead"><span class="bdg ${o.status}">${BADGE[o.status]}</span>${NEWS.has(o.id)?'<span class="newtag">NOVO</span>':''}${waitTag(o)}${NOST.has(o.id)?'<span class="nost">SEM STARS</span>':''}<span class="oid">#${o.id}</span></div>
     <div class="body">
-      <img class="av" src="/api/player/${esc(o.gameId)}/avatar" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <img class="av" src="/api/player/${esc(o.gameId)}/avatar" alt="" loading="lazy" data-hide-err>
       <div class="info">
         <div class="pn">${esc(o.nome)}${o.cup?'<span class="cuptag">'+esc(o.cup)+'</span>':''}</div>
         <div class="nk">${esc(o.nick)}</div>
@@ -363,7 +390,7 @@ function catName(p){
 function renderProds(){
   document.getElementById('prodList').innerHTML=PRODS.map(p=>`
     <div class="prow ${p.ativo?'':'pinact'}">
-      <img src="${esc(p.img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <img src="${esc(p.img)}" alt="" loading="lazy" data-hide-err>
       <div class="pi">
         <div class="nm">${esc(p.nome)}</div>
         <div class="sub">${esc(catName(p))} · chave <b>${esc(p.key)}</b> · cód <b>${esc(p.code)}</b> · ${p.stars}★</div>
@@ -371,8 +398,8 @@ function renderProds(){
       <div class="rt">
         <div class="pr">${brlFromCents(p.cents)}</div>
         <div class="mg ${p.margem<0?'neg':p.margem<0.15?'low':''}" title="lucro por venda e margem, com o custo atual da Star">lucro ${brlFromCents(p.lucro)} · ${Math.round(p.margem*100)}%${p.margem<0?' · PREJUÍZO':''}</div>
-        <button class="sw ${p.ativo?'on':''}" title="Ativo na loja" onclick="toggle('${esc(p.key)}')"></button>
-        <div class="ops"><button onclick="openForm('${esc(p.key)}')">Editar</button><button class="del" onclick="delProd('${esc(p.key)}','${esc(p.nome)}')">Excluir</button></div>
+        <button class="sw ${p.ativo?'on':''}" title="Ativo na loja" data-act="toggle" data-key="${esc(p.key)}"></button>
+        <div class="ops"><button data-act="openForm" data-key="${esc(p.key)}">Editar</button><button class="del" data-act="delProd" data-key="${esc(p.key)}" data-nome="${esc(p.nome)}">Excluir</button></div>
       </div>
     </div>`).join('')||'<div class="empty">Nenhum produto. Crie o primeiro.</div>';
 }

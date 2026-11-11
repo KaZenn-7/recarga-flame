@@ -772,11 +772,15 @@ app.post('/api/admin/orders/:id/unblock', admin, (req, res) => {
 
 app.get('/painel', admin, (req, res) => {
   const data = JSON.stringify(painelOrders()).replace(/</g, '\\u003c');
-
+  // painel: só scripts do próprio site (sem script embutido nem onclick no HTML) — um nick/e-mail malicioso
+  // que escapasse do escape não executa nada aqui
+  res.set('Content-Security-Policy', PAINEL_CSP);
   res.send(painelHtml(data));
 });
 
 // JS do painel: só com sessão (quem não entrou não vê o código do painel)
+const PAINEL_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+  + "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 const PAINEL_JS = fs.readFileSync(path.join('views', 'painel.client.js'), 'utf8');
 app.get('/painel/app.js', admin, (req, res) => {
   res.set('Cache-Control', 'private, no-cache');
