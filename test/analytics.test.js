@@ -34,16 +34,21 @@ test('resumo diário: números do dia, autonomia de Stars e envio 1x por dia', a
   assert.match(txt, /📊 Resumo de \d{2}\/\d{2}\/\d{4}/);
   assert.match(txt, /💰 \d+ vendas? · R\$/);
   assert.match(txt, /📦 \d+ entregues? \(\d+ automáticas?, \d+ manual\)/);
-  assert.match(txt, /⭐ \d+★ gastos hoje/);
+  assert.match(txt, /⭐ \d+★ gastos no dia/);
   // dia sem nada
   const vazio = dailySummary('2000-01-01');
   assert.match(vazio, /💰 0 vendas · R\$\s?0,00/);
-  // envia uma vez só por dia (a hora padrão é 23h; força o horário com o setting)
-  db.prepare("DELETE FROM settings WHERE k='summary_day'").run();
+  // envia uma vez só por dia, logo após a meia-noite, o resumo do dia que terminou
+  db.prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('summary_day', '2026-11-06')").run(); // 06/11 já enviado
   const n = tgSent.length;
   const realNow = Date.now;
-  Date.now = () => Date.parse('2026-11-08T02:30:00Z'); // 23:30 em Brasília
-  try { summaryTick(); summaryTick(); } finally { Date.now = realNow; }
+  try {
+    Date.now = () => Date.parse('2026-11-08T02:59:00Z'); // 23:59 de 07/11 em Brasília: o dia ainda não acabou
+    summaryTick();
+    assert.equal(tgSent.length, n);
+    Date.now = () => Date.parse('2026-11-08T03:00:30Z'); // 00:00 de 08/11: manda o resumo de 07/11 (inclui 23h–00h)
+    summaryTick(); summaryTick();
+  } finally { Date.now = realNow; }
   assert.equal(tgSent.length, n + 1);
   assert.match(tgSent.at(-1).text, /Resumo de 07\/11\/2026/);
 });

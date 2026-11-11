@@ -465,8 +465,7 @@ app.post('/api/admin/orders/:id/autopay', admin, async (req, res) => {
   const r = await autopay(Number(req.params.id));
   res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
 });
-// ---------- Resumo diário no Telegram (23h, horário de Brasília) ----------
-const SUMMARY_HOUR = Number(env.SUMMARY_HOUR ?? 23);
+// ---------- Resumo diário no Telegram (00h, horário de Brasília: o dia que acabou de terminar, inteiro) ----------
 const spDay = (ms = Date.now()) => new Date(ms - 3 * 3600_000).toISOString().slice(0, 10); // dia local (UTC-3)
 function dailySummary(day = spDay()) {
   const L = (col) => `date(${col}, '-3 hours')`;
@@ -505,20 +504,19 @@ function dailySummary(day = spDay()) {
     `📦 ${entregues.length} entregue${entregues.length === 1 ? '' : 's'} (${auto} automática${auto === 1 ? '' : 's'}, ${entregues.length - auto} manual)`
       + (med != null ? ` · mediana ${fmtMin(med)} do pagamento à entrega` : ''),
     fila ? `⏳ ${fila} pedido${fila === 1 ? '' : 's'} na fila agora${problemas ? ` (🚨 ${problemas} incerto${problemas === 1 ? '' : 's'})` : ''}` : '✅ Fila vazia',
-    `⭐ ${gastoDia}★ gastos hoje · saldo ${e.n ? e.s + '★' : 'não configurado'}`
+    `⭐ ${gastoDia}★ gastos no dia · saldo ${e.n ? e.s + '★' : 'não configurado'}`
       + (autonomia != null ? ` · dura ~${autonomia < 1 ? 'menos de 1 dia' : Math.floor(autonomia) + (Math.floor(autonomia) === 1 ? ' dia' : ' dias')} no ritmo atual (${Math.round(porDia)}★/dia)` : '')
       + (e.n && e.s < STARS_LOW ? ' · 🔻 BAIXO' : ''),
     estornos ? `⚠️ ${estornos} estorno/cancelamento após pagamento nos últimos 7 dias` : null,
     fcLine(starsForecast()),
   ].filter(Boolean).join('\n');
 }
-// dispara 1x por dia a partir da hora marcada (sobrevive a reinício: guarda o último dia enviado)
+// dispara 1x por dia logo após a meia-noite com o resumo do dia anterior (sobrevive a reinício: guarda o último dia resumido)
 function summaryTick() {
-  const now = new Date(Date.now() - 3 * 3600_000);
-  const day = now.toISOString().slice(0, 10);
-  if (now.getUTCHours() < SUMMARY_HOUR || getSetting('summary_day', '') === day) return;
-  setSetting('summary_day', day);
-  tgSend(dailySummary(day));
+  const ontem = spDay(Date.now() - 86_400_000);
+  if (getSetting('summary_day', '') >= ontem) return;
+  setSetting('summary_day', ontem);
+  tgSend(dailySummary(ontem));
 }
 
 // Resolver pagamento incerto/falho: olha a fatura EXATA que a loja tentou pagar (nº gravado antes de cobrar)
@@ -845,7 +843,7 @@ if (process.env.NODE_ENV !== 'test') {
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => gracefulStop({ server }));
   if (env.TG_BOT_TOKEN && env.TG_CHAT_ID) tgPoll(); // botões do aviso de pago
   if (realOn()) { syncStarsReal(true); setInterval(() => syncStarsReal(true), 5 * 60_000); } // saldo real a cada 5 min
-  setInterval(summaryTick, 60_000); // resumo diário às SUMMARY_HOUR (23h)
+  setInterval(summaryTick, 60_000); // resumo diário à 00h (do dia que terminou)
   // virada do mês: congela as faixas do mês fechado; 1º dia útil: comissões a pagar no Telegram
   setInterval(() => { try { freezeTick(); fechamentoTick(); } catch (e) { console.error('fechamento', e.message); } }, 60_000);
 }
