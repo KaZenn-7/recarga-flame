@@ -36,7 +36,9 @@ test('termos de uso e política de privacidade: no ar, linkados no rodapé e no 
 
 test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Responder → cliente) + Telegram', async () => {
   const sup = (b) => fetch(base + '/api/suporte', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
-  assert.equal((await fetch(base + '/suporte')).status, 200);
+  const pg = await fetch(base + '/suporte');
+  assert.equal(pg.status, 200);
+  assert.match(await pg.text(), /wa\.me\/5511954854560/); // opção de WhatsApp
   assert.equal((await sup({ email: 'x', assunto: 'outro', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'hack', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'outro', msg: 'curta' })).status, 400);
