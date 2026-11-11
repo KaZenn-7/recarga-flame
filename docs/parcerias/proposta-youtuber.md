@@ -118,11 +118,78 @@ Imagem pronta (post e story): `node docs/kit/gen-comparativo.mjs <pasta> [CUPOM]
 
 ---
 
-## 4. Follow-up (5 a 7 dias depois, se não houver resposta)
+## 4. Follow-up por e-mail (5 a 7 dias depois, se não houver resposta)
+
+Envie de parcerias@, **respondendo o e-mail original** (a proposta fica logo abaixo na conversa).
 
 **Assunto:** Re: [assunto original]
 
-Oi, [NOME]! Passando só para saber se você chegou a ver a nossa proposta de parceria. Se fizer sentido, criamos o seu cupom hoje mesmo e te mandamos o link de acompanhamento. Se não for o momento, sem problema, é só nos avisar. Abraço!
+Oi, [NOME]! Tudo bem?
+
+Passando só para saber se você chegou a ver a nossa proposta de parceria com a Recarga Flame.
+
+Resumindo: cupom [CUPOM] com 5% de desconto para a sua comunidade, comissão de 20% a 45% do lucro de cada venda (subindo conforme as vendas do mês), link privado para acompanhar tudo em tempo real e pagamento por Pix todo mês. Sem exclusividade e sem custo. A entrega e o atendimento ficam com a gente, você só divulga.
+
+Se fizer sentido, criamos o seu cupom hoje mesmo e te mandamos o kit de divulgação pronto com o seu nome. Se não for o momento, sem problema, é só nos avisar.
+
+Abraço!
+
+**Equipe de Parcerias · Recarga Flame**
+recargaflame.com.br · parcerias@recargaflame.com.br
+
+---
+
+## 4b. Ainda sem resposta: DM e último e-mail
+
+Ordem (um por vez, nunca em massa):
+1. **Dia 0:** DM de apresentação (Instagram, Discord ou WhatsApp, onde a pessoa é mais ativa).
+2. **3 a 4 dias sem resposta:** follow-up curto na mesma DM.
+3. **Mais 4 a 5 dias sem resposta:** último e-mail, respondendo o e-mail original. Depois disso, encerre.
+
+Se a pessoa pedir para conversar por WhatsApp e não responder lá, mande um lembrete curto no WhatsApp (não um e-mail novo) e, se continuar sem resposta, só o último e-mail.
+
+### DM de apresentação
+```
+Oi, [NOME]! Tudo bem? 👋
+Aqui é da Recarga Flame 🔥 (recargaflame.com.br). Mandamos um e-mail pra você uns dias atrás sobre uma parceria, mas acho que acabou se perdendo na caixa de entrada 😅
+
+Resumindo bem rápido:
+🎟️ Cupom com o seu nome: 5% off pra sua galera
+💰 Comissão de 20% a 45% do lucro de cada venda, subindo conforme as vendas do mês
+📊 Link privado pra acompanhar tudo em tempo real
+💸 Pagamento por Pix todo mês
+🎨 Kit de divulgação pronto com o seu cupom (post, story, banner e vídeo)
+🤝 Sem exclusividade e sem custo
+
+A loja entrega os itens de CounterFlame sozinha, 24h, só com o ID do jogo. Você só divulga, e o atendimento fica com a gente.
+
+Curte a ideia? Posso te mandar os detalhes por aqui mesmo 😄
+```
+
+### Follow-up na DM (3 a 4 dias depois)
+```
+Oi, [NOME]! Só passando pra ver se você viu a mensagem sobre a parceria com a Recarga Flame 🙂
+Se topar, criamos o cupom [CUPOM] hoje mesmo e te mandamos o kit de divulgação pronto com o seu nome. Se não for o momento, tranquilo, é só avisar!
+```
+
+### Lembrete no WhatsApp (quando a pessoa pediu o contato por lá)
+```
+Fala, [NOME]! Aqui é da Recarga Flame, sobre a parceria que você pediu pra gente conversar por aqui 🙂
+Resumindo: cupom [CUPOM] com desconto pros seus inscritos, você ganha uma % de cada venda pelo seu link e tem uma página só sua pra acompanhar as vendas. A gente também monta o kit de divulgação pronto (post, story, banner, vídeo).
+Quando tiver um tempinho me fala se curte a ideia que eu te mando os detalhes. Valeu!
+```
+
+### Último e-mail (de parcerias@, respondendo o e-mail original)
+
+**Assunto:** Re: [assunto original]
+
+Oi, [NOME]! Tudo bem?
+
+Tentamos falar com você por aqui e pelo [Instagram/Discord/WhatsApp] sobre a parceria com a Recarga Flame. Não queremos encher a sua caixa de entrada, então esta é a nossa última mensagem sobre o assunto.
+
+A proposta continua de pé: cupom com o seu nome (5% off pra sua comunidade), comissão de 20% a 45% do lucro de cada venda e pagamento por Pix todo mês. Se um dia fizer sentido, é só responder este e-mail que criamos o seu cupom na hora.
+
+Abraço e sucesso com o canal!
 
 **Equipe de Parcerias · Recarga Flame**
 recargaflame.com.br · parcerias@recargaflame.com.br
