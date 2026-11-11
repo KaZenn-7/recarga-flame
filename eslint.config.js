@@ -19,6 +19,11 @@ export default [
     languageOptions: { ecmaVersion: 2024, sourceType: 'commonjs', globals: { ...globals.node } },
   },
   {
+    // testes de navegador: trechos passados ao page.evaluate rodam na página
+    files: ['tools/painel-browser.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser, backFrom: 'readonly' } },
+  },
+  {
     // JS do painel: roda no navegador, script comum (funções chamadas por onclick no HTML)
     files: ['views/painel.client.js'],
     languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
