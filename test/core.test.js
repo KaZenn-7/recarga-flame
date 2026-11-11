@@ -258,6 +258,11 @@ test('excluir produto não quebra pedido já feito (snapshot)', async () => {
   assert.equal(painel.status, 200);
   const html = await painel.text();
   assert.ok(html.includes('Produto Snapshot'), 'nome do snapshot deve aparecer no painel');
+  assert.ok(html.includes('<script src="/painel/app.js"></script>'));
+  const js = await fetch(base + '/painel/app.js', { headers: { Cookie: COOKIE } });
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get('content-type'), /javascript/);
+  assert.ok((await js.text()).includes('function render'));
 });
 
 // ---------- 6. Webhook rejeita assinatura inválida ----------
@@ -331,6 +336,7 @@ const postJ = (u, b) => fetch(base + u, { method: 'POST', headers: { 'Content-Ty
 test('painel sem sessão redireciona para /login; API dá 401', async () => {
   const r = await fetch(base + '/painel', { redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/login');
+  assert.equal((await fetch(base + '/painel/app.js')).status, 401); // JS do painel só com sessão
   assert.equal((await fetch(base + '/api/admin/products', { headers: { Cookie: 'cf_sess=' + 'x'.repeat(43) } })).status, 401);
 });
 

@@ -1295,6 +1295,13 @@ app.get('/painel', admin, (req, res) => {
   res.send(painelHtml(data));
 });
 
+// JS do painel: só com sessão (quem não entrou não vê o código do painel)
+const PAINEL_JS = fs.readFileSync(path.join('views', 'painel.client.js'), 'utf8');
+app.get('/painel/app.js', admin, (req, res) => {
+  res.set('Cache-Control', 'private, no-cache');
+  res.type('application/javascript').send(PAINEL_JS);
+});
+
 app.post('/painel/:id/entregue', admin, (req, res) => {
   const origin = req.get('origin');
   const sameOrigin = origin === new URL(env.PUBLIC_URL).origin;
