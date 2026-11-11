@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "NODE_ENV=test node --test"
+    "test": "NODE_ENV=test node --test",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
@@ -16,5 +17,9 @@
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.3",
     "telegram": "2.26.22"
+  },
+  "devDependencies": {
+    "eslint": "9.39.5",
+    "globals": "17.14.0"
   }
 }

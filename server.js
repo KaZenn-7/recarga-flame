@@ -6,12 +6,12 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import Database from 'better-sqlite3';
 import { migrate } from './src/db.js';
-import { checkInvoice, payInvoice, invoicePaid } from './tg-user.js';
+import { invoicePaid } from './tg-user.js';
 import { LOGIN_HTML } from './views/login.js';
 import { painelHtml } from './views/painel.js';
 import { homeHtml, pageHtml } from './seo-home.js';
 import { initParceiros } from './src/parceiros.js';
-import { tgApi, tgSend, doneKeyboard, hhmmSP, initAvisos } from './src/telegram.js';
+import { tgApi, tgSend, hhmmSP, initAvisos } from './src/telegram.js';
 import { initMercadoPago } from './src/mercadopago.js';
 import { initAutopay } from './src/autopay.js';
 import { initStars } from './src/stars.js';
@@ -70,7 +70,7 @@ loadProducts();
 // ---------- Cupons (desconto ao cliente + comissão sobre o lucro) ----------
 // ---- Stars (custo, saldo, entrega, previsão, rotas do painel de Stars): src/stars.js ----
 // (brlTxt/orderEv/deliveredEmail/sendMail/tgEntregue são declarados mais abaixo: vão como funções que repassam)
-const { STAR_COST, MP_FEE, floorCents, profitCents, orderProfit, starNow, starsOf, STARS_LOW, refreshStarCost, starsFila, REAL, realOn, starsEff,
+const { floorCents, profitCents, orderProfit, starNow, starsOf, STARS_LOW, refreshStarCost, starsFila, REAL, realOn, starsEff,
   syncStarsReal, sessionDown, _setStarsReader, starsShortMsg, markDelivered, starsForecast, fcLine, rotasStars } = initStars({ env, db, PRODUCTS,
   brlTxt: (c) => brlTxt(c), orderEv: (...a) => orderEv(...a), deliveredEmail: (o) => deliveredEmail(o), sendMail: (...a) => sendMail(...a),
   tgEntregue: (...a) => tgEntregue(...a) });
@@ -155,7 +155,7 @@ function blockReason(p, d) {
 const maxPriceCents = () => Math.max(0, ...Object.values(PRODUCTS).filter((p) => p.ativo).map((p) => p.cents || 0));
 // ---- Mercado Pago: antifraude, reembolso e sincronização do pagamento: src/mercadopago.js ----
 // (notifyPaid/tgAviso/refundKb/orderEv/avisoFaixa/brlTxt são declarados mais abaixo: vão como funções que repassam)
-const { RISK, lc, fp, payerPrints, isBlocked, orderBlocked, blockClient, unblockClient, paid24, riskOf, podeReembolsar, reembolsar, _setRefundCaller, bloqAuto, syncPayment } = initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf: (o) => chkOf(o),
+const { RISK, lc, fp, isBlocked, orderBlocked, unblockClient, paid24, riskOf, podeReembolsar, reembolsar, _setRefundCaller, bloqAuto, syncPayment } = initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf: (o) => chkOf(o),
   brlTxt: (c) => brlTxt(c), notifyPaid: (o) => notifyPaid(o), tgAviso: (...a) => tgAviso(...a), refundKb: (o) => refundKb(o),
   orderEv: (...a) => orderEv(...a), avisoFaixa: (o) => avisoFaixa(o), maxPriceCents: () => maxPriceCents() });
 const brlTxt = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -175,7 +175,7 @@ const { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, aut
   sessionDown, markDelivered, paidKeyboard: (o) => paidKeyboard(o), tgFalha: (...a) => tgFalha(...a), paidText: (o) => paidText(o),
   tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping });
 // ---- Avisos de pedido no Telegram (mensagem, botões, edições, toques): src/telegram.js ----
-const { refundKb, tgDesbloqueado, paidKeyboard, tgMarkup, handleTgUpdate, tgPoll, paidText, tgEntregue, tgAviso, notifyPaid, tgIncerto, tgFalha } = initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, autopay, chkOf, chkLine, conferir, saldoLine });
+const { refundKb, tgDesbloqueado, paidKeyboard, handleTgUpdate, tgPoll, paidText, tgEntregue, tgAviso, notifyPaid, tgIncerto, tgFalha } = initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, autopay, chkOf, chkLine, conferir, saldoLine });
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
 const setMotivo = (id, m) => db.prepare('UPDATE orders SET manual_motivo=? WHERE id=? AND manual_motivo IS NULL').run(String(m).slice(0, 160), id);
 function motivoCat(m) {
