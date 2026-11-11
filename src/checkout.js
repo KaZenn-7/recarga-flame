@@ -130,7 +130,8 @@ app.post('/api/orders', limit(5), async (req, res) => {
     signal: AbortSignal.timeout(15000),
     body: JSON.stringify({
       transaction_amount: finalCents / 100,
-      description: `${p.nome} CounterFlame - Recarga Flame`,
+      // aparece para o cliente no app do banco/MP: nº do pedido e ID da conta ajudam a achar a compra no suporte
+      description: `Pedido #${Number(ins.lastInsertRowid)} - ${p.nome} CounterFlame - ID ${gameId} - Recarga Flame`,
       payment_method_id: 'pix',
       external_reference: token,
       date_of_expiration: expira,

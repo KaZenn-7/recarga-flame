@@ -14,6 +14,9 @@ test('preço é do servidor: cliente não consegue forjar valor', async () => {
   assert.equal(r.status, 200);
   // o valor enviado ao MP tem que ser 3.50, não 0.01
   assert.equal(mock.lastBody.transaction_amount, 3.5);
+  // descrição do pagamento: nº do pedido e ID da conta do jogo
+  const { id } = await r.json();
+  assert.equal(mock.lastBody.description, `Pedido #${id} - 1.000 Coins CounterFlame - ID 749125 - Recarga Flame`);
 });
 
 test('pedido devolve número e expiração do Pix (~30 min, coerente com o MP)', async () => {
