@@ -127,6 +127,8 @@ export const MIGRATIONS = [
   email TEXT, assunto TEXT, msg TEXT, order_id INTEGER, game_id TEXT, ip_h TEXT, mail_ok INTEGER, tg_ok INTEGER
 )`);
   } },
+  // aviso do pedido no grupo com tópicos: chat e tópico onde ficou a mensagem (NULL = chat privado do operador)
+  { v: 2, nome: 'tg_chat', up(db) { addCols(db, 'orders', ['tg_chat TEXT', 'tg_thread INTEGER']); } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

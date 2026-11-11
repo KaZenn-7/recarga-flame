@@ -8,6 +8,8 @@
 loja.db*
 backups/
 .health_state
+tg-topicos.json
+tg-topicos.json.tmp
 
 # dependências e lixo
 node_modules/

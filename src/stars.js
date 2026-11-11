@@ -51,7 +51,7 @@ function refreshStarCost(notify = false) {
       .map(([, p]) => `${p.nome} (${brlTxt(p.cents)}, custo ${brlTxt(Math.round(costCents(p.stars)))})`);
     tgSend(`💱 Custo da Star atualizado: ${fmt(old)} → ${fmt(STAR_NOW)} (média das compras de Stars que formam o saldo atual).\n`
       + 'Vale para os novos pedidos; vendas anteriores mantêm o custo da época.'
-      + (prej.length ? `\n⚠️ Vendendo NO PREJUÍZO com o custo novo: ${prej.join('; ')}. Ajuste os preços no painel.` : ''));
+      + (prej.length ? `\n⚠️ Vendendo NO PREJUÍZO com o custo novo: ${prej.join('; ')}. Ajuste os preços no painel.` : ''), 'resumo');
   }
   return STAR_NOW;
 }

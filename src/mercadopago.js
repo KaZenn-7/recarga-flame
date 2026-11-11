@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { tgApi } from './telegram.js';
+import { tgApi, tgPedidoMsg, saveOrderMsg, orderDest, dest } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js, linha por linha.
 export function initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf, brlTxt, notifyPaid, tgAviso, refundKb, orderEv, avisoFaixa, maxPriceCents }) {
@@ -136,11 +136,11 @@ function bloquearPedido(o, motivo) {
   if (!r.changes) return;
   blockClient(o, 'bloqueio automático (sinal de estorno)');
   const v = brlTxt(o.cents);
-  tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true, reply_markup: refundKb(o),
+  tgPedidoMsg({ disable_web_page_preview: true, reply_markup: refundKb(o),
     text: `🚫 Pedido #${o.id} BLOQUEADO automaticamente: ${motivo}.\n${o.prod_nome || o.product} · ${v} · ${o.nickname} · ID ${o.game_id}\n`
     + `NÃO foi entregue. O cliente PAGOU: devolva ${v} (botão abaixo ou app do Mercado Pago — Termos: não entregue = reembolso integral).\n`
     + 'ID e e-mail deste pedido também foram bloqueados. Se for engano, desbloqueie no card do pedido (aba Cancelados).' })
-    .then((j) => { const mid = j?.result?.message_id; if (mid) db.prepare('UPDATE orders SET tg_msg=? WHERE id=?').run(mid, o.id); });
+    .then((j) => saveOrderMsg(db, o.id, j));
 }
 
 async function syncPayment(mpId) {
@@ -175,7 +175,7 @@ async function syncPayment(mpId) {
         botao: before === 'delivered' ? '⚠️ Estornado após entrega' : '⛔ Cancelado — não entregar',
         extras: ['Bloqueados: ID, e-mail, aparelho e conta que pagou (desbloqueie no painel se for engano).'] });
       // e um alerta curto (a edição não notifica): responde ao aviso original, que tem os detalhes
-      tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true,
+      tgApi('sendMessage', { ...(o.tg_msg ? orderDest(o) : dest('pedidos')), disable_web_page_preview: true,
         ...(o.tg_msg ? { reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true } } : {}),
         text: before === 'delivered'
           ? `⚠️ Estorno no pedido #${o.id} (${brlTxt(o.cents)}, já entregue · ${pay.status}) — detalhes no aviso original.`

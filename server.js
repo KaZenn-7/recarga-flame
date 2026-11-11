@@ -12,7 +12,7 @@ import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
 import { homeHtml, pageHtml } from './seo-home.js';
 import { initParceiros } from './src/parceiros.js';
-import { tgApi, tgSend, hhmmSP, initAvisos } from './src/telegram.js';
+import { tgApi, tgSend, hhmmSP, initAvisos, orderDest } from './src/telegram.js';
 import { initMercadoPago } from './src/mercadopago.js';
 import { initAutopay } from './src/autopay.js';
 import { initStars } from './src/stars.js';
@@ -399,7 +399,7 @@ ${lines.map((l) => `<div>${esc(l)}</div>`).join('')}
   const text = `${lines.join('\n')}\n\n${msg}\n\n— Responder este e-mail envia a resposta direto para ${email}.`;
   const [mailOk, tgOk] = await Promise.all([
     sendMail(SUPPORT_TO, subject, html, text, email),
-    tgSend(`📩 Suporte #${tid} — ${assunto}\nDe: ${email}\n${pedLine}\n\n${msg.slice(0, 600)}${msg.length > 600 ? '…' : ''}\n\nResponda pelo e-mail (Gmail).`),
+    tgSend(`📩 Suporte #${tid} — ${assunto}\nDe: ${email}\n${pedLine}\n\n${msg.slice(0, 600)}${msg.length > 600 ? '…' : ''}\n\nResponda pelo e-mail (Gmail).`, 'suporte'),
   ]);
   db.prepare('UPDATE support_tickets SET mail_ok=?, tg_ok=? WHERE id=?').run(mailOk ? 1 : 0, tgOk ? 1 : 0, tid);
   if (!mailOk && !tgOk) return res.status(502).json({ error: `Não conseguimos enviar agora. Tente de novo em instantes ou escreva para ${SUPPORT_TO}.` });
@@ -519,7 +519,7 @@ function summaryTick() {
   const ontem = spDay(Date.now() - 86_400_000);
   if (getSetting('summary_day', '') >= ontem) return;
   setSetting('summary_day', ontem);
-  tgSend(dailySummary(ontem));
+  tgSend(dailySummary(ontem), 'resumo');
 }
 
 // Resolver pagamento incerto/falho: olha a fatura EXATA que a loja tentou pagar (nº gravado antes de cobrar)
@@ -557,7 +557,7 @@ app.post('/api/admin/orders/:id/resolve', admin, (req, res) => {
     db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=?").run(JSON.stringify({ ...info, erro: 'verificado: sem cobrança — pode pagar de novo' }), id);
     // volta o aviso ao normal (botões de pagar/entregar), com a nota da verificação
     const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
-    if (cur.tg_msg) tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: cur.tg_msg, disable_web_page_preview: true,
+    if (cur.tg_msg) tgApi('editMessageText', { chat_id: orderDest(cur).chat_id, message_id: cur.tg_msg, disable_web_page_preview: true,
       text: paidText(cur) + `\n🔍 Verificado às ${hhmmSP()}: nada foi cobrado — pode pagar de novo.`, reply_markup: paidKeyboard(cur) });
   } else return res.status(400).json({ error: 'Ação inválida.' });
   res.json({ ok: true });

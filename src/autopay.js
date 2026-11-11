@@ -3,7 +3,7 @@
 // initAutopay no mesmo ponto em que este trecho ficava. Única mudança no código: `stopping` virou função
 // (o desligamento seguro muda esse valor no server.js e aqui ele é lido na hora).
 import { userConfig, checkInvoice, payInvoice } from '../tg-user.js';
-import { tgApi } from './telegram.js';
+import { tgApi, orderDest } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js.
 export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping }) {
@@ -129,7 +129,7 @@ async function conferir(id, fromPaid = false, attempt = 1) {
   db.prepare('UPDATE orders SET chk=? WHERE id=?').run(JSON.stringify(ck), id);
   const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (cur.status === 'paid' && cur.tg_msg) {
-    tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: cur.tg_msg, text: paidText(cur),
+    tgApi('editMessageText', { chat_id: orderDest(cur).chat_id, message_id: cur.tg_msg, text: paidText(cur),
       disable_web_page_preview: true, reply_markup: paidKeyboard(cur) });
   }
   if (retry) { const t = setTimeout(() => conferir(id, true, attempt + 1), RETRY_MS); t.unref?.(); return ck; }

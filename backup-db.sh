@@ -62,9 +62,16 @@ if [ -n "${LATEST:-}" ] && [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ] && [ -
     --symmetric --cipher-algo AES256 -o "$ENC" "$LATEST.gz"
   chmod 600 "$ENC"
   N_PED=$(BH_DB="$APP_DIR/loja.db" node -e 'const D=require("better-sqlite3");const d=new D(process.env.BH_DB,{readonly:true});console.log(d.prepare("SELECT COUNT(*) n FROM orders").get().n)' 2>/dev/null || echo "?")
-  RESP=$(printf 'url = "https://api.telegram.org/bot%s/sendDocument"\n' "$TG_BOT_TOKEN" | curl -sS --max-time 60 -K - \
-    -F "chat_id=$TG_CHAT_ID" -F "document=@$ENC" \
-    -F "caption=Backup loja.db $(date '+%d/%m %H:%M') · $N_PED pedidos · $(du -h "$ENC" | cut -f1)" || true)
+  CAPTION="Backup loja.db $(date '+%d/%m %H:%M') · $N_PED pedidos · $(du -h "$ENC" | cut -f1)"
+  senddoc() {  # $1 = chat, $2 = tópico (ou vazio)
+    printf 'url = "https://api.telegram.org/bot%s/sendDocument"\n' "$TG_BOT_TOKEN" | curl -sS --max-time 60 -K - \
+      -F "chat_id=$1" ${2:+-F "message_thread_id=$2"} -F "document=@$ENC" -F "caption=$CAPTION" || true
+  }
+  # tópico 🗄️ Sistema do grupo (se configurado); se o grupo falhar, manda no chat privado
+  read -r TG_GRUPO TG_TOPICO <<< "$(node "$APP_DIR/tools/tg-destino.cjs" sistema 2>/dev/null)"
+  RESP=""
+  [ -n "${TG_GRUPO:-}" ] && RESP=$(senddoc "$TG_GRUPO" "$TG_TOPICO")
+  printf '%s' "$RESP" | grep -q '"ok":true' || RESP=$(senddoc "$TG_CHAT_ID" "")
   rm -f "$ENC"
   if printf '%s' "$RESP" | grep -q '"ok":true'; then
     echo "[$(date -Is)] enviado ao Telegram"

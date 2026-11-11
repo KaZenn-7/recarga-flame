@@ -200,7 +200,7 @@ function avisoFaixa(o) {
     const antes = tierIdx(fat - o.cents, tiers), agora = tierIdx(fat, tiers);
     const garant = ctx.info(o.coupon, ctx.cur).garant;
     if (agora > antes && agora > garant) {
-      tgSend(`🎯 Parceiro ${o.coupon} bateu a meta de ${brlTxt(tiers[agora].min)} no mês → comissão de ${tiers[agora].pct}% do lucro em TODAS as vendas do mês (faturado até agora: ${brlTxt(fat)}).`);
+      tgSend(`🎯 Parceiro ${o.coupon} bateu a meta de ${brlTxt(tiers[agora].min)} no mês → comissão de ${tiers[agora].pct}% do lucro em TODAS as vendas do mês (faturado até agora: ${brlTxt(fat)}).`, 'resumo');
     }
   } catch (e) { console.error('avisoFaixa', e.message); }
 }
@@ -361,7 +361,7 @@ function fechamentoTick(now = Date.now()) {
   setSetting('fechamento_mes', mes);
   freezeClosedMonths(makePartnerCtx());
   const msg = fechamentoMsg();
-  if (msg) tgSend(msg);
+  if (msg) tgSend(msg, 'resumo');
   enviarExtratos(prevMes(mes)).catch((e) => console.error('extratos', e.message));
   return !!msg;
 }
@@ -419,7 +419,7 @@ async function enviarExtratos(mes) {
     (await sendMail(c.parceiro_email, e.subject, e.html, e.text, PARC_FROM, PARC_FROM) ? ok : falha).push(c.code);
   }
   if (ok.length || falha.length) {
-    tgSend(`📧 Extrato de ${nomeMesBR(mes)} por e-mail: ${[ok.length ? 'enviado para ' + ok.join(', ') : '', falha.length ? '⚠️ falhou para ' + falha.join(', ') : ''].filter(Boolean).join(' · ')}`);
+    tgSend(`📧 Extrato de ${nomeMesBR(mes)} por e-mail: ${[ok.length ? 'enviado para ' + ok.join(', ') : '', falha.length ? '⚠️ falhou para ' + falha.join(', ') : ''].filter(Boolean).join(' · ')}`, 'resumo');
   }
   return { ok, falha };
 }

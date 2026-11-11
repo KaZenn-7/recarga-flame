@@ -1,7 +1,39 @@
 // Telegram (bot do operador): chamada à API, avisos de pedido (mensagem, botões e edições) e toques nos botões.
 // Separado do server.js sem mudar o código das funções. tgApi/tgSend não dependem de nada da loja; os avisos
 // recebem do server.js (initAvisos) o que usam de pedidos, Stars e pagamento automático.
+import fs from 'node:fs';
+import path from 'node:path';
 const env = process.env;
+
+// ---------- Destinos: chat privado do operador ou grupo com tópicos ----------
+// Sem grupo configurado, tudo vai para o chat privado (TG_CHAT_ID), como antes. Com grupo (comando /configurar
+// no grupo), cada mensagem vai para o tópico do seu assunto. O código de login do painel vai SEMPRE no privado.
+// Config em tg-topicos.json (ao lado do banco; fora do git): { chat, threads: { pedidos: 12, ... } }.
+const TOPICOS = [
+  ['pedidos', '🛒 Pedidos', 'avisos de pedido pago com os botões, entregas, aprovar/revisar, reembolso e alertas de cada pedido'],
+  ['alertas', '🚨 Alertas', 'Stars acabando, conta separada do Telegram desconectada, loja fora do ar e outros problemas'],
+  ['resumo', '📊 Resumo e financeiro', 'resumo diário (00h), comissões do mês, metas dos parceiros e custo da Star'],
+  ['parcerias', '🤝 Parcerias', 'acordos, kits de mídia e documentos'],
+  ['suporte', '💬 Suporte', 'mensagens do formulário de suporte do site'],
+  ['sistema', '🗄️ Sistema', 'backups do banco (a cada 6 h)'],
+];
+const topicsFile = () => env.TG_TOPICS_FILE || path.join(path.dirname(path.resolve(env.DB_PATH || 'loja.db')), 'tg-topicos.json');
+let TOP = null;
+function loadTopics() {
+  try { const j = JSON.parse(fs.readFileSync(topicsFile(), 'utf8')); TOP = j && j.chat && j.threads ? j : null; } catch { TOP = null; }
+  return TOP;
+}
+loadTopics();
+// destino de um assunto: { chat_id, message_thread_id? }
+function dest(topico) {
+  if (topico === 'privado' || !TOP || !TOP.threads[topico]) return { chat_id: env.TG_CHAT_ID };
+  return { chat_id: TOP.chat, message_thread_id: TOP.threads[topico] };
+}
+// chat (e tópico) onde está o aviso do pedido: pedidos antigos (sem tg_chat) ficaram no chat privado
+const orderDest = (o) => (o.tg_chat ? { chat_id: o.tg_chat, ...(o.tg_thread ? { message_thread_id: o.tg_thread } : {}) } : { chat_id: env.TG_CHAT_ID });
+const opChat = (id) => String(id) === String(env.TG_CHAT_ID) || (!!TOP && String(id) === String(TOP.chat));
+// o toque veio do aviso salvo do pedido? (mesmo nº de mensagem E mesmo chat)
+const isOrderMsg = (o, chatId, msgId) => !!o.tg_msg && o.tg_msg === msgId && String(orderDest(o).chat_id) === String(chatId);
 
 // ---------- Telegram (bot do operador) ----------
 // Mesmo bot do backup. Falha de envio nunca derruba a loja: só registra no log.
@@ -19,21 +51,62 @@ async function tgApi(method, body, timeoutMs = 10000) {
     return j;
   } catch (e) { if (method !== 'getUpdates') console.error('Falha Telegram', method, e.message); return null; }
 }
-async function tgSend(text) {
+// Mensagem de texto para o tópico do assunto. Se o grupo falhar (bot removido, tópico apagado…), manda no privado.
+async function tgSend(text, topico = 'alertas') {
   if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return false;
-  try {
-    const r = await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ chat_id: env.TG_CHAT_ID, text, disable_web_page_preview: true }),
-    });
-    if (!r.ok) console.error('Telegram respondeu', r.status);
-    return r.ok;
-  } catch (e) { console.error('Falha ao enviar Telegram:', e.message); return false; }
+  const post = async (d) => {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
+        body: JSON.stringify({ ...d, text, disable_web_page_preview: true }),
+      });
+      if (!r.ok) console.error('Telegram respondeu', r.status, topico);
+      return r.ok;
+    } catch (e) { console.error('Falha ao enviar Telegram:', e.message); return false; }
+  };
+  const d = dest(topico);
+  if (await post(d)) return true;
+  return d.message_thread_id ? post({ chat_id: env.TG_CHAT_ID }) : false;
+}
+// sendMessage de aviso de pedido (com botões) no tópico Pedidos; se o grupo falhar, no privado. Devolve o JSON.
+async function tgPedidoMsg(body) {
+  const d = dest('pedidos');
+  let j = await tgApi('sendMessage', { ...body, ...d });
+  if (!j?.ok && d.message_thread_id) j = await tgApi('sendMessage', { ...body, chat_id: env.TG_CHAT_ID });
+  return j;
+}
+// grava onde ficou o aviso do pedido (para editar depois no mesmo chat)
+function saveOrderMsg(db, id, j) {
+  const m = j?.result;
+  if (!m?.message_id) return;
+  const privado = String(m.chat?.id ?? env.TG_CHAT_ID) === String(env.TG_CHAT_ID);
+  db.prepare('UPDATE orders SET tg_msg=?, tg_chat=?, tg_thread=? WHERE id=?')
+    .run(m.message_id, privado ? null : String(m.chat.id), privado ? null : (m.message_thread_id ?? null), id);
+}
+// /configurar no grupo (só o operador): cria os tópicos e grava tg-topicos.json
+async function configurarTopicos(msg) {
+  const chat = msg.chat;
+  const reply = (text) => tgApi('sendMessage', { chat_id: chat.id, ...(msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}), text });
+  if (chat.type === 'private') return reply('Use /configurar dentro do grupo (com Tópicos ativados), não aqui.');
+  if (!chat.is_forum) return reply('Ative "Tópicos" nas configurações do grupo e mande /configurar de novo.');
+  if (TOP && String(TOP.chat) === String(chat.id)) return reply('Este grupo já está configurado: os tópicos já existem.');
+  const threads = {};
+  for (const [k, nome] of TOPICOS) {
+    const j = await tgApi('createForumTopic', { chat_id: chat.id, name: nome });
+    if (!j?.ok) return reply(`Não consegui criar o tópico "${nome}" (${j?.description || 'sem resposta'}). Deixe o bot como administrador com permissão de gerenciar tópicos e mande /configurar de novo.`);
+    threads[k] = j.result.message_thread_id;
+  }
+  const f = topicsFile(), tmp = f + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ chat: String(chat.id), threads }, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, f);
+  loadTopics();
+  for (const [k, , desc] of TOPICOS) await tgApi('sendMessage', { chat_id: chat.id, message_thread_id: threads[k], text: `Aqui chegam: ${desc}.` });
+  return reply('✅ Pronto: a loja passa a mandar cada assunto no seu tópico. O código de login do painel continua no chat privado com o bot. Silencie os tópicos que não precisam tocar (ex.: Sistema).');
 }
 const doneKeyboard = (label) => ({ inline_keyboard: [[{ text: label, callback_data: 'x' }]] });
 const hhmmSP = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
-export { tgApi, tgSend, doneKeyboard, hhmmSP };
+export { tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
 
 // ---------- Avisos de pedido no Telegram ----------
 // O corpo fica sem recuo extra de propósito: são as funções originais do server.js, sem mudança.
@@ -68,22 +141,30 @@ function paidKeyboard(o) {
 // troca os botões do aviso do pedido (se houver aviso com botões)
 function tgMarkup(o, markup) {
   if (!o?.tg_msg) return;
-  tgApi('editMessageReplyMarkup', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, reply_markup: markup });
+  tgApi('editMessageReplyMarkup', { chat_id: orderDest(o).chat_id, message_id: o.tg_msg, reply_markup: markup });
 }
 async function handleTgUpdate(u) {
+  // comando /configurar (só do operador) no grupo: cria os tópicos
+  const msg = u.message;
+  if (msg) {
+    if (String(msg.from?.id) === String(env.TG_CHAT_ID) && /^\/configurar(@\w+)?(\s|$)/.test(msg.text || '')) await configurarTopicos(msg);
+    return;
+  }
   const cq = u.callback_query;
   if (!cq) return;
   const answer = (text, alert = false) => tgApi('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: alert });
-  // só o operador, no chat do operador
-  if (String(cq.from?.id) !== String(env.TG_CHAT_ID) || String(cq.message?.chat?.id) !== String(env.TG_CHAT_ID)) {
+  // só o operador, no chat privado dele ou no grupo configurado
+  if (String(cq.from?.id) !== String(env.TG_CHAT_ID) || !opChat(cq.message?.chat?.id)) {
     return answer('Sem permissão.');
   }
+  const cqChat = cq.message.chat.id;
   const m = /^([dDbpPaArR]):(\d+)$/.exec(cq.data || '');
   if (!m) return answer('Nada a fazer aqui.');
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(Number(m[2]));
   if (!o) return answer('Pedido não encontrado.');
   const msgId = cq.message.message_id;
-  const setKb = (kb) => tgApi('editMessageReplyMarkup', { chat_id: env.TG_CHAT_ID, message_id: msgId, reply_markup: kb });
+  const setKb = (kb) => tgApi('editMessageReplyMarkup', { chat_id: cqChat, message_id: msgId, reply_markup: kb });
+  const noAviso = isOrderMsg(o, cqChat, msgId); // tocou no aviso salvo do pedido (e não numa mensagem avulsa)
   if (m[1] === 'r') {
     if (!podeReembolsar(o)) { await setKb(doneKeyboard(o.refund_state === 'done' ? '💸 Já reembolsado' : 'Sem reembolso possível')); return answer('Este pedido não pode ser reembolsado (entregue, sem pagamento ou já reembolsado).', true); }
     await setKb({ inline_keyboard: [[{ text: `💸 Sim, devolver ${brlTxt(o.cents)}`, callback_data: `R:${o.id}` }]] });
@@ -96,11 +177,11 @@ async function handleTgUpdate(u) {
       // recusado: edita a própria mensagem (o operador está nela) com o motivo e devolve o botão; sem mensagem nova
       const base = String(cq.message?.text || `💸 Pedido #${o.id} · ${o.prod_nome || o.product} · ${brlTxt(o.cents)}\n${o.nickname} · ID ${o.game_id}`)
         .split('\n').filter((l) => !l.startsWith('⚠️ Reembolso recusado')).join('\n');
-      const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: msgId, disable_web_page_preview: true,
+      const j = await tgApi('editMessageText', { chat_id: cqChat, message_id: msgId, disable_web_page_preview: true,
         text: `${base}\n⚠️ Reembolso recusado às ${hhmmSP()}: ${r.why}`, reply_markup: refundKb(o) });
-      if (!j?.ok) { await setKb(refundKb(o)); tgSend(`⚠️ Reembolso do pedido #${o.id}: ${r.why}`); }
+      if (!j?.ok) { await setKb(refundKb(o)); tgSend(`⚠️ Reembolso do pedido #${o.id}: ${r.why}`, 'pedidos'); }
     }
-    else if (msgId !== o.tg_msg) await setKb(doneKeyboard(`💸 Reembolsado ${brlTxt(o.cents)}`));
+    else if (!noAviso) await setKb(doneKeyboard(`💸 Reembolsado ${brlTxt(o.cents)}`));
     return;
   }
   if (o.status !== 'paid') {
@@ -146,21 +227,21 @@ async function handleTgUpdate(u) {
     } else {
       const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(o.id);
       if (cur.autopay === 'incerto') await setKb(doneKeyboard('🚨 Pagamento incerto — confira'));
-      else if (cur.status === 'paid' && msgId === cur.tg_msg) await tgFalha(o.id, `⚠️ Pagamento com 1 toque falhou às ${hhmmSP()}: ${r.why}`);
-      else if (cur.status === 'paid') { await setKb(paidKeyboard(cur)); tgSend(`⚠️ Pedido #${o.id}: ${r.why}`); }
-      else tgSend(`⚠️ Pedido #${o.id}: ${r.why}`);
+      else if (cur.status === 'paid' && isOrderMsg(cur, cqChat, msgId)) await tgFalha(o.id, `⚠️ Pagamento com 1 toque falhou às ${hhmmSP()}: ${r.why}`);
+      else if (cur.status === 'paid') { await setKb(paidKeyboard(cur)); tgSend(`⚠️ Pedido #${o.id}: ${r.why}`, 'pedidos'); }
+      else tgSend(`⚠️ Pedido #${o.id}: ${r.why}`, 'pedidos');
     }
     return;
   }
   // D: confirmado
   markDelivered(o.id, 'telegram');
-  if (!o.tg_msg || o.tg_msg !== msgId) await setKb(doneKeyboard(`✅ Entregue às ${hhmmSP()}`));
+  if (!noAviso) await setKb(doneKeyboard(`✅ Entregue às ${hhmmSP()}`));
   return answer(`Pedido #${o.id} entregue. E-mail enviado ao cliente.`);
 }
 let tgOffset = 0;
 async function tgPoll() {
   for (;;) {
-    const j = await tgApi('getUpdates', { offset: tgOffset, timeout: 50, allowed_updates: ['callback_query'] }, 60000);
+    const j = await tgApi('getUpdates', { offset: tgOffset, timeout: 50, allowed_updates: ['callback_query', 'message'] }, 60000);
     if (!j?.ok) { await new Promise((r) => setTimeout(r, 5000)); continue; }
     for (const u of j.result || []) {
       tgOffset = u.update_id + 1;
@@ -198,16 +279,15 @@ async function tgAviso(id, { icone, titulo, extras = [], botao, kb, saldo = true
     saldo && saldoLine(),
   ].filter(Boolean).join('\n');
   if (o.tg_msg) {
-    const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, text,
+    const j = await tgApi('editMessageText', { chat_id: orderDest(o).chat_id, message_id: o.tg_msg, text,
       disable_web_page_preview: true, reply_markup: kb || doneKeyboard(botao) });
     if (j?.ok) return;
   }
-  if (fallback) tgSend(text);
+  if (fallback) tgSend(text, 'pedidos');
 }
 async function notifyPaid(o) {
-  const j = await tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true, reply_markup: paidKeyboard(o), text: paidText(o) });
-  const mid = j?.result?.message_id;
-  if (mid) db.prepare('UPDATE orders SET tg_msg=? WHERE id=?').run(mid, o.id);
+  const j = await tgPedidoMsg({ disable_web_page_preview: true, reply_markup: paidKeyboard(o), text: paidText(o) });
+  saveOrderMsg(db, o.id, j);
   conferir(o.id, true); // em segundo plano: lê a fatura no bot do CF; no modo automático, paga em seguida
 }
 // Pagamento incerto: edita o aviso do pedido com os detalhes + alerta curto respondendo a ele (a edição não
@@ -217,7 +297,7 @@ function tgIncerto(id, motivo) {
   if (!o) return;
   tgAviso(id, { icone: '🚨', titulo: `pagamento INCERTO (${starsOf(o)}★)`, botao: '🚨 Pagamento incerto — confira',
     extras: [`Erro: ${motivo}`, 'Resolva pelo painel: no pedido, toque em "🔍 verificar cobrança" (a loja confere se a fatura exata deste pedido tem recibo). A loja não vai tentar de novo sozinha.'] });
-  if (o.tg_msg) tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true,
+  if (o.tg_msg) tgApi('sendMessage', { ...orderDest(o), disable_web_page_preview: true,
     reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true },
     text: `🚨 Pagamento INCERTO no pedido #${o.id} (${starsOf(o)}★ · ${o.nickname}) — confira no painel; detalhes no aviso original.` });
 }
@@ -230,12 +310,12 @@ async function tgFalha(id, linha, alerta) {
   const text = `${paidText(o)}\n${linha}\n${saldoLine()}`;
   let ok = false;
   if (o.tg_msg) {
-    const j = await tgApi('editMessageText', { chat_id: env.TG_CHAT_ID, message_id: o.tg_msg, text,
+    const j = await tgApi('editMessageText', { chat_id: orderDest(o).chat_id, message_id: o.tg_msg, text,
       disable_web_page_preview: true, reply_markup: paidKeyboard(o) });
     ok = !!j?.ok;
   }
-  if (!ok) { tgSend(alerta ? `${alerta.split(' — ')[0]}\n\n${text}` : text); return; }
-  if (alerta) tgApi('sendMessage', { chat_id: env.TG_CHAT_ID, disable_web_page_preview: true,
+  if (!ok) { tgSend(alerta ? `${alerta.split(' — ')[0]}\n\n${text}` : text, 'pedidos'); return; }
+  if (alerta) tgApi('sendMessage', { ...orderDest(o), disable_web_page_preview: true,
     reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true }, text: alerta });
 }
 

@@ -8,10 +8,16 @@ envval() { grep -m1 "^$1=" "$APP_DIR/.env" | cut -d= -f2- | sed -e 's/^["'\'']//
 URL="$(envval PUBLIC_URL)/api/products"
 TG_BOT_TOKEN=$(envval TG_BOT_TOKEN); TG_CHAT_ID=$(envval TG_CHAT_ID)
 
+# tópico 🚨 Alertas do grupo (se configurado); se o grupo falhar, manda no chat privado
+read -r TG_GRUPO TG_TOPICO <<< "$(node "$APP_DIR/tools/tg-destino.cjs" alertas 2>/dev/null)"
+tgpost() {  # $1 = chat, $2 = tópico (ou vazio), $3 = texto
+  printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TG_BOT_TOKEN" | curl -sS --max-time 15 -K - \
+    --data-urlencode "chat_id=$1" ${2:+--data-urlencode "message_thread_id=$2"} --data-urlencode "text=$3" 2>/dev/null | grep -q '"ok":true'
+}
 send() {
   [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ] || return 0
-  printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TG_BOT_TOKEN" | curl -sS --max-time 15 -K - \
-    --data-urlencode "chat_id=$TG_CHAT_ID" --data-urlencode "text=$1" >/dev/null || true
+  if [ -n "${TG_GRUPO:-}" ] && tgpost "$TG_GRUPO" "$TG_TOPICO" "$1"; then return 0; fi
+  tgpost "$TG_CHAT_ID" "" "$1" || true
 }
 
 CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$URL" || true); [ -n "$CODE" ] || CODE=000

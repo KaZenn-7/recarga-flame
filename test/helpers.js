@@ -9,6 +9,7 @@ import fs from 'node:fs';
 const TEST_DB = `/tmp/cf-test-${process.pid}-${Date.now()}.db`;
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = TEST_DB;
+process.env.TG_TOPICS_FILE = TEST_DB + '.topicos.json'; // grupo com tópicos do teste (cada arquivo de teste tem o seu)
 process.env.MP_ACCESS_TOKEN = 'TEST-token-fake';
 process.env.MP_WEBHOOK_SECRET = 'segredo-teste';
 process.env.ADMIN_USER = 'admin_test';
@@ -28,6 +29,7 @@ export const mock = {
   status: null,    // força um status na consulta (ex.: 'refunded')
   payer: null,     // dados do pagador devolvidos pelo MP (CPF/conta)
   lastBody: null,  // corpo do último pagamento criado no MP
+  tgFailChat: null, // chat_id em que o Telegram falso recusa tudo
 };
 export const tgSent = [];               // mensagens enviadas ao Telegram
 export const mailSent = [];             // e-mails enviados ao Resend
@@ -45,8 +47,14 @@ globalThis.fetch = async (url, opts) => {
   if (u.startsWith('https://api.telegram.org/')) {
     const method = u.split('/').pop(), body = JSON.parse(opts.body);
     tgCalls.push({ method, body });
+    // chat que "não aceita" mensagens (ex.: bot removido do grupo): testa a volta para o chat privado
+    if (mock.tgFailChat && String(body.chat_id) === String(mock.tgFailChat)) {
+      return new Response(JSON.stringify({ ok: false, description: 'Forbidden: bot was kicked' }), { status: 403, headers: { 'content-type': 'application/json' } });
+    }
     if (method === 'sendMessage') tgSent.push(body);
-    const result = method === 'sendMessage' ? { message_id: 700 + tgCalls.length } : true;
+    const result = method === 'sendMessage'
+      ? { message_id: 700 + tgCalls.length, chat: { id: Number(body.chat_id) }, ...(body.message_thread_id ? { message_thread_id: body.message_thread_id } : {}) }
+      : method === 'createForumTopic' ? { message_thread_id: 300 + tgCalls.length, name: body.name } : true;
     return new Response(JSON.stringify({ ok: true, result }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   // avatar do CounterFlame
@@ -125,6 +133,7 @@ export function setupStore(prepare) {
   after(() => {
     server?.close();
     try { fs.unlinkSync(TEST_DB); } catch {}
+    try { fs.unlinkSync(process.env.TG_TOPICS_FILE); } catch {}
   });
 
   // cada teste começa com o rate-limit do admin zerado (evita contaminação entre testes)

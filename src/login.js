@@ -97,7 +97,7 @@ function admin(req, res, next) {
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const id = crypto.randomBytes(24).toString('base64url');
     challenges.set(id, { codeHash: hashHex(code), exp: Date.now() + CODE_TTL, tries: 0, ip });
-    const sent = await tgSend(`🔐 Código de acesso ao painel: ${code}\nVale 5 minutos. IP: ${ip}\nSe não foi você, troque a senha do admin.`);
+    const sent = await tgSend(`🔐 Código de acesso ao painel: ${code}\nVale 5 minutos. IP: ${ip}\nSe não foi você, troque a senha do admin.`, 'privado'); // nunca no grupo
     if (!sent) { challenges.delete(id); return res.status(502).json({ error: 'Não foi possível enviar o código pelo Telegram.' }); }
     res.json({ challenge: id });
   });
