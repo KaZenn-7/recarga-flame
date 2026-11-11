@@ -421,3 +421,38 @@ test('extrato mensal por e-mail: só p/ parceiro com e-mail e movimento; nunca l
   db.exec("DELETE FROM orders WHERE coupon IN ('EXT1','EXT2')"); db.exec("DELETE FROM partner_months WHERE code IN ('EXT1','EXT2','EXT3')");
   db.exec("DELETE FROM coupons WHERE code IN ('EXT1','EXT2','EXT3')");
 });
+
+test('reservar para comissões: devido de meses fechados + estimado do mês; crédito só abate do próprio parceiro; próximo dia de pagamento', async () => {
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'RESV', desconto_pct: 0, comissao_pct: 50, ativo: true })).status, 200);
+  db.prepare("UPDATE coupons SET plano='fixo' WHERE code='RESV'").run();
+  mock.approve = true;
+  const ids = [];
+  for (const g of ['606061', '606062']) {
+    const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: g, email: 'rs@x.com', coupon: 'RESV' })).json();
+    await pagar(token); ids.push(id);
+  }
+  db.prepare("UPDATE orders SET paid_at='2020-01-15 12:00:00' WHERE id=?").run(ids[0]); // venda de um mês já fechado
+  const rep = async () => (await (await adm('GET', '/api/admin/coupons/report')).json());
+  const soma = (cs) => cs.reduce((a, c) => a + Math.max(0, c.saldo + c.mesCom), 0);
+  let r = await rep();
+  const c = r.cupons.find((x) => x.code === 'RESV');
+  assert.ok(c.saldo > 0 && c.mesCom > 0);
+  assert.equal(r.reserva.total, soma(r.cupons));
+  assert.equal(r.reserva.mes, r.cupons.reduce((a, x) => a + x.mesCom, 0));
+  assert.equal(r.reserva.devido, r.cupons.reduce((a, x) => a + Math.max(0, x.saldo), 0));
+  assert.ok(r.reserva.devidoJa <= r.reserva.devido);
+  // período não muda a reserva
+  assert.equal((await (await adm('GET', '/api/admin/coupons/report?from=2000-01-01&to=2000-01-31')).json()).reserva.total, r.reserva.total);
+  // pagou a mais que o devido: o crédito abate só o mês atual dele, nunca a reserva de outro parceiro
+  const antes = r.reserva.total;
+  const { id: pid } = await (await adm('POST', '/api/admin/coupons/RESV/payouts', { cents: c.saldo + c.mesCom + 500 })).json();
+  r = await rep();
+  assert.equal(r.reserva.total, antes - (c.saldo + c.mesCom));
+  assert.equal(r.reserva.total, soma(r.cupons));
+  await adm('DELETE', '/api/admin/payouts/' + pid);
+  // próximo pagamento: dia útil, hoje ou depois
+  assert.match(r.reserva.proximo, /^\d{4}-\d{2}-\d{2}$/);
+  const wd = new Date(r.reserva.proximo + 'T12:00:00Z').getUTCDay();
+  assert.ok(wd >= 1 && wd <= 5);
+  assert.ok(r.reserva.proximo >= new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10));
+});

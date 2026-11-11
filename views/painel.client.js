@@ -564,10 +564,20 @@ async function saveTiers(quando){
     renderTiers();loadRep();alert(quando==='proximo'?'Faixas agendadas para '+mesNome(TNEXT?TNEXT.mes:proxMes())+'.':'Faixas salvas.');}
   catch(e){alert(e.message);}
 }
+// topo da aba Comissões: total a deixar reservado (não muda com o período)
+function renderReserva(R){
+  const b=$$('resBox');if(!R){b.innerHTML='';return;}
+  const dt=R.proximo.split('-').reverse().join('/');
+  b.innerHTML='<div class="resv"><div class="l">Reservar para comissões</div><div class="v">'+brlFromCents(R.total)+'</div>'+
+    '<div class="s">já devido (meses fechados) <b>'+brlFromCents(R.devido)+'</b>'+(R.devido>R.devidoJa?' ('+brlFromCents(R.devido-R.devidoJa)+' abaixo do mínimo, acumula)':'')+
+    ' + este mês, estimado <b>'+brlFromCents(R.mes)+'</b> (sobe com novas vendas)<br>próximo pagamento: <b>'+dt+'</b>'+
+    (R.devidoJa?' · <b>'+brlFromCents(R.devidoJa)+'</b> nesse dia':'')+'</div></div>';
+}
 async function loadRep(){
   $$('repBox').innerHTML='<div class="empty">Carregando…</div>';
   try{const r=await api('/api/admin/coupons/report'+perRange());
     REP_DUE=r.cupons.filter(function(c){return c.saldo>=c.minimo;}).length;renderCupTabs();
+    renderReserva(r.reserva);
     $$('repBox').innerHTML=r.cupons.map(function(c){
       const st=c.saldo>0?(c.saldo<c.minimo?'<span class="due low">'+brlFromCents(c.saldo)+' · acumula</span>':'<span class="due">a pagar '+brlFromCents(c.saldo)+'</span>'):
         c.saldo<0?'<span class="due">crédito '+brlFromCents(-c.saldo)+'</span>':'<span class="ok">em dia ✓</span>';

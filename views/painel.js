@@ -158,6 +158,9 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .tiers .ops button.pri{white-space:nowrap;background:var(--orange);color:#160a04;border-color:var(--orange)}.tiers .metabox{margin:0 0 10px}.rep .top .due.low{color:var(--mut);font-weight:600}
 .tiers .ops button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;padding:9px;font:inherit;font-weight:700;cursor:pointer}
 .rep .plk{font-size:11.5px;color:var(--dim);margin-top:6px}.rep .ops{flex-wrap:wrap}
+.resv{background:var(--panel);border:1px solid var(--gold);border-radius:11px;padding:12px 14px;margin-bottom:12px}
+.resv .l{font-size:12.5px;color:var(--mut)}.resv .v{font-size:24px;font-weight:800;color:var(--gold);line-height:1.25;margin-top:2px}
+.resv .s{font-size:12.5px;color:var(--mut);margin-top:6px;line-height:1.5}.resv .s b{color:var(--txt)}
 .rep .tot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--mut);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.rep .tot b{color:var(--txt)}
 .rep .ops{display:flex;gap:6px;margin-top:10px}
 .rep .ops button{border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:7px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
@@ -222,7 +225,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
   <div class="padd">
     <div id="secMeta"><div class="tiers" id="tiersBox"></div></div>
     <div id="secCom"><div class="rephead"><b>Comissões</b><select id="repPer" data-change="loadRep"><option value="m0">Este mês</option><option value="m1">Mês passado</option><option value="all">Tudo</option></select></div>
-    <div id="repBox"><div class="empty">Carregando…</div></div>
+    <div id="resBox"></div><div id="repBox"><div class="empty">Carregando…</div></div>
     <p class="hint" style="margin:8px 2px 18px">Conta só pedidos pagos ou entregues. Lucro = valor pago − Stars (custo) − taxa do MP. Comissão = % do lucro: no plano de metas, a faixa do mês (pelo faturamento do parceiro) vale para todas as vendas do mês; no plano fixo, o % do dia da venda. O período muda só a primeira linha. <b>A pagar</b> = comissão dos meses já fechados − pagamentos registrados (pago no 1º dia útil; abaixo do mínimo, acumula). O mês atual aparece como estimado.</p></div>
     <div id="secCup"><button class="newbtn" data-act="openCup">+ Novo cupom</button>
     <div id="cupList" style="margin-top:12px"></div></div>

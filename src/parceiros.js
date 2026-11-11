@@ -256,8 +256,25 @@ app.get('/api/admin/coupons/report', admin, (req, res) => {
       lucroLoja: 0, visitas: 0, conversao: null, total: 0, fechado: 0, mesCom: 0, pago: 0, saldo: 0, minimo: PAYOUT_MIN, pagamentos: [], mesAtual: mesAtual(ctx, c.code),
       linkParceiro: c.ptoken ? `${SITE_URL}/parceiro/${c.ptoken}` : null });
   }
-  res.json({ from, to, cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
+  res.json({ from, to, reserva: reservaDe(list), cupons: list.sort((a, b) => b.saldo - a.saldo || b.faturado - a.faturado) });
 });
+// Quanto deixar reservado para comissões: tudo que a loja deve a cada parceiro (meses fechados ainda não pagos,
+// inclusive abaixo do mínimo, que acumula) + a comissão estimada do mês atual (vira devida no fechamento).
+// Crédito de um parceiro (pagou a mais) só abate dele mesmo. Não depende do período escolhido.
+function reservaDe(list) {
+  let devido = 0, devidoJa = 0, mes = 0, total = 0;
+  for (const c of list) {
+    const s = Math.max(0, c.saldo);
+    devido += s; if (s >= c.minimo) devidoJa += s;
+    mes += c.mesCom;
+    total += Math.max(0, c.saldo + c.mesCom);
+  }
+  // próximo pagamento: 1º dia útil deste mês (se ainda não passou) ou do mês que vem
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  let m = hoje.slice(0, 7);
+  if (Number(hoje.slice(8)) > primeiroDiaUtil(m)) { const [y, mm] = m.split('-').map(Number); m = new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 7); }
+  return { total, devido, devidoJa, mes, proximo: `${m}-${String(primeiroDiaUtil(m)).padStart(2, '0')}`, minimo: PAYOUT_MIN };
+}
 // faixas do plano de metas (editáveis no painel); valores em centavos
 app.get('/api/admin/tiers', admin, (req, res) => res.json(getTiers()));
 app.put('/api/admin/tiers', admin, (req, res) => {

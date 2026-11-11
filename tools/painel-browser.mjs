@@ -75,6 +75,10 @@ const a0 = await page.$eval('#c_ativo_txt', (e) => e.textContent); await page.cl
 ok(a0 !== await page.$eval('#c_ativo_txt', (e) => e.textContent), 'chave Ativo do cupom atualiza o texto');
 await page.click('button[data-act="closeCup"]'); await wait(200);
 ok(!(await cls('#cmodal', 'on')), 'Cancelar fecha o cupom');
+await page.click('#cupTabs .tab[data-t="comissoes"]'); await wait(800);
+ok(await page.$eval('#resBox', (e) => /Reservar para comissões[\s\S]*R\$[\s\S]*próximo pagamento: \d{2}\/\d{2}\/\d{4}/.test(e.textContent)).catch(() => false), 'Comissões: quadro "Reservar" no topo');
+if (process.env.SHOT) { await page.setViewport({ width: 390, height: 800 }); await wait(200); await page.screenshot({ path: process.env.SHOT }); }
+await page.click('#cupTabs .tab[data-t="cupons"]'); await wait(200);
 await page.click('#navAna'); await wait(800);
 ok(await vis('#viewAna'), 'Analytics abre');
 await page.click('#navPed'); await wait(300);
