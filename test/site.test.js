@@ -44,6 +44,10 @@ test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Re
   assert.ok(pgTxt.includes("'https://wa.me/5511954854560?text='+encodeURIComponent(t)"));
   assert.ok(!pgTxt.includes('95485-4560')); // sem o número visível
   assert.match(await (await fetch(base + '/')).text(), /id="supWa" href="https:\/\/wa\.me\/5511954854560/);
+  // telas depois do pagamento: destaque, linha do tempo e resumo do pedido
+  const home = await (await fetch(base + '/')).text();
+  for (const id of ['hero', 'trk', 'resumo', 'e4t']) assert.match(home, new RegExp(`id="${id}"`));
+  assert.match(home, /Entregando na sua conta/); assert.match(home, /Entrega pela nossa equipe/);
   assert.equal((await sup({ email: 'x', assunto: 'outro', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'hack', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'outro', msg: 'curta' })).status, 400);

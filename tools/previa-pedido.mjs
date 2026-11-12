@@ -1,18 +1,18 @@
 // Prévia da tela do pedido (index.html do disco, não o que está no ar) com um pedido FALSO em um status.
-//   node tools/previa-pedido.mjs <saida.png> [status=paid]
+//   node tools/previa-pedido.mjs <saida.png> [status=paid] [entrega=auto|manual]
 // Usa a loja local só para produtos/imagens; o pedido é simulado (nada é criado no banco).
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 const require = createRequire('/home/ramos/api-base/x.js'); // puppeteer de ~/api-base
 const puppeteer = require('puppeteer');
-const [out = 'previa-pedido.png', status = 'paid'] = process.argv.slice(2);
+const [out = 'previa-pedido.png', status = 'paid', entrega = null] = process.argv.slice(2); // entrega: auto | manual (só com status paid)
 const BASE = 'http://127.0.0.1:3102';
 const TK = '00000000-0000-4000-8000-000000000000';
 // PREVIA_DIR=<pasta>: serve as páginas dessa pasta no lugar das de public/ (ver uma mudança antes de aplicar)
 const DIR = process.env.PREVIA_DIR || new URL('../public', import.meta.url).pathname;
 const PAGINA = process.env.PREVIA_PAGINA || ''; // ex.: como-funciona (padrão: tela do pedido)
 const html = fs.readFileSync(`${DIR}/index.html`, 'utf8');
-const pedido = { status, entrega: null, id: 1234, product: 'gold', nome: 'Gold Pass', cents: 3690, gameId: '749125', nick: 'Jogador',
+const pedido = { status, entrega, id: 1234, product: 'gold', nome: 'Gold Pass', cents: 3690, gameId: '749125', nick: 'Jogador',
   avatar: '/img/brand-mark.png', img: '/img/gold.jpg', expiresAt: Date.now() + 30 * 60_000, qr: null, qrBase64: null };
 
 const browser = await puppeteer.launch({ executablePath: '/home/ramos/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome', args: ['--no-sandbox'] });

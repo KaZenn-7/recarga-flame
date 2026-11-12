@@ -147,6 +147,35 @@ input:focus{outline:0;border-color:#45454c}
 .hide{display:none}
 .ld{display:inline-block;width:15px;height:15px;border:2px solid rgba(22,10,4,.35);border-top-color:#160a04;border-radius:50%;animation:r .7s linear infinite;vertical-align:-3px;margin-right:7px}
 @keyframes r{to{transform:rotate(360deg)}}
+/* depois do pagamento: destaque do status, linha do tempo e resumo do pedido */
+.hero{display:flex;gap:14px;align-items:flex-start;padding:16px;border-radius:12px;border:1px solid var(--line);background:var(--panel);margin-bottom:14px}
+.hero b{display:block;font-size:17px;line-height:1.3;margin-bottom:4px}
+.hero p{margin:0;font-size:14px;color:var(--mut);line-height:1.5}
+.hero-ic{width:44px;height:44px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:22px;font-weight:800;line-height:1}
+.hero.run{border-color:rgba(255,90,31,.45);background:rgba(255,90,31,.07)}
+.hero.run .hero-ic{border:3px solid rgba(255,90,31,.25);border-top-color:var(--orange);animation:r 1s linear infinite}
+.hero.wait{border-color:rgba(227,179,65,.45);background:rgba(227,179,65,.08)}.hero.wait .hero-ic{background:rgba(227,179,65,.18);color:var(--gold)}
+.hero.ok{border-color:rgba(63,185,80,.5);background:rgba(63,185,80,.09)}.hero.ok .hero-ic{background:var(--green);color:#06210f}
+.hero.ok b{font-size:20px}
+.hero.bad{border-color:rgba(248,81,73,.45);background:rgba(248,81,73,.07)}.hero.bad .hero-ic{background:rgba(248,81,73,.16);color:var(--red)}
+.hero.back{border-color:var(--line)}.hero.back .hero-ic{background:var(--panel2);color:var(--txt)}
+.trk{list-style:none;display:grid;grid-template-columns:repeat(3,1fr);margin:0 0 14px;padding:0;counter-reset:t}
+.trk li{position:relative;text-align:center;font-size:12px;color:var(--dim);padding-top:30px;line-height:1.3}
+.trk li::before{counter-increment:t;content:counter(t);position:absolute;top:0;left:50%;transform:translateX(-50%);width:22px;height:22px;border-radius:50%;
+  background:var(--panel2);border:2px solid var(--line);font-size:11px;font-weight:800;display:grid;place-items:center;z-index:1;color:var(--dim)}
+.trk li+li::after{content:"";position:absolute;top:11px;right:50%;width:100%;height:2px;background:var(--line)}
+.trk li.ok{color:var(--mut)}.trk li.ok::before{content:"✓";background:var(--green);border-color:var(--green);color:#06210f}
+.trk li.ok+li::after,.trk li.ok+li.ok::after{background:var(--green)}
+.trk li.on{color:var(--txt);font-weight:700}.trk li.on::before{border-color:var(--orange);color:var(--orange);box-shadow:0 0 0 4px rgba(255,90,31,.15)}
+.trk li.on.wait::before{border-color:var(--gold);color:var(--gold);box-shadow:0 0 0 4px rgba(227,179,65,.15)}
+.resumo{display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line);border-radius:11px;background:var(--panel);margin-bottom:4px}
+.resumo img{width:46px;height:46px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--panel2)}
+.resumo div{flex:1;min-width:0}.resumo div b{display:block;font-size:14px}
+.resumo div span{display:block;font-size:12.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.resumo>b{font-size:14px;white-space:nowrap}
+/* .hide vem antes no CSS: reforça para os blocos com display próprio */
+.hero.hide,.trk.hide,.resumo.hide{display:none}
+@media (prefers-reduced-motion:reduce){.hero.run .hero-ic{animation:none;border-color:var(--orange)}}
 /* rodapé (igual em todas as páginas) */
 .ft{margin-top:36px;padding:18px 0 4px;border-top:1px solid var(--line);color:var(--mut)}
 .ft-nav{display:flex;flex-wrap:wrap;gap:6px 22px;margin-bottom:10px}
@@ -252,7 +281,7 @@ input:focus{outline:0;border-color:#45454c}
 
   <!-- 4: pagamento -->
   <section id="e4" class="hide">
-    <h2>Pagamento <span class="onum mono" id="onum"></span></h2>
+    <h2><span id="e4t">Pagamento</span> <span class="onum mono" id="onum"></span></h2>
     <div class="stline" id="st"><i></i><span id="sttxt">Aguardando pagamento</span></div>
     <div id="pix">
       <div class="qr"><img id="qr" alt="QR Code Pix"></div>
@@ -263,6 +292,9 @@ input:focus{outline:0;border-color:#45454c}
       <p class="err" id="err4"></p>
     </div>
     <div id="after" class="hide">
+      <div class="hero hide" id="hero" role="status"><div class="hero-ic" id="heroIc"></div><div><b id="heroT"></b><p id="heroX"></p></div></div>
+      <ol class="trk hide" id="trk" aria-label="Andamento do pedido"><li>Pagamento confirmado</li><li id="trk2">Entregando</li><li>Entregue</li></ol>
+      <div class="resumo hide" id="resumo"><img id="rsImg" alt=""><div><b id="rsNome"></b><span id="rsConta"></span></div><b id="rsVal"></b></div>
       <p class="note" id="afternote"></p>
       <div id="prazoPago" class="hide"><div class="prazo">
       <b>Entrega em até 24 horas</b> após a confirmação do pagamento.
@@ -271,7 +303,7 @@ input:focus{outline:0;border-color:#45454c}
       <button class="btn btn-sec hide" id="outro">Fazer outro pedido</button>
     </div>
     <div class="linkp"><span>Salve o link deste pedido para acompanhar de outro aparelho.</span><button id="copLink">Copiar link</button></div>
-    <div class="sup">Dúvida ou problema com o pedido? Fale com a gente:
+    <div class="sup"><span id="supTxt">Dúvida ou problema com o pedido? Fale com a gente:</span>
       <div class="supb"><a class="mail" id="supMail" href="/suporte">Suporte</a><a class="wa" id="supWa" href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">WhatsApp</a></div>
     </div>
   </section>
@@ -507,7 +539,7 @@ function setStatus(status,entrega){
   const retry=['cancelled','expired','notfound'].includes(status);
   $('novoPix').classList.toggle('hide',!retry);
   $('outro').classList.toggle('hide',pending);
-  $('prazoPago').classList.toggle('hide',status!=='paid'||entrega==='auto');
+  $('prazoPago').classList.add('hide');
   $('afternote').classList.toggle('warnbox',status==='paid'&&entrega==='manual');
   $('afternote').textContent=
     status==='paid'&&entrega==='auto'?'Seu pedido está sendo entregue automaticamente na conta informada. Leva até 10 minutos — esta página atualiza sozinha.':
@@ -518,6 +550,41 @@ function setStatus(status,entrega){
     status==='reversed'?'O pagamento foi estornado e o pedido foi cancelado.':
     status==='refund'?'Não foi possível concluir este pedido e ele não foi entregue. O valor pago será devolvido integralmente via Pix. Se tiver dúvidas, fale com o suporte.':
     status==='refunded'?'Este pedido não foi entregue e o valor pago foi devolvido integralmente via Pix, para a mesma conta que pagou. Pode levar alguns minutos para aparecer no seu banco.':'';
+  posPago(status,entrega);
+}
+
+// depois do pagamento: um destaque por situação (o texto antigo fica para pendente/cancelado/expirado)
+const POS={
+  run:['run','','Entregando na sua conta','Leva até 10 minutos. Esta página atualiza sozinha — pode fechar e voltar depois.'],
+  fila:['wait','!','Entrega pela nossa equipe','Seu pagamento está confirmado. Vamos entregar na conta informada em até 24 horas — você não precisa fazer nada.'],
+  delivered:['ok','✓','Entregue!','Abra o CounterFlame para conferir. Também enviamos a confirmação para o seu e-mail.'],
+  refund:['bad','!','Pedido cancelado','Não foi possível concluir este pedido e ele não foi entregue. O valor pago será devolvido integralmente via Pix — você não precisa fazer nada.'],
+  refunded:['back','↺','Valor devolvido','Este pedido não foi entregue e o valor foi devolvido integralmente via Pix, para a mesma conta que pagou. Pode levar alguns minutos para aparecer no banco.'],
+  reversed:['back','↺','Pagamento estornado','O pagamento foi estornado e o pedido foi cancelado.'],
+};
+let resumoTk=null;
+function posPago(status,entrega){
+  const k=status==='paid'?(entrega==='auto'?'run':'fila'):status;
+  const p=POS[k];
+  $('hero').classList.toggle('hide',!p);$('trk').classList.toggle('hide',!p||!['run','fila','delivered'].includes(k));
+  $('resumo').classList.toggle('hide',!p||!$('rsNome').textContent);
+  $('e4t').textContent=p?'Pedido':'Pagamento';
+  $('st').classList.toggle('hide',!!p);$('afternote').classList.toggle('hide',!!p);
+  $('supTxt').textContent=k==='delivered'?'Não apareceu no jogo? Fale com a gente:':['refund','refunded','reversed'].includes(k)?'Dúvidas sobre a devolução? Fale com a gente:':'Dúvida ou problema com o pedido? Fale com a gente:';
+  $('outro').classList.toggle('btn-go',k==='delivered');$('outro').classList.toggle('btn-sec',k!=='delivered');
+  if(!p)return;
+  $('hero').className='hero '+p[0];$('heroIc').textContent=p[1];$('heroT').textContent=p[2];$('heroX').textContent=p[3];
+  const li=$('trk').children;
+  li[0].className='ok';li[1].className=k==='delivered'?'ok':'on'+(k==='fila'?' wait':'');li[2].className=k==='delivered'?'ok':'';
+  $('trk2').textContent=k==='fila'?'Com a equipe':'Entregando';
+  // resumo do pedido (produto, conta e valor): busca uma vez por pedido
+  if(curTok&&resumoTk!==curTok){
+    resumoTk=curTok;
+    api('/api/orders/'+curTok+'?full=1').then(o=>{
+      $('rsImg').src=o.img;$('rsNome').textContent=o.nome;$('rsConta').textContent=(o.nick?o.nick+' · ':'')+'ID '+o.gameId;$('rsVal').textContent=brl(o.cents);
+      $('resumo').classList.toggle('hide',$('hero').classList.contains('hide'));
+    }).catch(()=>{resumoTk=null;});
+  }
 }
 
 async function checkOnce(expiredLocal){
