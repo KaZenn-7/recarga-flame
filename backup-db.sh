@@ -79,6 +79,35 @@ if [ -n "${LATEST:-}" ] && [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ] && [ -
     echo "[$(date -Is)] FALHA ao enviar ao Telegram: $(printf '%s' "$RESP" | grep -o '"description":"[^"]*"' || echo sem resposta)"
     UPLOAD_FAIL=1
   fi
+
+  # ---- cópia do CÓDIGO fora da VPS (1x por dia, na rodada das 18h ou com CODE_BACKUP=1) ----
+  # git bundle com todo o histórico + a skill da loja; mesmo cifrado (AES256) e mesmo destino.
+  # Restaurar: gpg -d codigo-<data>.tar.gz.gpg | tar -xz && git clone codigo.bundle cf-teste-deploy
+  # (o .env e os segredos NÃO vão: ficam só na VPS/no gerenciador do operador)
+  if [ "$(date +%H)" = "18" ] || [ "${CODE_BACKUP:-0}" = "1" ]; then
+    CTMP=$(mktemp -d)
+    git -C "$APP_DIR" bundle create "$CTMP/codigo.bundle" --all >/dev/null 2>&1
+    SKILL="$HOME/.hermes/skills/software-development/cf-store-counterflame/SKILL.md"
+    [ -f "$SKILL" ] && cp "$SKILL" "$CTMP/SKILL-cf-store.md"
+    CPKG="$DEST/codigo-$(date +%Y-%m-%dT%H-%M).tar.gz"
+    (umask 077; tar -czf "$CPKG" -C "$CTMP" .)
+    rm -rf "$CTMP"
+    ENC="$CPKG.gpg"
+    printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+      --symmetric --cipher-algo AES256 -o "$ENC" "$CPKG"
+    rm -f "$CPKG"
+    CAPTION="Backup do código $(date '+%d/%m %H:%M') · $(git -C "$APP_DIR" rev-list --count HEAD) commits · último $(git -C "$APP_DIR" log -1 --format=%h) · $(du -h "$ENC" | cut -f1)"
+    RESP=""
+    [ -n "${TG_GRUPO:-}" ] && RESP=$(senddoc "$TG_GRUPO" "$TG_TOPICO")
+    printf '%s' "$RESP" | grep -q '"ok":true' || RESP=$(senddoc "$TG_CHAT_ID" "")
+    rm -f "$ENC"
+    if printf '%s' "$RESP" | grep -q '"ok":true'; then
+      echo "[$(date -Is)] código enviado ao Telegram"
+    else
+      echo "[$(date -Is)] FALHA ao enviar o código: $(printf '%s' "$RESP" | grep -o '"description":"[^"]*"' || echo sem resposta)"
+      UPLOAD_FAIL=1
+    fi
+  fi
 else
   echo "[$(date -Is)] envio externo desativado (faltam TG_BOT_TOKEN/TG_CHAT_ID/BACKUP_PASSPHRASE no .env)"
 fi

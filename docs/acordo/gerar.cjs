@@ -63,7 +63,7 @@ async function main() {
   let d, out;
   if (o.modelo) {
     d = { modelo: true, plano: 'metas', tiers: globais, exemplos: exemplosDe(5) };
-    fs.mkdirSync(OUT_DIR, { recursive: true });
+    fs.mkdirSync(OUT_DIR, { recursive: true, mode: 0o700 });
     out = o.out || path.join(OUT_DIR, `Modelo - Acordo de parceria - ${hoje().split('/').reverse().join('-')}.docx`);
   } else {
     const code = String(o.cupom || '').trim().toUpperCase();
@@ -81,7 +81,7 @@ async function main() {
       semResponsavel: !!o['sem-responsavel'], minimo: Math.round(num('minimo', 20) * 100), avisoDias: num('aviso', 7),
       data: o.data || hoje(), geradoEm: hoje(), exemplos: exemplosDe(c.desconto_pct),
     };
-    fs.mkdirSync(OUT_DIR, { recursive: true });
+    fs.mkdirSync(OUT_DIR, { recursive: true, mode: 0o700 });
     out = o.out || path.join(OUT_DIR, `Acordo de parceria - ${c.code} - ${hoje().split('/').reverse().join('-')}.docx`);
     const falta = [['nome', d.parceiroNome], ['canal', d.canal], ['pix', d.chavePix], ...(d.semResponsavel ? [] : [['responsavel', d.responsavel]])]
       .filter(([, x]) => !x).map(([k]) => k);
@@ -90,7 +90,8 @@ async function main() {
       star: Number(star.toFixed(4)), emAmarelo: falta }));
   }
   db.close();
-  fs.writeFileSync(out, await buildAcordo(d));
+  fs.writeFileSync(out, await buildAcordo(d), { mode: 0o600 }); // tem a chave Pix do parceiro
+  fs.chmodSync(out, 0o600); // vale também ao sobrescrever um arquivo que já existia
   console.log('ok', out);
 }
 

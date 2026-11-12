@@ -828,6 +828,11 @@ app.get('/:code', (req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
+  // endereço malformado (robôs testando %c0 etc.) ou JSON inválido: erro do cliente, uma linha no log em vez do stack
+  if (err?.status >= 400 && err.status < 500) {
+    console.error(`Requisição inválida ${err.status}: ${req.method} ${String(req.originalUrl).slice(0, 120)} (${err.message})`);
+    return res.status(err.status).json({ error: 'Requisição inválida.' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Erro interno. Tente novamente.' });
 });

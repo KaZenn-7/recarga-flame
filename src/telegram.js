@@ -38,6 +38,8 @@ const isOrderMsg = (o, chatId, msgId) => !!o.tg_msg && o.tg_msg === msgId && Str
 // ---------- Telegram (bot do operador) ----------
 // Mesmo bot do backup. Falha de envio nunca derruba a loja: só registra no log.
 // Chamada genérica à API do bot; devolve o JSON ou null (nunca lança).
+// getUpdates com erro passageiro do Telegram (5xx/rede): só registra se continuar falhando (5 seguidas).
+let getUpdFalhas = 0;
 async function tgApi(method, body, timeoutMs = 10000) {
   if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return null;
   try {
@@ -46,6 +48,10 @@ async function tgApi(method, body, timeoutMs = 10000) {
       body: JSON.stringify(body),
     });
     const j = await r.json().catch(() => null);
+    if (method === 'getUpdates') {
+      if (r.status >= 500) { if (++getUpdFalhas === 5) console.error('Telegram getUpdates falhando há 5 tentativas seguidas:', r.status); return j; }
+      getUpdFalhas = 0;
+    }
     // "message is not modified" = conferência repetida com o mesmo resultado; não é erro
     if (!r.ok && !/not modified/.test(j?.description || '')) console.error('Telegram', method, r.status, j?.description || '');
     return j;

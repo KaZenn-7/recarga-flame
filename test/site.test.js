@@ -120,3 +120,9 @@ test('robots.txt e sitemap.xml', async () => {
   for (const p of ['/como-funciona', '/perguntas-frequentes', '/termos-de-uso']) assert.ok(x.includes('https://recargaflame.com.br' + p));
   assert.ok(!x.includes('/painel'));
 });
+
+test('endereço malformado (robô): 400 com mensagem curta, não 500', async () => {
+  const r = await fetch(base + '/parceiro/%c0');
+  assert.equal(r.status, 400);
+  assert.deepEqual(await r.json(), { error: 'Requisição inválida.' });
+});
