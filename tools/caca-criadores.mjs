@@ -119,7 +119,7 @@ function telegram(text, file) {
   if (!tk || !chat) return Promise.resolve();
   let dest = { chat_id: chat };
   try {
-    const out = execFileSync('node', [path.join(ROOT, 'tools/tg-destino.cjs'), 'parcerias'], { encoding: 'utf8' }).trim();
+    const out = execFileSync(process.execPath, [path.join(ROOT, 'tools/tg-destino.cjs'), 'parcerias'], { encoding: 'utf8' }).trim();
     if (out) { const [c, t] = out.split(' '); dest = { chat_id: c, message_thread_id: t }; }
   } catch { /* chat privado */ }
   const fd = new FormData();
