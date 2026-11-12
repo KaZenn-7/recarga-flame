@@ -19,3 +19,6 @@ old-public/
 
 # acordos de parceria gerados (têm chave Pix do parceiro)
 docs/acordo/gerados/
+
+# configurações pessoais do Claude Code
+.claude/settings.local.json
