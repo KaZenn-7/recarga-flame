@@ -123,3 +123,24 @@ test('painel: lista de pedidos para atualização automática exige sessão', as
   assert.ok(list.some((o) => o.status === 'paid'));
   assert.ok('nick' in list[0] && 'tg' in list[0]);
 });
+
+test('vitrine: Coins, Coleções, Passes (Gold Pass primeiro, depois níveis), Arsenal Pass; dentro de cada uma, preço crescente', async () => {
+  const H = { Cookie: COOKIE, 'x-painel': '1', 'Content-Type': 'application/json' };
+  // produto novo barato no fim da tabela: tem de aparecer no começo da categoria dele
+  const r = await fetch(base + '/api/admin/products', { method: 'POST', headers: H,
+    body: JSON.stringify({ key: 'ap_teste', nome: 'Ticket 0 - Arsenal Pass', code: 'AP0', cents: 100, stars: 1, tipo: 'arsenal', niveis: 1, ativo: true }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  const loja = await (await fetch(base + '/api/products')).json();
+  const ORD = ['Coins', 'Coleções', 'Passes', 'Arsenal Pass'];
+  for (let i = 1; i < loja.length; i++) {
+    const a = loja[i - 1], b = loja[i];
+    assert.ok(ORD.indexOf(a.cat) < ORD.indexOf(b.cat) || (a.cat === b.cat && (a.key === 'gold' || a.cents <= b.cents)), `${a.key} antes de ${b.key}`);
+  }
+  assert.equal(loja.find((p) => p.key === 'gold').cat, 'Passes');
+  assert.equal(loja.filter((p) => p.cat === 'Passes')[0].key, 'gold'); // Gold Pass primeiro, mesmo sendo mais caro que níveis
+  assert.equal(loja.find((p) => p.key === 'bp1')?.cat ?? 'Passes', 'Passes');
+  assert.equal(loja.filter((p) => p.cat === 'Arsenal Pass')[0].key, 'ap_teste');
+  const adminList = (await (await fetch(base + '/api/admin/products', { headers: H })).json()).filter((p) => p.ativo).map((p) => p.key);
+  assert.deepEqual(adminList, loja.map((p) => p.key)); // painel na mesma ordem da loja
+  await fetch(base + '/api/admin/products/ap_teste', { method: 'DELETE', headers: H });
+});

@@ -135,12 +135,17 @@ async function getPlayer(id) {
   return j.success && j.data?.nickname ? j.data : null;
 }
 
+// Vitrine: categorias nesta ordem e, dentro de cada uma, do mais barato ao mais caro (produto novo entra no lugar certo sozinho);
+// em Passes, o Gold Pass vem antes dos níveis (pedido do operador)
+const CATEGORIAS = ['Coins', 'Coleções', 'Passes', 'Arsenal Pass'];
 function categoria(p) {
   if (p.tipo === 'wildfire') return 'Coleções';
-  if (p.tipo === 'arsenal' || p.tipo === 'gold') return 'Passes';
-  if (p.niveis) return 'Níveis de Passe';
+  if (p.tipo === 'arsenal') return 'Arsenal Pass';
+  if (p.tipo === 'gold' || p.niveis) return 'Passes'; // Gold Pass e níveis de passe
   return 'Coins';
 }
+const ordemVitrine = (a, b) => CATEGORIAS.indexOf(categoria(a)) - CATEGORIAS.indexOf(categoria(b))
+  || (b.tipo === 'gold') - (a.tipo === 'gold') || a.cents - b.cents || a.nome.localeCompare(b.nome, 'pt-BR');
 
 function blockReason(p, d) {
   const bp = d.battlePass;
@@ -253,7 +258,7 @@ const ogCupom = (c) => {
   const f = `og-cupom/${c.code.toLowerCase()}-${String(c.desconto_pct).replace('.', '_')}.jpg`;
   return /^og-cupom\/[a-z0-9_-]+\.jpg$/.test(f) && fs.existsSync(path.join('public', 'img', f)) ? `${SITE_URL}/img/${f}` : null;
 };
-const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo)
+const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo).sort(([, a], [, b]) => ordemVitrine(a, b))
   .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg` }));
 app.get(['/', '/index.html'], (req, res) => {
   const home = homeHtml(INDEX_HTML, prodsPublic());
@@ -656,8 +661,8 @@ app.get('/api/admin/products', admin, (req, res) => {
   const list = db.prepare('SELECT * FROM products ORDER BY sort, rowid').all()
     .map((r) => {
       const l = profitCents(r.cents, r.stars || 0); // com o custo ATUAL da Star
-      return { ...r, ativo: !!r.ativo, img: r.img || `/img/${r.key}.jpg`, lucro: Math.round(l), margem: r.cents ? l / r.cents : 0 };
-    });
+      return { ...r, cat: categoria(r), ativo: !!r.ativo, img: r.img || `/img/${r.key}.jpg`, lucro: Math.round(l), margem: r.cents ? l / r.cents : 0 };
+    }).sort(ordemVitrine); // mesma ordem da loja
   res.json(list);
 });
 

@@ -28,7 +28,6 @@ document.addEventListener('error',function(e){
   const t=e.target;if(t&&t.tagName==='IMG'&&t.hasAttribute('data-hide-err'))t.style.visibility='hidden';
 },true);
 let STARS=null;const NOST=new Set();
-const CATS={'':'Coins',wildfire:'Coleções',arsenal:'Passes',gold:'Passes'};
 const LABEL={pending:'Pendentes',paid:'Na fila',delivered:'Entregues',cancelled:'Cancelados',reversed:'Estornados'};
 const BADGE={pending:'Pendente',paid:'Pago',delivered:'Entregue',cancelled:'Cancelado',reversed:'Estornado'};
 const TABS=['paid','pending','delivered','cancelled','reversed'];
@@ -384,8 +383,7 @@ async function loadProds(){
   catch(e){document.getElementById('prodList').innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
 function catName(p){
-  if(p.niveis>0&&!p.tipo)return 'Níveis de Passe';
-  return CATS[p.tipo||'']||'Coins';
+  return p.cat||'Coins'; // vem do servidor (mesma regra da loja)
 }
 function renderProds(){
   document.getElementById('prodList').innerHTML=PRODS.map(p=>`
