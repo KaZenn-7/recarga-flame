@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "NODE_ENV=test node --test 'test/*.test.js'",
+    "test:e2e": "node tools/carrinho-e2e.mjs",
     "lint": "eslint ."
   },
   "keywords": [],

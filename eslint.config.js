@@ -20,8 +20,8 @@ export default [
   },
   {
     // testes de navegador: trechos passados ao page.evaluate rodam na página
-    files: ['tools/painel-browser.mjs'],
-    languageOptions: { globals: { ...globals.node, ...globals.browser, backFrom: 'readonly' } },
+    files: ['tools/painel-browser.mjs', 'tools/carrinho-e2e.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser, backFrom: 'readonly', checkOnce: 'readonly' } },
   },
   {
     // JS do painel: roda no navegador, script comum (funções chamadas por onclick no HTML)
