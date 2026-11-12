@@ -147,10 +147,12 @@ function categoria(p) {
 const ordemVitrine = (a, b) => CATEGORIAS.indexOf(categoria(a)) - CATEGORIAS.indexOf(categoria(b))
   || (b.tipo === 'gold') - (a.tipo === 'gold') || a.cents - b.cents || a.nome.localeCompare(b.nome, 'pt-BR');
 
+// Passe tem 100 níveis no jogo (a API do CounterFlame informa totalLevels 50; decisão do operador em 12/11/2026)
+const BP_NIVEIS = 100;
 function blockReason(p, d) {
   const bp = d.battlePass;
   const ap = d.arsenalPass;
-  if (p.niveis && bp && bp.level + p.niveis > bp.totalLevels) return 'Essa conta não tem níveis suficientes disponíveis.';
+  if (p.niveis && bp && bp.level + p.niveis > BP_NIVEIS) return 'Essa conta não tem níveis suficientes disponíveis.';
   if (p.tipo === 'gold' && bp?.gold) return 'Essa conta já tem o Gold Pass.';
   if (p.tipo === 'arsenal' && ap && ap.tickets >= ap.maxTickets) return 'Essa conta atingiu o limite do Arsenal Pass.';
   if (p.tipo === 'wildfire' && d.wildfireLevel > 0) return 'Essa conta já tem progresso na Wildfire. Fale com o suporte.';

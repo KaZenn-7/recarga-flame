@@ -70,7 +70,7 @@ globalThis.fetch = async (url, opts) => {
       success: true,
       data: { nickname: 'jogador_teste', wildfireLevel: 0,
         arsenalPass: { tickets: 0, maxTickets: 5 },
-        battlePass: { gold: u.includes('/555555'), level: 0, totalLevels: 50 } },
+        battlePass: { gold: u.includes('/555555'), level: u.includes('/444096') ? 96 : 0, totalLevels: 50 } }, // 444096: conta no nível 96
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   // criar pagamento no Mercado Pago
