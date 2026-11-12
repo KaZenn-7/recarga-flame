@@ -12,7 +12,7 @@ const ACTS={
   openForm:t=>t.dataset.key===undefined?openForm():openForm(t.dataset.key), closeForm:()=>closeForm(), saveForm:()=>saveForm(),
   toggle:t=>toggle(t.dataset.key), delProd:t=>delProd(t.dataset.key,t.dataset.nome),
   backFrom:t=>{backFrom=Number(t.dataset.id);}, deliver:t=>deliver(Number(t.dataset.id)),
-  payNow:t=>payNow(Number(t.dataset.id),t), approveNow:t=>approveNow(Number(t.dataset.id),t), verifyPay:t=>verifyPay(Number(t.dataset.id),t),
+  payNow:t=>payNow(Number(t.dataset.id),t), approveNow:t=>approveNow(Number(t.dataset.id),t), approveCar:t=>approveCar(Number(t.dataset.id),t), verifyPay:t=>verifyPay(Number(t.dataset.id),t),
   unblock:t=>unblock(Number(t.dataset.id)), refundNow:t=>refundNow(Number(t.dataset.id),t), recheck:t=>recheck(Number(t.dataset.id),t),
 };
 const CHANGES={loadRep:()=>loadRep(), cupPlano:()=>cupPlano(), cupTmode:()=>cupTmode()};
@@ -53,6 +53,7 @@ function card(o){
       <button class="a-ok" data-act="deliver" data-id="${o.id}">Marcar entregue</button></div>`;
   }
   if(o.status==='paid'&&o.canPay&&o.canPay.ok)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" data-act="payNow" data-id="'+o.id+'">⭐ Pagar '+o.stars+'★</button>');
+  else if(o.status==='paid'&&o.canApprove&&o.car&&o.car.aprov>1)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" data-act="approveCar" data-id="'+o.id+'">✅ Aprovar carrinho ('+o.car.aprov+' itens)</button>');
   else if(o.status==='paid'&&o.canApprove)acts=acts.replace('<div class="acts">','<div class="acts"><button class="a-pay" data-act="approveNow" data-id="'+o.id+'">✅ Aprovar e pagar</button>');
   const apb=o.status!=='paid'?(o.ap==='incerto'?'<div class="chk">Pagamento automático ficou incerto — resolvido manualmente.</div>':''):
     o.ap==='incerto'?'<div class="chk diverge">🚨 Pagamento incerto: '+esc((o.apInfo&&o.apInfo.erro)||'')+'. <button class="rechk" data-act="verifyPay" data-id="'+o.id+'">🔍 verificar cobrança</button></div>':
@@ -79,7 +80,7 @@ function card(o){
     <div class="body">
       <img class="av" src="/api/player/${esc(o.gameId)}/avatar" alt="" loading="lazy" data-hide-err>
       <div class="info">
-        <div class="pn">${esc(o.nome)}${o.cup?'<span class="cuptag">'+esc(o.cup)+'</span>':''}</div>
+        <div class="pn">${esc(o.nome)}${o.cup?'<span class="cuptag">'+esc(o.cup)+'</span>':''}${o.car?'<span class="cartag">🛒 Carrinho #'+o.car.id+' · '+o.car.pos+'/'+o.car.n+'</span>':''}</div>
         <div class="nk">${esc(o.nick)}</div>
         <div class="meta">ID <b class="mono">${esc(o.gameId)}</b> · ${esc(o.email)}</div>
       </div>
@@ -300,6 +301,17 @@ async function refundNow(id,btn){
   try{await api('/api/admin/orders/'+id+'/reembolsar',{method:'POST'});alert('Reembolsado: '+brl(o.cents)+' devolvidos pelo Mercado Pago.');}
   catch(e){alert(e.message);}
   refreshOrders(false);
+}
+async function approveCar(id,btn){
+  const o=ORDERS.find(function(x){return x.id===id;});if(!o||!o.car)return;
+  const its=ORDERS.filter(function(x){return x.car&&x.car.id===o.car.id&&x.status==='paid'&&x.canApprove;});
+  const st=its.reduce(function(a,x){return a+x.stars;},0);
+  if(!confirm('APROVAR O CARRINHO #'+o.car.id+' e pagar '+its.length+' itens ('+st+'★)?\n\nEm revisão por: '+(o.risk||[]).join('; ')+'\n\n'+its.map(function(x){return '#'+x.id+' '+x.nome+' · '+x.stars+'★';}).join('\n')+'\n\nSó aprove se conferiu o Pix no app do Mercado Pago.'))return;
+  btn.disabled=true;btn.textContent='Pagando…';
+  try{const r=await api('/api/admin/carrinhos/'+o.car.id+'/aprovar',{method:'POST'});
+    alert('Carrinho aprovado: '+r.pagos.length+' item(ns) pago(s) e entregue(s).'+(r.falhas.length?'\n\nNão pagos: '+r.falhas.map(function(f){return '#'+f.id+' ('+f.why+')';}).join(', '):''));}
+  catch(e){alert(e.message);}
+  refreshOrders(false);loadStars();
 }
 async function approveNow(id,btn){
   const o=ORDERS.find(function(x){return x.id===id;});if(!o)return;
@@ -728,10 +740,11 @@ async function loadAna(){
   body.classList.remove('loading');body.textContent='';
   const conv=a.pixGerados?Math.round(a.pixPagos/a.pixGerados*100)+'%':'—';
   const k=el('div','kpis');
-  k.appendChild(kpi('Vendas',String(a.vendas),a.comCupom?(a.comCupom+' com cupom'):null));
+  k.appendChild(kpi('Vendas',String(a.vendas),[a.carrinhos&&a.carrinhos.n?a.carrinhos.compras+' compras':null,a.comCupom?(a.comCupom+' com cupom'):null].filter(Boolean).join(' · ')||null));
   k.appendChild(kpi('Faturado',brlC(a.faturado)));
   k.appendChild(kpi('Ticket médio',a.vendas?brlC(a.ticket):'—'));
   k.appendChild(kpi('Lucro estimado',brlC(a.lucro),a.comissao?('após '+brlC(a.comissao)+' de comissão'):'Stars + taxa MP descontadas'));
+  if(a.carrinhos&&a.carrinhos.n)k.appendChild(kpi('Carrinhos',String(a.carrinhos.n),(a.carrinhos.itens/a.carrinhos.n).toFixed(1).replace('.',',')+' itens em média · '+brlC(Math.round(a.carrinhos.cents/a.carrinhos.n))+' cada'));
   k.appendChild(kpi('Conversão do Pix',conv,a.pixGerados?(a.pixPagos+' pagos de '+a.pixGerados+' gerados'):'nenhum Pix gerado'));
   k.appendChild(kpi('Entrega (mediana)',a.entregaMedianaMin==null?'—':fmtMin(a.entregaMedianaMin),
     a.entregaAte1h==null?'nenhuma entrega':(Math.round(a.entregaAte1h*100)+'% em até 1h · '+a.entregas+' entregas')));
@@ -847,6 +860,7 @@ function funnelCard(f){
     box.appendChild(r);
   });
   card.appendChild(box);
+  if(f.carrinho)card.appendChild(el('p','sub','🛒 Montaram carrinho (2 itens ou mais): '+f.carrinho+(base?' · '+Math.round(f.carrinho/base*100)+'% de quem visitou':'')));
   const tab=function(titulo,rows,rot){
     const d=document.createElement('details');d.appendChild(el('summary',null,titulo));
     const t=el('table','ttab'),h=document.createElement('tr');

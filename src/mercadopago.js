@@ -8,7 +8,7 @@ import path from 'node:path';
 import { tgApi, tgPedidoMsg, saveOrderMsg, orderDest, dest, carTag } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js, linha por linha.
-export function initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf, brlTxt, notifyPaid, tgAviso, refundKb, orderEv, avisoFaixa, maxPriceCents }) {
+export function initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf, brlTxt, notifyPaid, tgAviso, refundKb, orderEv, avisoFaixa, maxPriceCents, emailCarrinho }) {
 // ---------- Antifraude (Pix/MED) ----------
 // Valores em R$ no .env; padrões pensados para o catálogo atual (maior item R$339,90).
 const brlEnv = (v, d) => Math.round(Number(v ?? d) * 100);
@@ -120,6 +120,7 @@ async function reembolsar(id) {
     tgAviso(id, { icone: '💸', titulo: 'reembolsado', saldo: false, botao: `💸 Reembolsado ${brlTxt(o.cents)}`,
       extras: [`${brlTxt(o.cents)} devolvidos ao cliente via Mercado Pago. Pedido cancelado (não entregar).`,
         bloqAuto(o) && `🚫 Tinha sido bloqueado automaticamente: ${bloqAuto(o)}.`] });
+    if (o.carrinho_id) emailCarrinho(o.carrinho_id); // último item resolvido: e-mail único do carrinho
     return { ok: true, cents: o.cents };
   }
   db.prepare("UPDATE orders SET refund_state='erro', refund_info=? WHERE id=?").run(JSON.stringify({ erro: r.erro }), id);

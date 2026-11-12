@@ -4,7 +4,7 @@
 import { userConfig, readStarsBalance } from '../tg-user.js';
 import { tgSend } from './telegram.js';
 
-export function initStars({ env, db, PRODUCTS, brlTxt, orderEv, deliveredEmail, sendMail, tgEntregue }) {
+export function initStars({ env, db, PRODUCTS, brlTxt, orderEv, deliveredEmail, sendMail, emailCarrinho, tgEntregue }) {
 // Custos para o piso de preço e o cálculo do lucro (configuráveis no .env).
 // Custo por Star: calculado das COMPRAS de Stars registradas (ver refreshStarCost); STAR_COST_BRL é só o valor
 // inicial, usado enquanto não houver compra registrada. Cada pedido congela o custo da hora da venda (orders.star_cost).
@@ -132,8 +132,8 @@ function markDelivered(id, via, extras = []) {
   if (!r.changes) return false;
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   orderEv(o, 'delivered');
-  const m = deliveredEmail(o);
-  sendMail(o.email, m.subject, m.html, m.text); // em segundo plano
+  if (o.carrinho_id) emailCarrinho(o.carrinho_id); // carrinho: um e-mail só, quando todos os itens terminarem
+  else { const m = deliveredEmail(o); sendMail(o.email, m.subject, m.html, m.text); } // em segundo plano
   // desconta os Stars da entrega e avisa ao cruzar o limite de saldo baixo
   const antes = starsSaldo();
   const st = starsOf(o);

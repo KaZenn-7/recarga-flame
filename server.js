@@ -74,7 +74,7 @@ loadProducts();
 // (brlTxt/orderEv/deliveredEmail/sendMail/tgEntregue são declarados mais abaixo: vão como funções que repassam)
 const { floorCents, profitCents, orderProfit, starNow, starsOf, STARS_LOW, refreshStarCost, starsFila, REAL, realOn, starsEff,
   syncStarsReal, sessionDown, _setStarsReader, starsShortMsg, markDelivered, starsForecast, fcLine, rotasStars } = initStars({ env, db, PRODUCTS,
-  brlTxt: (c) => brlTxt(c), orderEv: (...a) => orderEv(...a), deliveredEmail: (o) => deliveredEmail(o), sendMail: (...a) => sendMail(...a),
+  brlTxt: (c) => brlTxt(c), orderEv: (...a) => orderEv(...a), deliveredEmail: (o) => deliveredEmail(o), sendMail: (...a) => sendMail(...a), emailCarrinho: (cid) => emailCarrinho(cid),
   tgEntregue: (...a) => tgEntregue(...a) });
 const normCode = (c) => String(c ?? '').trim().toUpperCase();
 // Códigos que o link curto nunca alcançaria: páginas, arquivos e rotas do site são resolvidos antes de /:code.
@@ -187,7 +187,7 @@ const maxPriceCents = () => Math.max(0, ...Object.values(PRODUCTS).filter((p) =>
 // (notifyPaid/tgAviso/refundKb/orderEv/avisoFaixa/brlTxt são declarados mais abaixo: vão como funções que repassam)
 const { RISK, lc, fp, isBlocked, orderBlocked, unblockClient, paid24, riskOf, podeReembolsar, reembolsar, _setRefundCaller, bloqAuto, syncPayment } = initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf: (o) => chkOf(o),
   brlTxt: (c) => brlTxt(c), notifyPaid: (o) => notifyPaid(o), tgAviso: (...a) => tgAviso(...a), refundKb: (o) => refundKb(o),
-  orderEv: (...a) => orderEv(...a), avisoFaixa: (o) => avisoFaixa(o), maxPriceCents: () => maxPriceCents() });
+  orderEv: (...a) => orderEv(...a), avisoFaixa: (o) => avisoFaixa(o), maxPriceCents: () => maxPriceCents(), emailCarrinho: (cid) => emailCarrinho(cid) });
 const brlTxt = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 // ---------- Entrega assistida pelo Telegram ----------
 // Aviso de pago vem com botões: abrir o bot do CounterFlame já com produto+ID, e "Já entreguei"
@@ -246,7 +246,18 @@ function entregaState(o) {
 const { admin, getCookie, adminFails, challenges, rotasLogin } = initLogin({ env, db, safeEq, limit });
 
 // ---- E-mail ao cliente (Resend; e-mail de pedido entregue): src/email.js ----
-const { sendMail, deliveredEmail } = initEmail({ env, PRODUCTS, esc });
+const { sendMail, deliveredEmail, carrinhoEntregueEmail } = initEmail({ env, PRODUCTS, esc });
+// Carrinho: um e-mail só, quando nenhum item está mais pendente/pago (todos entregues, ou parte entregue e o resto
+// cancelado/devolvido). Chamado na entrega, no reembolso e na varredura de 5 min; a marca no carrinho garante 1 envio.
+function emailCarrinho(cid) {
+  const its = db.prepare('SELECT * FROM orders WHERE carrinho_id=? ORDER BY id').all(cid);
+  if (!its.length || its.some((o) => ['pending', 'paid'].includes(o.status)) || !its.some((o) => o.status === 'delivered')) return false;
+  if (!db.prepare('UPDATE carrinhos SET mail_entregue=? WHERE id=? AND mail_entregue IS NULL').run(Date.now(), cid).changes) return false;
+  const car = db.prepare('SELECT * FROM carrinhos WHERE id=?').get(cid);
+  const m = carrinhoEntregueEmail(car, its);
+  sendMail(car.email, m.subject, m.html, m.text); // em segundo plano
+  return true;
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -367,7 +378,7 @@ app.get('/api/player/:id/avatar', limit(30), async (req, res) => {
 // (orderEv é declarado mais abaixo: vai como função que repassa)
 const { remindPending, expirePending, criarPix, emailRecusado, pixAbertos, cancelarPendente } = initCheckout({ env, db, app, PRODUCTS, MP_URL, mpHeaders, limit, findOrder, getCoupon, priceWith, validId,
   getPlayer, blockReason, devOf, isBlocked, lc, RISK, paid24, fp, starNow, orderEv: (...a) => orderEv(...a), syncPayment, entregaState, safeEq,
-  brlTxt, esc, sendMail });
+  brlTxt, esc, sendMail, emailCarrinho: (cid) => emailCarrinho(cid) });
 // ---- Carrinho (vários itens, um Pix; cada item é um pedido): src/carrinho.js ----
 initCarrinho({ db, app, PRODUCTS, limit, getCoupon, priceWith, validId, getPlayer, blockReasonCarrinho, CARRINHO_MAX, devOf, isBlocked, lc, RISK,
   paid24, fp, starNow, orderEv: (...a) => orderEv(...a), syncPayment, entregaState, criarPix, emailRecusado, pixAbertos, cancelarPendente });
@@ -376,7 +387,7 @@ initCarrinho({ db, app, PRODUCTS, limit, getCoupon, priceWith, validId, getPlaye
 // Etapas: visit → lookup (ID buscado) → select (item escolhido) → pix → paid → delivered.
 // Contamos APARELHOS distintos (cookie aleatório cf_dev; sem cookie, IP embaralhado). Robôs/prévias de link não
 // rodam o JS da página, e agentes conhecidos de robô são ignorados.
-const EV_CLIENT = new Set(['visit', 'lookup', 'select']);
+const EV_CLIENT = new Set(['visit', 'lookup', 'select', 'cart']); // cart: pôs o 2º item no pedido
 const SRCS = new Set(['whatsapp', 'youtube', 'instagram', 'tiktok', 'telegram', 'google', 'facebook', 'discord', 'twitter', 'outro', 'direto']);
 const BOT_UA = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|discord|headless|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|monitor|lighthouse/i;
 const devKey = (req) => devOf(req) || 'ip:' + fp('ip:' + req.ip);
@@ -452,7 +463,13 @@ rotasLogin(app); // /login, /login/senha, /login/codigo, /logout: src/login.js
 
 function painelOrders() {
   const rows = db.prepare('SELECT * FROM orders ORDER BY id DESC').all();
+  // carrinho: posição de cada item ("2/3") e quantos itens dá para aprovar juntos
+  const carIds = {};
+  for (const o of rows.slice().reverse()) if (o.carrinho_id) (carIds[o.carrinho_id] ||= []).push(o.id);
+  const aprov = {};
   return rows.map((o) => {
+    const ids = o.carrinho_id ? carIds[o.carrinho_id] : null;
+    if (o.carrinho_id && o.status === 'paid' && !(o.carrinho_id in aprov)) aprov[o.carrinho_id] = carrinhoAprovavel(o.carrinho_id).length;
     const p = PRODUCTS[o.product] || {};
     const nome = o.prod_nome || p.nome || o.product;
     const stars = o.prod_stars || p.stars || 0;
@@ -471,6 +488,7 @@ function painelOrders() {
       canApprove: o.status === 'paid' ? canApprove(o) : false, approved: !!o.approved_at,
       blocked: ['cancelled', 'reversed'].includes(o.status) && o.paid_at ? orderBlocked(o) : false,
       refundable: podeReembolsar(o), refund: o.refund_state || null,
+      car: ids ? { id: o.carrinho_id, pos: ids.indexOf(o.id) + 1, n: ids.length, aprov: aprov[o.carrinho_id] || 0 } : null,
     };
   });
 }
@@ -500,6 +518,12 @@ app.post('/api/admin/orders/:id/reembolsar', admin, async (req, res) => {
 app.post('/api/admin/orders/:id/aprovar', admin, async (req, res) => {
   if (!guard(req, res)) return;
   const r = await autopay(Number(req.params.id), { aprovar: true });
+  res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
+});
+// carrinho em REVISAR: aprova uma vez e paga os itens que podem ser pagos (tetos/saldo conferidos com a soma)
+app.post('/api/admin/carrinhos/:id/aprovar', admin, async (req, res) => {
+  if (!guard(req, res)) return;
+  const r = await aprovarCarrinho(Number(req.params.id));
   res.status(r.ok ? 200 : 409).json(r.ok ? r : { error: r.why });
 });
 app.post('/api/admin/orders/:id/autopay', admin, async (req, res) => {
@@ -766,8 +790,15 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     const nome = o.prod_nome || o.product;
     const pr = (byProd[nome] ||= { nome, n: 0, cents: 0, lucro: 0 }); pr.n++; pr.cents += o.cents; pr.lucro += l - c;
   }
-  const gen = db.prepare(`SELECT COUNT(*) n, SUM(paid_at IS NOT NULL) pagos FROM orders
+  // Pix gerados/pagos: um carrinho (vários itens) é um Pix só
+  const gen = db.prepare(`SELECT COUNT(DISTINCT COALESCE('c' || carrinho_id, 'o' || id)) n,
+    COUNT(DISTINCT CASE WHEN paid_at IS NOT NULL THEN COALESCE('c' || carrinho_id, 'o' || id) END) pagos FROM orders
     WHERE mp_id IS NOT NULL AND ${local('created_at')} BETWEEN ? AND ?`).get(from, to);
+  // carrinhos vendidos no período (itens vendidos que vieram de carrinho)
+  const carSet = new Set(ok.filter((o) => o.carrinho_id).map((o) => o.carrinho_id));
+  const itensCar = ok.filter((o) => o.carrinho_id);
+  const carrinhos = { n: carSet.size, itens: itensCar.length, cents: itensCar.reduce((a, o) => a + o.cents, 0),
+    compras: ok.length - itensCar.length + carSet.size };
   // entrega: minutos entre pago e entregue
   const mins = ok.filter((o) => o.delivered_at)
     .map((o) => (new Date(o.delivered_at.replace(' ', 'T') + 'Z') - new Date(o.paid_at.replace(' ', 'T') + 'Z')) / 60000)
@@ -785,7 +816,7 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     return Object.entries(g).map(([k, rs]) => ({ k, visit: uniq(rs, 'visit'), pix: uniq(rs, 'pix'), paid: uniq(rs, 'paid') }))
       .sort((x, y) => y.visit - x.visit || y.paid - x.paid);
   };
-  const funil = { etapas, cupons: grupo('coupon'), origens: grupo('src') };
+  const funil = { etapas, cupons: grupo('coupon'), origens: grupo('src'), carrinho: uniq(evRows, 'cart') };
   // como foram entregues os pedidos vendidos no período, e por que não foram automáticos
   const entregues = ok.filter((o) => o.delivered_at);
   const tipoDe = (o) => o.entrega_via || (o.autopay === 'sent' ? (o.approved_at ? 'aprovado' : 'auto') : 'manual');
@@ -832,7 +863,7 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     vendas: ok.length, faturado, ticket: ok.length ? Math.round(faturado / ok.length) : 0,
     lucro: Math.round(lucro - comissao), comissao: Math.round(comissao), stars, comCupom,
     estornos: sold.length - ok.length,
-    pixGerados: gen.n || 0, pixPagos: gen.pagos || 0,
+    pixGerados: gen.n || 0, pixPagos: gen.pagos || 0, carrinhos,
     entregas: mins.length, entregaMedianaMin: mediana == null ? null : Math.round(mediana),
     entregaAte1h: mins.length ? mins.filter((m) => m <= 60).length / mins.length : null,
     porDia: Object.values(byDay).sort((x, y) => x.date.localeCompare(y.date)),

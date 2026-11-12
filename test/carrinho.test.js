@@ -2,7 +2,7 @@
 // o Pix é único (valor total) e pagar/cancelar/estornar vale para todos os itens juntos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setupStore, mock, tgSent, tgCalls, base, db, RISK, riskOf, SRV, freshIP, postJ, pedir, pagar, webhookMP, adm, ateQue, cb, _setInvoiceChecker, _setInvoicePayer } from './helpers.js';
+import { setupStore, mock, tgSent, tgCalls, mailSent, remindPending, expirePending, base, db, RISK, riskOf, SRV, freshIP, postJ, pedir, pagar, webhookMP, adm, ateQue, cb, _setInvoiceChecker, _setInvoicePayer } from './helpers.js';
 
 setupStore();
 
@@ -356,4 +356,121 @@ test('catálogo informa quais produtos podem repetir no carrinho', async () => {
   const rep = Object.fromEntries(ps.map((p) => [p.key, p.rep]));
   assert.equal(rep.c1000, true); assert.equal(rep.bp1, true);
   assert.equal(rep.gold, false); assert.equal(rep.wildfire, false); assert.equal(rep.arsenal, false);
+});
+
+// ---------- etapa 4: e-mails, painel e números ----------
+const mailsPara = (email, n0) => mailSent.slice(n0).filter((m) => m.to.includes(email));
+
+test('e-mail: carrinho entregue manda UM e-mail com todos os itens (nenhum por item)', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c1000', 'gold'])).json();
+  const email = `c${seq}@ex.com`;
+  mock.approve = true;
+  await ver(j.token);
+  const n0 = mailSent.length;
+  const ids = itensDB(j.id).map((o) => o.id);
+  await adm('POST', '/painel/' + ids[0] + '/entregue');
+  await adm('POST', '/painel/' + ids[1] + '/entregue');
+  assert.equal(mailsPara(email, n0).length, 0); // ainda falta o Gold
+  await adm('POST', '/painel/' + ids[2] + '/entregue');
+  await ateQue(() => mailsPara(email, n0).length === 1);
+  const m = mailsPara(email, n0)[0];
+  assert.equal(m.subject, `Pedidos #${ids[0]}, #${ids[1]}, #${ids[2]} entregues — 1.000 Coins ×2, Gold Pass`);
+  assert.ok(m.html.includes('#carrinho=' + j.token));
+  for (const id of ids) assert.ok(m.text.includes(`#${id} `));
+  assert.ok(!m.html.includes(email)); // o e-mail do cliente não aparece no corpo
+  // varredura não manda de novo
+  await expirePending();
+  assert.equal(mailsPara(email, n0).length, 1);
+  mock.approve = false;
+});
+
+test('e-mail: carrinho com item devolvido manda o e-mail único depois do reembolso ("1 de 2")', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c3000'])).json();
+  const email = `c${seq}@ex.com`;
+  mock.approve = true;
+  await ver(j.token);
+  const n0 = mailSent.length;
+  const [a, b] = itensDB(j.id).map((o) => o.id);
+  await adm('POST', '/painel/' + a + '/entregue');
+  assert.equal(mailsPara(email, n0).length, 0);
+  assert.equal((await adm('POST', '/api/admin/orders/' + b + '/reembolsar')).status, 200);
+  await ateQue(() => mailsPara(email, n0).length === 1);
+  const m = mailsPara(email, n0)[0];
+  assert.match(m.subject, /: 1 de 2 itens entregues$/);
+  assert.match(m.text, new RegExp(`#${b} 3\\.000 Coins .*devolvidos via Pix`));
+  mock.approve = false;
+});
+
+test('e-mail: lembrete e Pix expirado saem uma vez por carrinho, com o link do carrinho', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'bp1', 'c1000'])).json();
+  const email = `c${seq}@ex.com`;
+  const ids = itensDB(j.id).map((o) => o.id);
+  const n0 = mailSent.length;
+  db.prepare('UPDATE orders SET expires_at=? WHERE carrinho_id=?').run(Date.now() + 5 * 60_000, j.id);
+  await remindPending();
+  await remindPending();
+  let ms = mailsPara(email, n0);
+  assert.equal(ms.length, 1);
+  assert.match(ms[0].subject, new RegExp(`^Seu Pix vence em \\d+ min — pedidos #${ids[0]}, #${ids[1]}, #${ids[2]}$`));
+  assert.ok(ms[0].html.includes('#carrinho=' + j.token));
+  assert.ok(ms[0].html.includes('1.000 Coins ×2'));
+  // venceu
+  db.prepare('UPDATE orders SET expires_at=? WHERE carrinho_id=?').run(Date.now() - 10 * 60_000, j.id);
+  await expirePending();
+  await expirePending();
+  ms = mailsPara(email, n0);
+  assert.equal(ms.length, 2);
+  assert.match(ms[1].subject, /^Seu Pix expirou — pedidos /);
+  assert.ok(itensDB(j.id).every((o) => o.status === 'cancelled'));
+});
+
+test('painel: tag do carrinho em cada item e "Aprovar carrinho" paga todos de uma vez', async () => {
+  const antes = RISK.review;
+  const pays = [];
+  _setInvoicePayer(async (a) => { pays.push(a.startParam); return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }; });
+  try {
+    await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 50000 });
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 100000 });
+    const j = await carrinhoRevisar(['c1000', 'c3000']);
+    const ids = itensDB(j.id).map((o) => o.id);
+    const lista = await (await adm('GET', '/api/admin/orders')).json();
+    const [x, y] = ids.map((id) => lista.find((o) => o.id === id));
+    assert.deepEqual(x.car, { id: j.id, pos: 1, n: 2, aprov: 2 });
+    assert.deepEqual(y.car, { id: j.id, pos: 2, n: 2, aprov: 2 });
+    assert.equal((await fetch(base + '/api/admin/carrinhos/' + j.id + '/aprovar', { method: 'POST', headers: { 'x-painel': '1', ...freshIP() } })).status, 401);
+    const r = await adm('POST', '/api/admin/carrinhos/' + j.id + '/aprovar');
+    assert.equal(r.status, 200);
+    assert.deepEqual((await r.json()).pagos, ids);
+    assert.equal(pays.length, 2);
+    assert.ok(itensDB(j.id).every((o) => o.status === 'delivered' && o.entrega_via === 'aprovado'));
+    assert.equal((await adm('POST', '/api/admin/carrinhos/' + j.id + '/aprovar')).status, 409);
+  } finally {
+    RISK.review = antes; _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 4000 });
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
+  }
+});
+
+test('números: carrinho conta como 1 Pix gerado/pago; KPI de carrinhos; evento "cart" aceito', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const ana = async () => (await adm('GET', `/api/admin/analytics?from=${hoje}&to=${hoje}`)).json();
+  const a0 = await ana();
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c1000', 'c3000'])).json();
+  mock.approve = true;
+  await ver(j.token);
+  const a1 = await ana();
+  assert.equal(a1.pixGerados - a0.pixGerados, 1);
+  assert.equal(a1.pixPagos - a0.pixPagos, 1);
+  assert.equal(a1.carrinhos.itens - a0.carrinhos.itens, 3);
+  assert.equal(a1.carrinhos.n - a0.carrinhos.n, 1);
+  assert.equal(a1.vendas - a0.vendas, 3);
+  assert.equal(a1.carrinhos.compras - a0.carrinhos.compras, 1);
+  const ev = await postJ('/api/ev', { ev: 'cart', src: 'direto' });
+  assert.equal(ev.status, 204);
+  assert.ok(db.prepare("SELECT 1 FROM events WHERE ev='cart'").get());
+  mock.approve = false;
 });

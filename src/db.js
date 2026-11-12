@@ -139,6 +139,8 @@ export const MIGRATIONS = [
     addCols(db, 'orders', ['carrinho_id INTEGER']);
     db.exec('CREATE INDEX IF NOT EXISTS orders_carrinho ON orders(carrinho_id)');
   } },
+  // carrinho: e-mail único de entrega (quando todos os itens terminaram) — marca para nunca mandar 2x
+  { v: 4, nome: 'carrinho_email', up(db) { addCols(db, 'carrinhos', ['mail_entregue INTEGER']); } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

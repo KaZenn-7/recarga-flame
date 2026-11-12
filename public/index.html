@@ -394,7 +394,7 @@ function fillPrice(){
       `<span class="vv"><span class="v mono${um?' big':''}">${!(f<p.cents)||um?'':'<s>'+brl(p.cents*n)+'</s>'}${brl(f*n)}</span>${um||p.rep!==false?'':`<button class="rm" data-k="${esc(p.key)}" data-d="-1" aria-label="Tirar ${esc(p.nome)}">×</button>`}</span></div>`;}).join('');
   $('ritens').querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{
     const k=b.dataset.k;$('err3').textContent='';
-    if(b.dataset.d==='1'){if(car.length>=CAR_MAX)return;car.splice(car.lastIndexOf(k)+1,0,k);} // junto dos iguais
+    if(b.dataset.d==='1'){if(car.length>=CAR_MAX)return;car.splice(car.lastIndexOf(k)+1,0,k);if(car.length===2)track('cart');} // junto dos iguais
     else{if(car.length<=1)return;car.splice(car.lastIndexOf(k),1);}
     fillPrice();saveState();
   });
@@ -497,7 +497,7 @@ function render(){
       // regras do carrinho (o servidor confere de novo): até 5 itens; Gold, coleção e Arsenal só uma vez
       if(car.length>=CAR_MAX){$('err2').textContent='O pedido aceita até '+CAR_MAX+' itens.';return;}
       if(p.rep===false&&car.includes(p.key)){$('err2').textContent=p.nome+' já está no pedido e só pode ser comprado uma vez.';$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
-      car.push(p.key);
+      car.push(p.key);if(car.length===2)track('cart');
     }else{car=[p.key];track('select');}
     $('err2').textContent='';setAdd(false);
     // avança direto para a confirmação

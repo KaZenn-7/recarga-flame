@@ -1,9 +1,10 @@
 // Checkout: criar o pedido e o Pix no Mercado Pago, status do pedido (página do cliente), cancelar o Pix,
 // webhook do MP (assinatura conferida) e lembretes/expiração do Pix pendente.
 import crypto from 'node:crypto';
+import { resumoItens } from './email.js';
 
 export function initCheckout({ env, db, app, PRODUCTS, MP_URL, mpHeaders, limit, findOrder, getCoupon, priceWith, validId, getPlayer, blockReason,
-  devOf, isBlocked, lc, RISK, paid24, fp, starNow, orderEv, syncPayment, entregaState, safeEq, brlTxt, esc, sendMail }) {
+  devOf, isBlocked, lc, RISK, paid24, fp, starNow, orderEv, syncPayment, entregaState, safeEq, brlTxt, esc, sendMail, emailCarrinho }) {
 // Expiração automática: pendente com Pix vencido (+5 min de folga) é conferido no MP
 // uma última vez (pega pagamento atrasado) e, se seguir pendente, vira cancelled.
 // Pedidos antigos sem expires_at usam created_at + 35 min.
@@ -13,13 +14,21 @@ export function initCheckout({ env, db, app, PRODUCTS, MP_URL, mpHeaders, limit,
 // Pix em aberto por ID/e-mail: um carrinho (vários itens, um Pix) conta como 1
 const pixAbertos = (gameId, email) => db.prepare(`SELECT COUNT(DISTINCT COALESCE('c' || carrinho_id, 'o' || id)) n FROM orders
   WHERE (game_id=? OR lower(email)=?) AND status='pending'`).get(String(gameId), lc(email)).n;
-const hasNewer = (o) => !!db.prepare('SELECT 1 FROM orders WHERE id > ? AND (game_id=? OR lower(email)=?)').get(o.id, o.game_id, lc(o.email));
+// cliente fez outro pedido depois deste? (os outros itens do mesmo carrinho não contam)
+const hasNewer = (o) => !!db.prepare(`SELECT 1 FROM orders WHERE id > ? AND (game_id=? OR lower(email)=?)
+  AND COALESCE(carrinho_id, -1) <> COALESCE(?, -2)`).get(o.id, o.game_id, lc(o.email), o.carrinho_id ?? null);
+// e-mail de lembrete/expirado: no carrinho, um só para o Pix inteiro (itens, total e link do carrinho)
 function pixMail(o, kind, mins) {
-  const nome = o.prod_nome || PRODUCTS[o.product]?.nome || o.product;
-  const valor = brlTxt(o.cents);
-  const link = `${env.PUBLIC_URL}/#pedido=${o.token}`;
+  const nomeDe = (x) => x.prod_nome || PRODUCTS[x.product]?.nome || x.product;
+  const car = o.carrinho_id ? db.prepare('SELECT * FROM carrinhos WHERE id=?').get(o.carrinho_id) : null;
+  const its = car ? db.prepare('SELECT * FROM orders WHERE carrinho_id=? ORDER BY id').all(car.id) : [o];
+  const nome = resumoItens(its, nomeDe);
+  const valor = brlTxt(car ? car.cents : o.cents);
+  const link = car ? `${env.PUBLIC_URL}/#carrinho=${car.token}` : `${env.PUBLIC_URL}/#pedido=${o.token}`;
+  const ref = car ? `pedidos ${its.map((x) => '#' + x.id).join(', ')}` : `pedido #${o.id}`;
+  const Ref = ref[0].toUpperCase() + ref.slice(1);
   const vence = kind === 'lembrete';
-  const subject = vence ? `Seu Pix vence em ${mins} min — pedido #${o.id}` : `Seu Pix expirou — pedido #${o.id}`;
+  const subject = vence ? `Seu Pix vence em ${mins} min — ${ref}` : `Seu Pix expirou — ${ref}`;
   const title = vence ? `Seu Pix vence em ${mins} minutos ⏳` : 'Seu Pix expirou';
   const p1 = vence
     ? `Seu pedido de <b style="color:#f4f4f5">${esc(nome)}</b> (${valor}) para <b style="color:#f4f4f5">${esc(o.nickname)}</b> ainda está aguardando o pagamento. Pague antes de vencer para receber em até 10 minutos.`
@@ -33,10 +42,10 @@ function pixMail(o, kind, mins) {
 <tr><td style="padding:14px 22px 4px"><h1 style="margin:0 0 8px;font-size:20px">${title}</h1>
 <p style="margin:0;color:#9b9ba3;font-size:14px;line-height:1.55">${p1}</p></td></tr>
 <tr><td style="padding:18px 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">${btn}</a></td></tr>
-<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">${vence ? 'Se você já pagou, pode ignorar este e-mail — a confirmação é automática.<br><br>' : ''}Pedido #${o.id} · conta ID ${esc(o.game_id)}. Dúvidas? É só responder este e-mail.</td></tr>
+<tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">${vence ? 'Se você já pagou, pode ignorar este e-mail — a confirmação é automática.<br><br>' : ''}${Ref} · conta ID ${esc(o.game_id)}. Dúvidas? É só responder este e-mail.</td></tr>
 </table></td></tr></table></body></html>`;
   const text = [`${title}`, '', vence ? `Seu pedido de ${nome} (${valor}) para ${o.nickname} ainda aguarda o pagamento.` : `O Pix do pedido de ${nome} (${valor}) venceu sem pagamento — nada foi cobrado.`,
-    `${btn}: ${link}`, vence ? 'Se já pagou, ignore este e-mail.' : '', `Pedido #${o.id} · ID ${o.game_id}`].join('\n');
+    `${btn}: ${link}`, vence ? 'Se já pagou, ignore este e-mail.' : '', `${Ref} · ID ${o.game_id}`].join('\n');
   return { subject, html, text };
 }
 async function remindPending() {
@@ -45,8 +54,10 @@ async function remindPending() {
     AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ? LIMIT 30`).all(now + 60_000, now + 10 * 60_000);
   let sent = 0;
   for (const o of rows) {
-    db.prepare('UPDATE orders SET remind_at=? WHERE id=?').run(now, o.id); // marca antes: nunca repete
-    if (hasNewer(o) || !o.email || o.carrinho_id) continue; // carrinho: e-mail próprio (ainda não)
+    // marca antes: nunca repete (carrinho: todos os itens de uma vez — um lembrete por Pix)
+    const mk = o.carrinho_id ? db.prepare('UPDATE orders SET remind_at=? WHERE carrinho_id=? AND remind_at IS NULL').run(now, o.carrinho_id)
+      : db.prepare('UPDATE orders SET remind_at=? WHERE id=? AND remind_at IS NULL').run(now, o.id);
+    if (!mk.changes || hasNewer(o) || !o.email) continue;
     try { await syncPayment(o.mp_id); } catch { continue; }
     if (db.prepare('SELECT status FROM orders WHERE id=?').get(o.id).status !== 'pending') continue;
     const m = pixMail(o, 'lembrete', Math.max(1, Math.round((o.expires_at - now) / 60_000)));
@@ -65,12 +76,16 @@ async function expirePending() {
     try { if (o.mp_id) await syncPayment(o.mp_id); } catch (e) { console.error('expirePending sync', o.id, e.message); continue; }
     const r = db.prepare("UPDATE orders SET status='cancelled' WHERE id=? AND status='pending'").run(o.id);
     // venceu sem pagar (não foi o cliente que cancelou): avisa 1x, se ele não voltou por conta própria
-    if (r.changes && o.mp_id && o.email && !o.carrinho_id && !o.expired_mail && !hasNewer(o)) {
-      db.prepare('UPDATE orders SET expired_mail=1 WHERE id=?').run(o.id);
-      const m = pixMail(o, 'expirou');
-      sendMail(o.email, m.subject, m.html, m.text);
-    }
+    if (!r.changes || !o.mp_id || !o.email || hasNewer(o)) continue;
+    // carrinho: um aviso por Pix (o 1º item que vencer marca todos e manda; os outros já acham a marca)
+    const mk = o.carrinho_id ? db.prepare('UPDATE orders SET expired_mail=1 WHERE carrinho_id=? AND COALESCE(expired_mail,0)=0').run(o.carrinho_id)
+      : db.prepare('UPDATE orders SET expired_mail=1 WHERE id=? AND COALESCE(expired_mail,0)=0').run(o.id);
+    if (!mk.changes) continue;
+    const m = pixMail(o, 'expirou');
+    sendMail(o.email, m.subject, m.html, m.text);
   }
+  // carrinhos encerrados sem o e-mail único de entrega (ex.: item cancelado por outro caminho): manda agora
+  for (const c of db.prepare("SELECT id FROM carrinhos WHERE mail_entregue IS NULL AND created_at > datetime('now','-3 days')").all()) emailCarrinho(c.id);
   return rows.length;
 }
 if (env.NODE_ENV !== 'test') setInterval(() => expirePending().catch((e) => console.error('expirePending', e)), 5 * 60_000).unref();
