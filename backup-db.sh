@@ -115,5 +115,16 @@ fi
 # rotação: remove backups com mais de KEEP dias
 find "$DEST" \( -name 'loja-*.db.gz' -o -name 'loja-*.tar.gz' \) -mtime +$KEEP -delete
 
+# cópias do banco feitas antes de mudanças (arquivo fora do app): guardadas por 30 dias (decisão do operador, 11/11/2026).
+# Só arquivos de banco (têm dados de clientes); cópias de código ficam.
+ARCHIVE="$HOME/cf-teste-deploy-archive"
+if [ -d "$ARCHIVE" ]; then
+  N_OLD=$(find "$ARCHIVE" -type f \( -name 'loja.db*' -o -name '*.db' \) -mtime +30 | wc -l)
+  if [ "$N_OLD" -gt 0 ]; then
+    find "$ARCHIVE" -type f \( -name 'loja.db*' -o -name '*.db' \) -mtime +30 -delete
+    echo "[$(date -Is)] cópias antigas do banco removidas (mais de 30 dias): $N_OLD"
+  fi
+fi
+
 echo "[$(date -Is)] backup concluido"
 exit "${UPLOAD_FAIL:-0}"
