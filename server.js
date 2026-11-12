@@ -283,7 +283,7 @@ const ogCupom = (c) => {
   return /^og-cupom\/[a-z0-9_-]+\.jpg$/.test(f) && fs.existsSync(path.join('public', 'img', f)) ? `${SITE_URL}/img/${f}` : null;
 };
 const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo).sort(([, a], [, b]) => ordemVitrine(a, b))
-  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg` }));
+  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg`, rep: repetivel(p) }));
 app.get(['/', '/index.html'], (req, res) => {
   const home = homeHtml(INDEX_HTML, prodsPublic());
   const c = req.query.cupom ? getCoupon(req.query.cupom) : null;

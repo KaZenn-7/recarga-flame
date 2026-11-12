@@ -350,3 +350,10 @@ test('REVISAR: item com conferência que não bateu fica fora da aprovação e v
     await adm('POST', '/api/admin/autopay', { mode: 0 });
   }
 });
+
+test('catálogo informa quais produtos podem repetir no carrinho', async () => {
+  const ps = await (await fetch(base + '/api/products')).json();
+  const rep = Object.fromEntries(ps.map((p) => [p.key, p.rep]));
+  assert.equal(rep.c1000, true); assert.equal(rep.bp1, true);
+  assert.equal(rep.gold, false); assert.equal(rep.wildfire, false); assert.equal(rep.arsenal, false);
+});

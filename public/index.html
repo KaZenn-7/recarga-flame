@@ -57,7 +57,7 @@ h2{font-size:15px;font-weight:700;margin:0 0 4px}
 .prod:active{transform:scale(.97)}
 .prod.sel{border-color:var(--orange)}
 .prod .thumb{width:100%;aspect-ratio:1/1;object-fit:contain;background:transparent;padding:8px 8px 0;filter:drop-shadow(0 8px 10px rgba(0,0,0,.55));display:block}
-#rimg{object-fit:contain;background:transparent;border-radius:0;filter:drop-shadow(0 3px 5px rgba(0,0,0,.5))}
+#rimg,.line .k img.pi{object-fit:contain;background:transparent;border-radius:0;filter:drop-shadow(0 3px 5px rgba(0,0,0,.5))}
 .prod .txt{padding:7px 8px 9px;display:flex;flex-direction:column;flex:1;gap:3px}
 .prod .n{font-weight:600;font-size:12px;line-height:1.2;color:var(--txt)}
 .prod .p{margin-top:auto;font-size:13px;font-weight:800;color:var(--txt)}
@@ -175,6 +175,22 @@ input:focus{outline:0;border-color:#45454c}
 .resumo>b{font-size:14px;white-space:nowrap}
 /* .hide vem antes no CSS: reforça para os blocos com display próprio */
 .hero.hide,.trk.hide,.resumo.hide{display:none}
+/* carrinho: itens na confirmação, botão de adicionar e lista de itens depois do pagamento */
+.line .k .nm{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.line .k .nm small{font-size:11.5px;color:var(--dim)}
+.qty{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.qty button{width:32px;height:30px;border:0;background:var(--panel2);color:var(--txt);font:inherit;font-size:17px;font-weight:700;line-height:1;cursor:pointer}
+.qty button:disabled{opacity:.35;cursor:not-allowed}
+.qty b{min-width:30px;text-align:center;font-size:14px}
+.line .rm{flex-shrink:0;width:30px;height:30px;margin-left:8px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--mut);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.line .vv{display:flex;align-items:center}
+.line .v s{display:block;color:var(--dim);font-weight:500;font-size:11px;text-align:right}
+.add{width:100%;margin-top:10px;padding:12px;border-radius:10px;border:1.5px dashed var(--line);background:transparent;color:var(--txt);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.add small{display:block;font-weight:500;font-size:12px;color:var(--mut)}
+.add:active{border-color:var(--orange)}
+.prod .tag.in{color:var(--orange)}
+#rsLista .resumo{margin-bottom:8px}
+#rsLista .resumo .ok{color:var(--green)}#rsLista .resumo .bad{color:var(--red)}
 @media (prefers-reduced-motion:reduce){.hero.run .hero-ic{animation:none;border-color:var(--orange)}}
 /* rodapé (igual em todas as páginas) */
 .ft{margin-top:36px;padding:18px 0 4px;border-top:1px solid var(--line);color:var(--mut)}
@@ -235,8 +251,8 @@ input:focus{outline:0;border-color:#45454c}
   <!-- 2: escolher produto -->
   <section id="e2" class="hide">
     <button class="back" id="voltar2">← Voltar</button>
-    <h2>Escolha o produto</h2>
-    <p class="sub">O item será entregue na conta abaixo.</p>
+    <h2 id="e2t">Escolha o produto</h2>
+    <p class="sub" id="e2s">O item será entregue na conta abaixo.</p>
     <div class="chip">
       <img id="av2" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2242%22 height=%2242%22><rect width=%2242%22 height=%2242%22 rx=%228%22 fill=%22%23242428%22/><text x=%2221%22 y=%2228%22 font-size=%2220%22 text-anchor=%22middle%22 fill=%22%236c6c74%22>?</text></svg>'">
       <div><div class="nk" id="nick2"></div><div class="id">ID <span class="mono" id="pid2"></span></div></div>
@@ -259,12 +275,11 @@ input:focus{outline:0;border-color:#45454c}
       <div class="line">
         <span class="k"><img id="av3" alt=""><span><b id="nick3"></b><br><span class="mono" id="pid3" style="font-size:12px;color:var(--mut)"></span></span></span>
       </div>
-      <div class="line">
-        <span class="k"><img id="rimg" alt=""><span id="rprod"></span></span>
-        <span class="v big mono" id="rpreco"></span>
-      </div>
+      <div id="ritens"></div>
       <div class="line hide" id="rdesc"><span class="k">Cupom <b id="rdcode" style="color:var(--txt)"></b></span><span class="v mono" id="rdval" style="color:var(--green)"></span></div>
+      <div class="line hide" id="rtot"><span class="k">Total · um Pix só</span><span class="v big mono" id="rtotal"></span></div>
     </div>
+    <button class="add" id="addItem">+ Adicionar outro item<small>Pague tudo num Pix só (até 5 itens)</small></button>
     <details class="cupin" id="cupin" open><summary><span class="ci">🎟️</span><span class="ct"><b>Tem cupom de desconto?</b><small>De criador ou promoção</small></span><span class="ca">Inserir</span></summary>
       <div class="cp"><input id="cupinput" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO" maxlength="20"><button id="cupok">Aplicar</button></div>
       <p class="err" id="cuperr"></p>
@@ -295,6 +310,7 @@ input:focus{outline:0;border-color:#45454c}
       <div class="hero hide" id="hero" role="status"><div class="hero-ic" id="heroIc"></div><div><b id="heroT"></b><p id="heroX"></p></div></div>
       <ol class="trk hide" id="trk" aria-label="Andamento do pedido"><li>Pagamento confirmado</li><li id="trk2">Entregando</li><li>Entregue</li></ol>
       <div class="resumo hide" id="resumo"><img id="rsImg" alt=""><div><b id="rsNome"></b><span id="rsConta"></span></div><b id="rsVal"></b></div>
+      <div id="rsLista" class="hide"></div>
       <p class="note" id="afternote"></p>
       <div id="prazoPago" class="hide"><div class="prazo">
       <b>Entrega em até 24 horas</b> após a confirmação do pagamento.
@@ -320,7 +336,10 @@ input:focus{outline:0;border-color:#45454c}
 const $=id=>document.getElementById(id);
 const brl=c=>(c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let produtos=[],sel=null,conta=null; // conta={id,nick,avatar}
+let produtos=[],car=[],conta=null; // car = chaves dos produtos escolhidos (1 = pedido avulso; 2+ = carrinho, um Pix só); conta={id,nick,avatar}
+const CAR_MAX=5;let addMode=false;
+const prodOf=k=>produtos.find(p=>p.key===k)||null;
+const carProds=()=>car.map(prodOf).filter(Boolean);
 
 async function api(u,o){const r=await fetch(u,o);let j={};try{j=await r.json();}catch{}if(!r.ok){const e=new Error(j.error||'Algo deu errado. Tente de novo.');e.status=r.status;e.field=j.field;throw e;}return j;}
 function show(n){for(const i of[1,2,3,4])$('e'+i).classList.toggle('hide',i!==n);for(const i of[1,2,3,4])$('d'+i).classList.toggle('on',i<=n);scrollTo({top:0,behavior:'smooth'});}
@@ -332,7 +351,7 @@ function saveState(extra){
   try{
     const prev=JSON.parse(localStorage.getItem(SAVE_KEY)||'{}');
     localStorage.setItem(SAVE_KEY,JSON.stringify({
-      conta, selKey:sel?sel.key:null, order:prev.order||null, ts:Date.now(), ...extra,
+      conta, car, order:prev.order||null, ts:Date.now(), ...extra,
     }));
   }catch{}
 }
@@ -362,12 +381,33 @@ const CUP_KEY='cf_cupom';let cupom=null; // {code,desconto_pct,prices}
 const finalCents=p=>cupom&&cupom.prices&&cupom.prices[p.key]!=null?cupom.prices[p.key]:p.cents;
 function priceHtml(p){const f=finalCents(p);return f<p.cents?'<s>'+brl(p.cents)+'</s>'+brl(f):brl(p.cents);}
 function fillPrice(){
-  if(!sel)return;const f=finalCents(sel);
-  $('rpreco').textContent=brl(f);
-  $('rdesc').classList.toggle('hide',!(f<sel.cents));
-  if(f<sel.cents){$('rdcode').textContent=cupom.code;$('rdval').textContent='−'+brl(sel.cents-f);}
+  const ps=carProds();if(!ps.length)return;
+  const um=ps.length===1;
+  // agrupa por produto: Coins e níveis têm − quantidade +; Gold, coleção e Arsenal (uma vez só) têm ×
+  const grupos=[];for(const p of ps){const g=grupos.find(x=>x.p.key===p.key);if(g)g.n++;else grupos.push({p,n:1});}
+  const cheio=car.length>=CAR_MAX;
+  $('ritens').innerHTML=grupos.map(({p,n})=>{const f=finalCents(p);
+    const ctl=p.rep!==false
+      ?`<span class="qty"><button data-k="${esc(p.key)}" data-d="-1" aria-label="Menos ${esc(p.nome)}"${um?' disabled':''}>−</button><b class="mono">${n}</b><button data-k="${esc(p.key)}" data-d="1" aria-label="Mais ${esc(p.nome)}"${cheio?' disabled':''}>+</button></span>`
+      :'';
+    return `<div class="line"><span class="k"><img class="pi" src="${esc(p.img)}" alt=""><span class="nm"><span>${esc(p.nome)}${n>1?` <small class="mono">${brl(f)} cada</small>`:''}</span>${ctl}</span></span>`+
+      `<span class="vv"><span class="v mono${um?' big':''}">${!(f<p.cents)||um?'':'<s>'+brl(p.cents*n)+'</s>'}${brl(f*n)}</span>${um||p.rep!==false?'':`<button class="rm" data-k="${esc(p.key)}" data-d="-1" aria-label="Tirar ${esc(p.nome)}">×</button>`}</span></div>`;}).join('');
+  $('ritens').querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.k;$('err3').textContent='';
+    if(b.dataset.d==='1'){if(car.length>=CAR_MAX)return;car.splice(car.lastIndexOf(k)+1,0,k);} // junto dos iguais
+    else{if(car.length<=1)return;car.splice(car.lastIndexOf(k),1);}
+    fillPrice();saveState();
+  });
+  const lista=ps.reduce((a,p)=>a+p.cents,0),tot=ps.reduce((a,p)=>a+finalCents(p),0);
+  $('rdesc').classList.toggle('hide',!(tot<lista));
+  if(tot<lista){$('rdcode').textContent=cupom.code;$('rdval').textContent='−'+brl(lista-tot);}
+  $('rtot').classList.toggle('hide',um);$('rtotal').textContent=brl(tot);
+  $('addItem').classList.toggle('hide',cheio);
+  $('pagar').textContent=um?'Gerar Pix':'Gerar Pix de '+brl(tot);
   $('cupin').classList.toggle('hide',!!cupom);
 }
+// confirmação (etapa 3): conta + itens
+function fillConfirm(){$('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;fillPrice();}
 function syncCupFields(){for(const id of['cupin','cupin2'])$(id).classList.toggle('hide',!!cupom);const v=$('precos');if(v)v.classList.toggle('hide',!!cupom);}
 function setCupom(c){
   cupom=c;
@@ -416,15 +456,23 @@ $('buscar').onclick=async()=>{
     conta={id,nick:nickname,avatar,blocked:blocked||{}};
     $('av2').src=avatar;$('nick2').textContent=nickname;$('pid2').textContent=id;
     if(!produtos.length)await loadProds();else render();
-    sel=null;saveState();$('err2').textContent='';
+    car=[];setAdd(false);saveState();$('err2').textContent='';
     track('lookup');
     show(2);
   }catch(e){$('err1').textContent=e.message;}
   finally{b.disabled=false;b.textContent='Buscar conta';}
 };
 
-$('trocar').onclick=()=>{sel=null;clearOrder();setLink(null);show(1);};
-$('voltar2').onclick=()=>$('trocar').click();
+$('trocar').onclick=()=>{car=[];setAdd(false);clearOrder();setLink(null);show(1);};
+// adicionando item ao pedido: "Voltar" volta para a confirmação, sem perder o que já foi escolhido
+$('voltar2').onclick=()=>{if(addMode&&car.length){setAdd(false);show(3);}else $('trocar').click();};
+function setAdd(on){
+  addMode=!!on;
+  $('e2t').textContent=addMode?'Adicionar outro item':'Escolha o produto';
+  $('e2s').textContent=addMode?'Escolha mais um item para a mesma conta. Tudo é pago num Pix só.':'O item será entregue na conta abaixo.';
+  if(produtos.length)render();
+}
+$('addItem').onclick=()=>{$('err3').textContent='';$('err2').textContent='';setAdd(true);show(2);};
 document.querySelectorAll('.vgrid li').forEach(li=>li.onclick=()=>{scrollTo({top:0,behavior:'smooth'});$('gameId').focus();});
 
 /* etapa 2: catálogo */
@@ -437,24 +485,29 @@ function render(){
   const ord=['Coins','Coleções','Battle Pass','Arsenal Pass'];
   const keys=Object.keys(g).sort((a,b)=>(ord.indexOf(a)+1||99)-(ord.indexOf(b)+1||99));
   const bl=(conta&&conta.blocked)||{};
+  const noCar=k=>addMode&&car.includes(k);
   $('cat').innerHTML=keys.map(c=>`<div class="cat"><span>${esc(c)}</span><div class="grid">${g[c].map(p=>
-    `<button class="prod${bl[p.key]?' off':''}" data-k="${esc(p.key)}"><img class="thumb" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.style.display='none'"><span class="txt"><span class="n">${esc(p.nome)}</span><span class="p mono">${priceHtml(p)}</span>${bl[p.key]?'<span class="tag">Indisponível</span>':''}</span></button>`
+    `<button class="prod${bl[p.key]?' off':noCar(p.key)?' sel':''}" data-k="${esc(p.key)}"><img class="thumb" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.style.display='none'"><span class="txt"><span class="n">${esc(p.nome)}</span><span class="p mono">${priceHtml(p)}</span>${bl[p.key]?'<span class="tag">Indisponível</span>':noCar(p.key)?'<span class="tag in">No pedido</span>':''}</span></button>`
   ).join('')}</div></div>`).join('');
   $('cat').querySelectorAll('.prod').forEach(el=>el.onclick=()=>{
     const why=bl[el.dataset.k];
     if(why){$('err2').textContent=why;$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
-    $('err2').textContent='';
-    sel=produtos.find(p=>p.key===el.dataset.k);
-    // seleciona produto e avança direto para confirmação
-    $('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
-    $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();
-    saveState();track('select');
+    const p=prodOf(el.dataset.k);
+    if(addMode&&car.length){
+      // regras do carrinho (o servidor confere de novo): até 5 itens; Gold, coleção e Arsenal só uma vez
+      if(car.length>=CAR_MAX){$('err2').textContent='O pedido aceita até '+CAR_MAX+' itens.';return;}
+      if(p.rep===false&&car.includes(p.key)){$('err2').textContent=p.nome+' já está no pedido e só pode ser comprado uma vez.';$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
+      car.push(p.key);
+    }else{car=[p.key];track('select');}
+    $('err2').textContent='';setAdd(false);
+    // avança direto para a confirmação
+    fillConfirm();saveState();
     show(3);
   });
 }
 
 /* etapa 3: confirmar + pagar */
-$('voltar').onclick=()=>{$('err3').textContent='';show(2);};
+$('voltar').onclick=()=>{$('err3').textContent='';setAdd(car.length>1);show(2);};
 
 /* sugestão de e-mail: domínio digitado errado (gmail.con, hotmial.com, "gmail" sem .com…) */
 const DOMS=['gmail.com','hotmail.com','outlook.com','yahoo.com','yahoo.com.br','icloud.com','live.com','hotmail.com.br','outlook.com.br','bol.com.br','uol.com.br','terra.com.br','msn.com','me.com'];
@@ -475,13 +528,15 @@ $('emailSugOk').onclick=()=>{$('email').value=$('emailSugTxt').textContent;$('em
 $('pagar').onclick=async()=>{
   $('err3').textContent='';const b=$('pagar');b.disabled=true;b.innerHTML='<span class="ld"></span>Gerando Pix';
   try{
-    const o=await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({product:sel.key,gameId:conta.id,email:$('email').value.trim(),coupon:cupom?cupom.code:undefined})});
-    const order={token:o.token,id:o.id,expiresAt:o.expiresAt,qr:o.qr,qrBase64:o.qrBase64};
+    const multi=car.length>1,dados={gameId:conta.id,email:$('email').value.trim(),coupon:cupom?cupom.code:undefined};
+    const o=await api(multi?'/api/carrinho':'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(multi?{itens:car,...dados}:{product:car[0],...dados})});
+    const order={token:o.token,id:o.id,expiresAt:o.expiresAt,qr:o.qr,qrBase64:o.qrBase64,
+      ...(multi?{car:true,itemTok:o.itens[0].token,ids:o.itens.map(i=>i.id)}:{})};
     saveState({order});
     showPayment(order);
   }catch(e){if(e.field==='coupon'){setCupom(null);fillPrice();}$('err3').textContent=e.message;}
-  finally{b.disabled=false;b.textContent='Gerar Pix';}
+  finally{b.disabled=false;fillPrice();}
 };
 
 $('copiar').onclick=async()=>{
@@ -493,23 +548,28 @@ $('copiar').onclick=async()=>{
 const ST={pending:['','Aguardando pagamento'],paid:['paid','Pagamento confirmado — preparando entrega'],
   delivered:['done','Entregue. Abra o jogo para conferir.'],cancelled:['bad','Pagamento cancelado ou expirado'],
   reversed:['bad','Pagamento estornado'],refund:['bad','Pedido cancelado — o valor será devolvido'],refunded:['bad','Pedido cancelado — valor devolvido'],expired:['bad','Pix expirado — não foi pago a tempo'],notfound:['bad','Pedido não encontrado']};
-let pollT=null,tickT=null,curTok=null;
+let pollT=null,tickT=null,curTok=null,curCar=false,carItens=null;
+const oUrl=tk=>(curCar?'/api/carrinho/':'/api/orders/')+tk;
 
 function showPayment(order){
-  curTok=order.token;$('err4').textContent='';setLink(order.token);
+  curTok=order.token;curCar=!!order.car;if(!curCar)carItens=null;$('err4').textContent='';setLink(order.token);
   $('qr').src='data:image/png;base64,'+order.qrBase64;$('cod').value=order.qr;
-  $('onum').textContent=order.id?'#'+order.id:'';
-  $('supMail').href='/suporte#pedido='+encodeURIComponent(order.token);
-  $('supWa').href='https://wa.me/5511954854560?text='+encodeURIComponent('Olá! Preciso de ajuda com o meu pedido na Recarga Flame.'+(order.id?'\nPedido #'+order.id:'')+(typeof conta!=='undefined'&&conta&&conta.id?'\nID da conta: '+conta.id:''));
+  // carrinho: mostra os nº dos pedidos (os mesmos do Pix, dos e-mails e do suporte)
+  const nums=curCar&&order.ids?order.ids.map(i=>'#'+i).join(', '):order.id?'#'+order.id:'';
+  $('onum').textContent=nums;
+  // suporte: a página de suporte abre pelo token de um pedido (no carrinho, o 1º item)
+  $('supMail').href='/suporte#pedido='+encodeURIComponent(order.itemTok||order.token);
+  $('supWa').href='https://wa.me/5511954854560?text='+encodeURIComponent('Olá! Preciso de ajuda com o meu pedido na Recarga Flame.'+(nums?(curCar?'\nPedidos ':'\nPedido ')+nums:'')+(typeof conta!=='undefined'&&conta&&conta.id?'\nID da conta: '+conta.id:''));
   setStatus('pending');show(4);
   startTimer(order.expiresAt);watch(order.token);
 }
 function stopAll(){clearInterval(pollT);clearInterval(tickT);pollT=tickT=null;}
 // link do pedido fica no #hash: não vai pro servidor nem pra logs/Referer
-function setLink(tk){try{history.replaceState(null,'',location.pathname+location.search+(tk?'#pedido='+tk:''));}catch{}}
-function linkToken(){const m=location.hash.match(/^#pedido=([0-9a-f-]{36})$/i);return m?m[1]:null;}
+const hashDe=tk=>(curCar?'#carrinho=':'#pedido=')+tk;
+function setLink(tk){try{history.replaceState(null,'',location.pathname+location.search+(tk?hashDe(tk):''));}catch{}}
+function linkToken(){const m=location.hash.match(/^#(pedido|carrinho)=([0-9a-f-]{36})$/i);return m?{tk:m[2],car:m[1].toLowerCase()==='carrinho'}:null;}
 $('copLink').onclick=async()=>{
-  const u=location.origin+location.pathname+'#pedido='+curTok;
+  const u=location.origin+location.pathname+hashDe(curTok);
   try{await navigator.clipboard.writeText(u);$('copLink').textContent='Copiado';setTimeout(()=>$('copLink').textContent='Copiar link',1800);}
   catch{prompt('Copie o link do pedido:',u);}
 };
@@ -546,7 +606,7 @@ function setStatus(status,entrega){
     status==='paid'&&entrega==='manual'?'Seu pagamento está confirmado, mas a entrega automática não pôde ser concluída agora. Nossa equipe vai entregar manualmente na conta informada dentro do prazo abaixo — você não precisa fazer nada. Se preferir, fale com o suporte.':
     status==='paid'?'Recebemos seu pagamento. A entrega é feita manualmente na conta informada — você pode fechar esta página e voltar depois para acompanhar.':
     status==='notfound'?'Este pedido não existe mais. Se você pagou por ele, fale com o suporte abaixo informando o horário do pagamento.':
-    retry?'Nenhum valor foi cobrado. Você pode gerar um novo Pix para o mesmo produto.':
+    retry?'Nenhum valor foi cobrado. Você pode gerar um novo Pix para '+(curCar?'os mesmos itens.':'o mesmo produto.'):
     status==='reversed'?'O pagamento foi estornado e o pedido foi cancelado.':
     status==='refund'?'Não foi possível concluir este pedido e ele não foi entregue. O valor pago será devolvido integralmente via Pix. Se tiver dúvidas, fale com o suporte.':
     status==='refunded'?'Este pedido não foi entregue e o valor pago foi devolvido integralmente via Pix, para a mesma conta que pagou. Pode levar alguns minutos para aparecer no seu banco.':'';
@@ -561,13 +621,31 @@ const POS={
   refund:['bad','!','Pedido cancelado','Não foi possível concluir este pedido e ele não foi entregue. O valor pago será devolvido integralmente via Pix — você não precisa fazer nada.'],
   refunded:['back','↺','Valor devolvido','Este pedido não foi entregue e o valor foi devolvido integralmente via Pix, para a mesma conta que pagou. Pode levar alguns minutos para aparecer no banco.'],
   reversed:['back','↺','Pagamento estornado','O pagamento foi estornado e o pedido foi cancelado.'],
+  parcial:['wait','!','Entrega parcial','Parte dos itens foi entregue. O valor dos itens que não puderam ser entregues é devolvido via Pix — você não precisa fazer nada.'],
 };
+// carrinho: situação de cada item na lista depois do pagamento
+function stItem(it){
+  if(it.status==='delivered')return['ok','✓ Entregue'];
+  if(it.status==='paid')return['',it.entrega==='auto'?'Entregando':'Com a nossa equipe'];
+  if(it.status==='refunded')return['bad','Valor devolvido'];
+  if(it.status==='refund')return['bad','Não entregue · valor será devolvido'];
+  if(it.status==='reversed')return['bad','Estornado'];
+  return['bad','Cancelado'];
+}
+function rsCarrinho(){
+  const l=$('rsLista');if(!carItens){l.innerHTML='';return;}
+  l.innerHTML=carItens.map(it=>{const[c,t]=stItem(it);
+    return `<div class="resumo"><img src="${esc(it.img)}" alt=""><div><b>${esc(it.nome)}</b><span class="${c}">${esc(t)} · #${esc(it.id)}</span></div><b>${brl(it.cents)}</b></div>`;}).join('');
+}
+// carrinho → situação geral para a tela (como no pedido avulso): algum item na equipe = "manual"; senão, algum entregando = "auto"
+function entregaCar(itens){const pg=itens.filter(i=>i.status==='paid');return pg.some(i=>i.entrega==='manual')?'manual':pg.some(i=>i.entrega==='auto')?'auto':null;}
 let resumoTk=null;
 function posPago(status,entrega){
   const k=status==='paid'?(entrega==='auto'?'run':'fila'):status;
   const p=POS[k];
   $('hero').classList.toggle('hide',!p);$('trk').classList.toggle('hide',!p||!['run','fila','delivered'].includes(k));
-  $('resumo').classList.toggle('hide',!p||!$('rsNome').textContent);
+  $('resumo').classList.toggle('hide',curCar||!p||!$('rsNome').textContent);
+  $('rsLista').classList.toggle('hide',!curCar||!p);if(curCar)rsCarrinho();
   $('e4t').textContent=p?'Pedido':'Pagamento';
   $('st').classList.toggle('hide',!!p);$('afternote').classList.toggle('hide',!!p);
   $('supTxt').textContent=k==='delivered'?'Não apareceu no jogo? Fale com a gente:':['refund','refunded','reversed'].includes(k)?'Dúvidas sobre a devolução? Fale com a gente:':'Dúvida ou problema com o pedido? Fale com a gente:';
@@ -577,6 +655,8 @@ function posPago(status,entrega){
   const li=$('trk').children;
   li[0].className='ok';li[1].className=k==='delivered'?'ok':'on'+(k==='fila'?' wait':'');li[2].className=k==='delivered'?'ok':'';
   $('trk2').textContent=k==='fila'?'Com a equipe':'Entregando';
+  $('trk').classList.toggle('hide',!['run','fila','delivered'].includes(k));
+  if(curCar)return;
   // resumo do pedido (produto, conta e valor): busca uma vez por pedido
   if(curTok&&resumoTk!==curTok){
     resumoTk=curTok;
@@ -590,7 +670,9 @@ function posPago(status,entrega){
 async function checkOnce(expiredLocal){
   const tk=curTok;if(!tk)return;
   try{
-    const{status,entrega}=await api('/api/orders/'+tk);
+    const r=await api(oUrl(tk));
+    if(curCar)carItens=r.itens;
+    const status=r.status,entrega=curCar?entregaCar(r.itens):r.entrega;
     if(status==='pending'&&expiredLocal){finish('expired');return;}
     if(status!=='pending')finish(status,entrega);
   }catch(e){if(e.status===404)finish('notfound');} // rede/5xx: tenta de novo no próximo ciclo
@@ -600,7 +682,7 @@ function finish(status,entrega){
   if(status==='paid')return; // segue acompanhando até entregar
   stopAll();
   // pedido encerrado: tira só o Pix do estado, mantém conta e produto p/ refazer rápido
-  try{saveState({order:null,selKey:status==='delivered'?null:(sel?sel.key:null)});}catch{}
+  try{saveState({order:null,car:status==='delivered'?[]:car});}catch{}
 }
 
 function watch(tk){
@@ -613,8 +695,8 @@ $('cancelPix').onclick=async()=>{
   if(!confirm('Cancelar este Pix?\n\nO código atual deixa de funcionar e você pode escolher outro produto. Se você já pagou, não cancele — o pagamento será confirmado automaticamente.'))return;
   const b=$('cancelPix');$('err4').textContent='';b.disabled=true;b.textContent='Cancelando…';
   try{
-    const{status}=await api('/api/orders/'+curTok+'/cancel',{method:'POST'});
-    if(status==='cancelled'){finish('cancelled');stopAll();$('err3').textContent='';show(sel?3:2);}
+    const{status}=await api(oUrl(curTok)+'/cancel',{method:'POST'});
+    if(status==='cancelled'){finish('cancelled');stopAll();$('err3').textContent='';if(car.length)fillConfirm();show(car.length?3:2);}
     else if(status==='pending')$('err4').textContent='Não foi possível cancelar agora. Tente de novo em instantes.';
     else finish(status); // ex.: já estava pago — segue o fluxo normal
   }catch(e){if(e.status===404)finish('notfound');else $('err4').textContent=e.message;}
@@ -623,10 +705,10 @@ $('cancelPix').onclick=async()=>{
 $('novoPix').onclick=()=>{
   stopAll();setLink(null);
   if(!conta){show(1);return;}
-  if(!sel){show(2);return;}
-  $('err3').textContent='';show(3);
+  if(!car.length){show(2);return;}
+  $('err3').textContent='';fillConfirm();show(3);
 };
-$('outro').onclick=()=>{stopAll();setLink(null);sel=null;if(!conta){clearOrder();show(1);return;}saveState({order:null,selKey:null});show(2);};
+$('outro').onclick=()=>{stopAll();setLink(null);car=[];setAdd(false);if(!conta){clearOrder();show(1);return;}saveState({order:null,car:[]});show(2);};
 
 /* ---- restauração ao carregar a página ---- */
 async function restore(){
@@ -639,31 +721,25 @@ async function restore(){
   // preenche dados da conta nas telas
   $('gameId').value=conta.id;$('buscar').disabled=false;
   $('av2').src=conta.avatar;$('nick2').textContent=conta.nick;$('pid2').textContent=conta.id;
+  // itens escolhidos (estado antigo guardava só selKey)
+  car=(Array.isArray(s.car)?s.car:s.selKey?[s.selKey]:[]).filter(k=>prodOf(k)).slice(0,CAR_MAX);
   // pedido Pix em aberto -> volta direto pra etapa 4
   if(s.order&&s.order.token){
-    if(s.selKey)sel=produtos.find(p=>p.key===s.selKey)||null;
-    if(sel){$('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
-      $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();}
+    if(car.length)fillConfirm();
     showPayment(s.order);checkOnce(s.order.expiresAt&&Date.now()>s.order.expiresAt+60_000);return true;
   }
   // produto já escolhido -> etapa 3 (confirmação)
-  if(s.selKey){
-    sel=produtos.find(p=>p.key===s.selKey);
-    if(sel){
-      $('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
-      $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();
-      show(3);return true;
-    }
-  }
+  if(car.length){fillConfirm();show(3);return true;}
   // só conta validada -> etapa 2 (catálogo)
   show(2);return true;
 }
 
 /* ---- abrir pedido pelo link (#pedido=<token>) — vale em qualquer aparelho ---- */
-async function openFromLink(tk){
+async function openFromLink({tk,car:ehCar}){
   if(!produtos.length)await loadProds();
   let o;
-  try{o=await api('/api/orders/'+tk+'?full=1');}
+  curCar=ehCar;
+  try{o=await api(ehCar?'/api/carrinho/'+tk:'/api/orders/'+tk+'?full=1');}
   catch(e){
     if(e.status!==404)return false; // falha de rede: cai no estado salvo
     curTok=tk;show(4);$('onum').textContent='';finish('notfound');return true;
@@ -671,12 +747,13 @@ async function openFromLink(tk){
   conta={id:o.gameId,nick:o.nick,avatar:o.avatar,blocked:{}};
   $('gameId').value=conta.id;$('buscar').disabled=false;
   $('av2').src=conta.avatar;$('nick2').textContent=conta.nick;$('pid2').textContent=conta.id;
-  sel=produtos.find(p=>p.key===o.product)||null;
-  if(sel){$('av3').src=conta.avatar;$('nick3').textContent=conta.nick;$('pid3').textContent='ID '+conta.id;
-    $('rimg').src=sel.img;$('rprod').textContent=sel.nome;fillPrice();}
-  const order={token:tk,id:o.id,expiresAt:o.expiresAt,qr:o.qr||'',qrBase64:o.qrBase64||''};
+  car=(ehCar?o.itens.map(i=>i.product):[o.product]).filter(k=>prodOf(k));
+  if(car.length)fillConfirm();
+  if(ehCar)carItens=o.itens;
+  const entrega=ehCar?entregaCar(o.itens):o.entrega;
+  const order={token:tk,id:o.id,expiresAt:o.expiresAt,qr:o.qr||'',qrBase64:o.qrBase64||'',...(ehCar?{car:true,itemTok:o.itens[0]&&o.itens[0].token,ids:o.itens.map(i=>i.id)}:{})};
   if(o.status==='pending'&&o.qr){saveState({order});showPayment(order);checkOnce(o.expiresAt&&Date.now()>o.expiresAt+60_000);}
-  else{showPayment(order);finish(o.status==='pending'?'expired':o.status,o.entrega);}
+  else{showPayment(order);finish(o.status==='pending'?'expired':o.status,entrega);}
   api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};render();}).catch(()=>{});
   return true;
 }
