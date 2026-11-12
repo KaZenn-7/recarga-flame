@@ -39,11 +39,15 @@ app.get('/api/products', (req, res) => res.json(prods.map((p) => ({ key: p.key, 
 app.get('/api/coupon/:code', (req, res) => res.status(404).json({ error: 'Cupom inválido ou expirado.' }));
 app.get('/api/player/:id/avatar', (req, res) => res.type('svg').send('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#2a1a12"/><circle cx="32" cy="25" r="11" fill="#ff5a1f"/><path d="M12 56c2-11 10-17 20-17s18 6 20 17" fill="#ff5a1f"/></svg>'));
 app.get('/api/player/:id', (req, res) => res.json({ nickname: DEMO.nick, avatar: `/api/player/${DEMO.id}/avatar`, blocked: {} }));
+let pedido = prods[0]; // produto escolhido no vídeo (aparece no resumo do pedido entregue)
 app.post('/api/orders', (req, res) => {
   const p = prods.find((x) => x.key === req.body.product) || prods[0];
+  pedido = p;
   res.json({ token: 'demo-token-video-0000000000000000000000', id: 128, expiresAt: Date.now() + 30 * 60000, cents: p.cents, coupon: null, qr: '00020126580014br.gov.bcb.pix0136demo-recargaflame-video', qrBase64: qrB64 });
 });
-app.get('/api/orders/:token', (req, res) => res.json({ status: estado, entrega: 'auto' }));
+app.get('/api/orders/:token', (req, res) => res.json(req.query.full !== '1' ? { status: estado, entrega: 'auto' } : {
+  status: estado, entrega: 'auto', id: 128, product: pedido.key, nome: pedido.nome, cents: pedido.cents,
+  gameId: DEMO.id, nick: DEMO.nick, img: pedido.img || `/img/${pedido.key}.jpg` }));
 app.post('/api/ev', (req, res) => res.sendStatus(204));
 app.use(express.static(path.join(ROOT, 'public')));
 const srv = http.createServer(app).listen(0, '127.0.0.1');
