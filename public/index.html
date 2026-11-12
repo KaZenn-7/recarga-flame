@@ -434,7 +434,7 @@ async function loadProds(){
 }
 function render(){
   const g={};for(const p of produtos)(g[p.cat]||=[]).push(p);
-  const ord=['Coins','Coleções','Passes','Arsenal Pass'];
+  const ord=['Coins','Coleções','Battle Pass','Arsenal Pass'];
   const keys=Object.keys(g).sort((a,b)=>(ord.indexOf(a)+1||99)-(ord.indexOf(b)+1||99));
   const bl=(conta&&conta.blocked)||{};
   $('cat').innerHTML=keys.map(c=>`<div class="cat"><span>${esc(c)}</span><div class="grid">${g[c].map(p=>

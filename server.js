@@ -136,12 +136,12 @@ async function getPlayer(id) {
 }
 
 // Vitrine: categorias nesta ordem e, dentro de cada uma, do mais barato ao mais caro (produto novo entra no lugar certo sozinho);
-// em Passes, o Gold Pass vem antes dos níveis (pedido do operador)
-const CATEGORIAS = ['Coins', 'Coleções', 'Passes', 'Arsenal Pass'];
+// em Battle Pass, o Gold Pass vem antes dos níveis (pedido do operador)
+const CATEGORIAS = ['Coins', 'Coleções', 'Battle Pass', 'Arsenal Pass'];
 function categoria(p) {
   if (p.tipo === 'wildfire') return 'Coleções';
   if (p.tipo === 'arsenal') return 'Arsenal Pass';
-  if (p.tipo === 'gold' || p.niveis) return 'Passes'; // Gold Pass e níveis de passe
+  if (p.tipo === 'gold' || p.niveis) return 'Battle Pass'; // Gold Pass e níveis de passe
   return 'Coins';
 }
 const ordemVitrine = (a, b) => CATEGORIAS.indexOf(categoria(a)) - CATEGORIAS.indexOf(categoria(b))

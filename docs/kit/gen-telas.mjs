@@ -25,8 +25,8 @@ const db = require('better-sqlite3')(path.join(ROOT, 'loja.db'), { readonly: tru
 const prods = db.prepare('SELECT * FROM products WHERE ativo=1 ORDER BY sort, rowid').all();
 db.close();
 // mesma regra do categoria() do server.js
-const CATEGORIAS = ['Coins', 'Coleções', 'Passes', 'Arsenal Pass'];
-const cat = (p) => (p.tipo === 'wildfire' ? 'Coleções' : p.tipo === 'arsenal' ? 'Arsenal Pass' : p.tipo === 'gold' || p.niveis ? 'Passes' : 'Coins');
+const CATEGORIAS = ['Coins', 'Coleções', 'Battle Pass', 'Arsenal Pass'];
+const cat = (p) => (p.tipo === 'wildfire' ? 'Coleções' : p.tipo === 'arsenal' ? 'Arsenal Pass' : p.tipo === 'gold' || p.niveis ? 'Battle Pass' : 'Coins');
 prods.sort((a, b) => CATEGORIAS.indexOf(cat(a)) - CATEGORIAS.indexOf(cat(b)) || (b.tipo === 'gold') - (a.tipo === 'gold') || a.cents - b.cents);
 const DEMO = { id: '51234567', nick: 'Jogador_Demo' };
 // QR de demonstração: NÃO é um Pix (aponta para o site)
