@@ -75,7 +75,7 @@ test('código é de uso único e trava após 5 erros', async () => {
   const code = lastCode();
   const ok = await postJ('/login/codigo', { challenge, code });
   assert.equal(ok.status, 200);
-  assert.match(ok.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  assert.match(ok.headers.get('set-cookie'), /HttpOnly; SameSite=Lax/);
   assert.equal((await postJ('/login/codigo', { challenge, code })).status, 401, 'reuso tem que falhar');
   const c2 = (await (await postJ('/login/senha', { user: 'admin_test', pass: 'senha_test_longa' })).json()).challenge;
   const certo = lastCode();
@@ -103,7 +103,7 @@ test('sessão do painel: 30 dias, renova com o uso e tem teto de 90 dias desde o
   // 10 dias depois sem uso: o próximo acesso estica de volta para 30 dias
   db.prepare('UPDATE admin_sessions SET created_at=?, expires_at=? WHERE id_hash=?').run(Date.now() - 10 * DIA, Date.now() + 20 * DIA, sid);
   const r1 = await fetch(base + '/api/admin/products', { headers: { Cookie: ck, ...freshIP() } });
-  assert.match(r1.headers.get('set-cookie'), /Max-Age=259\d{4}; Path=\/; HttpOnly; SameSite=Strict/);
+  assert.match(r1.headers.get('set-cookie'), /Max-Age=259\d{4}; Path=\/; HttpOnly; SameSite=Lax/);
   assert.ok(Math.abs(row().expires_at - Date.now() - 30 * DIA) < 60_000);
   // perto do teto: não passa de 90 dias desde o login
   db.prepare('UPDATE admin_sessions SET created_at=?, expires_at=? WHERE id_hash=?').run(Date.now() - 85 * DIA, Date.now() + 2 * DIA, sid);

@@ -65,7 +65,10 @@ function renewSession(s, res) {
   db.prepare('UPDATE admin_sessions SET expires_at=? WHERE id_hash=?').run(exp, hashHex(s.tok));
   res.append('Set-Cookie', `${COOKIE}=${s.tok}; Max-Age=${Math.floor((exp - now) / 1000)}; ${cookieAttrs()}`);
 }
-const cookieAttrs = () => `Path=/; HttpOnly; SameSite=Strict${env.NODE_ENV === 'test' ? '' : '; Secure'}`;
+// Lax, não Strict: no iPhone (Safari e Chrome, ambos WebKit) o cookie Strict não vai ao recarregar ou abrir /painel pela
+// barra/aba, e o operador caía no login a cada F5. Lax segue sem mandar o cookie em POST/fetch de outro site (as ações do
+// painel ainda exigem mesma origem ou x-painel) e as rotas GET do admin só leem.
+const cookieAttrs = () => `Path=/; HttpOnly; SameSite=Lax${env.NODE_ENV === 'test' ? '' : '; Secure'}`;
 
 setInterval(() => {
   const now = Date.now();
@@ -102,7 +105,7 @@ function admin(req, res, next) {
     res.json({ challenge: id });
   });
 
-  // Passo 2: código. Certo → cria sessão (cookie HttpOnly/Secure/SameSite=Strict, 30 dias renováveis, teto 90).
+  // Passo 2: código. Certo → cria sessão (cookie HttpOnly/Secure/SameSite=Lax, 30 dias renováveis, teto 90).
   app.post('/login/codigo', limit(30), (req, res) => {
     const ip = req.ip;
     const { challenge, code } = req.body ?? {};
