@@ -39,10 +39,10 @@ test('suporte: formulário valida, vincula o pedido pelo link e envia e-mail (Re
   const sup = (b) => fetch(base + '/api/suporte', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP() }, body: JSON.stringify(b) });
   const pg = await fetch(base + '/suporte');
   assert.equal(pg.status, 200);
-  const pgTxt = await pg.text(); // duas opções: formulário e WhatsApp com mensagem pronta (com o pedido quando vem do link)
-  assert.match(pgTxt, /id="optForm"/);
-  assert.match(pgTxt, /id="optWa" href="https:\/\/wa\.me\/5511954854560\?text=/);
-  assert.ok(pgTxt.includes("\\nPedido #'+o.id"));
+  const pgTxt = await pg.text(); // formulário + botão do WhatsApp com mensagem pronta (o que foi preenchido)
+  assert.match(pgTxt, /id="wa" type="button" aria-label="Falar pelo WhatsApp"/); // botão com o ícone, ao lado de Enviar
+  assert.ok(pgTxt.includes("'https://wa.me/5511954854560?text='+encodeURIComponent(t)"));
+  assert.ok(!pgTxt.includes('95485-4560')); // sem o número visível
   assert.match(await (await fetch(base + '/')).text(), /id="supWa" href="https:\/\/wa\.me\/5511954854560/);
   assert.equal((await sup({ email: 'x', assunto: 'outro', msg: 'mensagem longa o bastante' })).status, 400);
   assert.equal((await sup({ email: 'a@b.com', assunto: 'hack', msg: 'mensagem longa o bastante' })).status, 400);

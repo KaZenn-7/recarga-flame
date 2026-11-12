@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#0e0e10">
 <meta name="format-detection" content="telephone=no">
 <title>Suporte — Recarga Flame</title>
-<meta name="description" content="Fale com o suporte da Recarga Flame. Respondemos por e-mail ou WhatsApp.">
-<meta property="og:type" content="website"><meta property="og:site_name" content="Recarga Flame"><meta property="og:locale" content="pt_BR"><meta property="og:url" content="https://recargaflame.com.br/suporte"><meta property="og:title" content="Suporte — Recarga Flame"><meta property="og:description" content="Fale com o suporte da Recarga Flame. Respondemos por e-mail ou WhatsApp."><meta property="og:image" content="https://recargaflame.com.br/img/og-v2.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Recarga Flame — Coins e passes do CounterFlame no Pix"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://recargaflame.com.br/suporte">
+<meta name="description" content="Fale com o suporte da Recarga Flame. Respondemos por e-mail.">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Recarga Flame"><meta property="og:locale" content="pt_BR"><meta property="og:url" content="https://recargaflame.com.br/suporte"><meta property="og:title" content="Suporte — Recarga Flame"><meta property="og:description" content="Fale com o suporte da Recarga Flame. Respondemos por e-mail."><meta property="og:image" content="https://recargaflame.com.br/img/og-v2.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Recarga Flame — Coins e passes do CounterFlame no Pix"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://recargaflame.com.br/suporte">
 <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <style>
 :root{
@@ -19,7 +19,8 @@
 html{-webkit-text-size-adjust:100%}
 body{font:16px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
 a{color:var(--orange)}
-.wrap{max-width:520px;margin:0 auto;padding:0 18px 56px}
+.wrap{max-width:520px;margin:0 auto;padding:0 18px 20px;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+.pg{flex:1 0 auto}
 .bar{display:flex;align-items:center;gap:10px;padding:18px 0 16px;border-bottom:1px solid var(--line);margin-bottom:22px}
 .bar a.home{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
 .mark{width:30px;height:30px;border-radius:7px;flex-shrink:0;display:block}
@@ -62,33 +63,28 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
 .form .err{color:#f85149;font-size:13px;min-height:18px;margin:10px 0 0;text-align:center}
 .form button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:10px;background:var(--orange);color:#160a04;font:inherit;font-weight:800;cursor:pointer}
 .form button:disabled{opacity:.6}
+.acts{display:flex;gap:10px}.acts #send{flex:1}
+.form .wa{width:56px;flex-shrink:0;display:grid;place-items:center;padding:0;background:#25D366;color:#06210f}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .ord{display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;color:var(--mut);margin-bottom:4px}
 .ord b{color:var(--txt)}
-.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 6px}
-.opt{display:block;text-align:center;line-height:1.4;padding:14px 10px;border-radius:12px;font-weight:800;font-size:15.5px;text-decoration:none;background:var(--orange);color:#160a04;border:0;font-family:inherit;cursor:pointer}
-.opt span{display:block;font-weight:500;font-size:12.5px;opacity:.85;margin-top:2px}
-.opt.wa{background:#25D366;color:#06210f}
 .done{display:none;background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.4);border-radius:12px;padding:16px;font-size:14.5px;color:var(--mut)}
 .done b{color:var(--txt)}.done h2{margin:0 0 6px;color:var(--txt);font-size:17px}
 </style>
 </head>
 <body>
 <div class="wrap">
+<main class="pg">
   <div class="bar">
     <a class="home" href="/"><img class="mark" src="/img/brand-mark.png" alt="" width="30" height="30"><b>Recarga <span class="fl">Flame</span></b></a>
     <a class="back" href="/">Fazer pedido</a>
   </div>
 
   <h1>Suporte</h1>
-  <p class="lead">Fale com a gente pelo formulário (respondemos no seu e-mail) ou pelo WhatsApp. Antes, vale olhar as <a href="/perguntas-frequentes">perguntas frequentes</a> e o que fazer se o <a href="/item-nao-chegou-counterflame">item não chegou</a>.</p>
+  <p class="lead">Conte o que aconteceu e respondemos no seu e-mail. Antes, vale olhar as <a href="/perguntas-frequentes">perguntas frequentes</a> e o que fazer se o <a href="/item-nao-chegou-counterflame">item não chegou</a>.</p>
 
   <div class="ord" id="ord"></div>
-  <div class="opts">
-    <button class="opt" id="optForm" type="button">Formulário<span>resposta por e-mail</span></button>
-    <a class="opt wa" id="optWa" href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">WhatsApp<span>(11) 95485-4560</span></a>
-  </div>
-  <form class="form" id="f" novalidate hidden>
+  <form class="form" id="f" novalidate>
     <label for="email">Seu e-mail</label>
     <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="voce@email.com" maxlength="120" required>
     <div class="hint">Use o mesmo e-mail do pedido, se tiver um.</div>
@@ -101,11 +97,12 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
     <label for="msg">Mensagem</label>
     <textarea id="msg" maxlength="2000" placeholder="Descreva o problema ou a dúvida." required></textarea>
     <div class="hp" aria-hidden="true"><label for="site">Não preencha</label><input id="site" tabindex="-1" autocomplete="off"></div>
-    <button id="send" type="submit">Enviar mensagem</button>
+    <div class="acts"><button id="send" type="submit">Enviar mensagem</button><button class="wa" id="wa" type="button" aria-label="Falar pelo WhatsApp" title="Falar pelo WhatsApp"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm.01 18.15h-.01a8.23 8.23 0 0 1-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23 2.2 0 4.27.86 5.83 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.22-8.23 8.22zm4.51-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.15.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.13-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg></button></div>
     <p class="err" id="err" role="alert"></p>
   </form>
   <div class="done" id="done" role="status"><h2>Mensagem enviada ✅</h2><p id="donetxt"></p><p style="margin:10px 0 0"><a href="/">Voltar à loja</a></p></div>
 
+</main>
   <footer class="ft">
     <nav class="ft-nav" aria-label="Páginas"><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes">Dúvidas</a><a href="/suporte" aria-current="page">Precisa de ajuda?</a></nav>
     <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Pagamentos via Pix processados pelo Mercado Pago.</p>
@@ -115,9 +112,11 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
 <script>
 const $=id=>document.getElementById(id);
 const tk=(location.hash.match(/pedido=([A-Za-z0-9-]{10,64})/)||[])[1]||null;
-// WhatsApp com mensagem pronta (com o pedido, quando a página veio do link do pedido)
-const waMsg=t=>'https://wa.me/5511954854560?text='+encodeURIComponent(t);
-$('optForm').onclick=()=>{$('f').hidden=false;$('f').scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>$('email').focus({preventScroll:true}),300);};
+// WhatsApp: mensagem pronta com o que já foi preenchido (assunto, pedido, ID e mensagem)
+$('wa').onclick=()=>{const v=id=>$(id).value.trim(),as=$('assunto');
+  const t='Olá! Preciso de ajuda com a Recarga Flame.'+(v('assunto')?'\nAssunto: '+as.options[as.selectedIndex].text:'')
+    +(v('pedido')?'\nPedido #'+v('pedido'):'')+(v('gameId')?'\nID da conta: '+v('gameId'):'')+(v('msg')?'\n\n'+v('msg'):'');
+  window.open('https://wa.me/5511954854560?text='+encodeURIComponent(t),'_blank','noopener');};
 if(tk){
   fetch('/api/orders/'+tk+'?full=1').then(r=>r.ok?r.json():null).then(o=>{
     if(!o)return;
@@ -126,7 +125,6 @@ if(tk){
     const b=document.createElement('b');b.textContent='Pedido #'+o.id;
     $('ord').textContent='';$('ord').append(b,' · '+o.nome+' · '+o.nick+' · '+(ST[o.status]||o.status));$('ord').style.display='block';
     if(o.status==='paid')$('assunto').value='naochegou';
-    $('optWa').href=waMsg('Olá! Preciso de ajuda com o meu pedido na Recarga Flame.\nPedido #'+o.id+' · '+o.nome+'\nID da conta: '+o.gameId+'\nSituação: '+(ST[o.status]||o.status));
   }).catch(()=>{});
 }
 $('f').onsubmit=async e=>{
@@ -140,7 +138,7 @@ $('f').onsubmit=async e=>{
     const r=await fetch('/api/suporte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||'Não foi possível enviar. Tente de novo.');
-    $('f').style.display='none';$('ord').style.display='none';document.querySelector('.opts').style.display='none';
+    $('f').style.display='none';$('ord').style.display='none';
     $('donetxt').textContent='Recebemos sua mensagem'+(j.id?' (chamado #'+j.id+')':'')+'. Vamos responder no e-mail '+body.email+' — confira também a caixa de spam.';
     $('done').style.display='block';
   }catch(err){$('err').textContent=err.message;}

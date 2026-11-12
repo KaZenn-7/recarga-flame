@@ -19,7 +19,8 @@
 html{-webkit-text-size-adjust:100%}
 body{font:16px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
 a{color:var(--orange)}
-.wrap{max-width:520px;margin:0 auto;padding:0 18px 56px}
+.wrap{max-width:520px;margin:0 auto;padding:0 18px 20px;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+.pg{flex:1 0 auto}
 .bar{display:flex;align-items:center;gap:10px;padding:18px 0 16px;border-bottom:1px solid var(--line);margin-bottom:22px}
 .bar a.home{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
 .mark{width:30px;height:30px;border-radius:7px;flex-shrink:0;display:block}
@@ -64,6 +65,7 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
 </head>
 <body>
 <div class="wrap">
+<main class="pg">
   <div class="bar">
     <a class="home" href="/"><img class="mark" src="/img/brand-mark.png" alt="" width="30" height="30"><b>Recarga <span class="fl">Flame</span></b></a>
     <a class="back" href="/">Fazer pedido</a>
@@ -108,13 +110,14 @@ h2{font-size:17px;margin:30px 0 12px;letter-spacing:-.01em}
       <p>Não. Somos uma <b>revenda independente</b>, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Compramos o item na loja do jogo para a sua conta, a partir do seu ID, e você paga em reais por Pix. <a href="/e-seguro-comprar-coins-counterflame">Como saber se uma recarga é segura</a>.</p>
     </div></details>
     <details><summary>Deu algum problema. Com quem falo?</summary><div class="a">
-      <p>Use a <a href="/suporte">página de suporte</a> ou chame no <a href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">WhatsApp (11) 95485-4560</a>. Se tiver um pedido, toque em <b>Suporte</b> ou <b>WhatsApp</b> na tela do pedido — o formulário já vai com o número do pedido e o ID da conta. Se o item não chegou, veja <a href="/item-nao-chegou-counterflame">o que fazer</a>.</p>
+      <p>Use a <a href="/suporte">página de suporte</a> ou chame no <a href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">WhatsApp</a>. Se tiver um pedido, toque em <b>Suporte</b> ou <b>WhatsApp</b> na tela do pedido — o formulário já vai com o número do pedido e o ID da conta. Se o item não chegou, veja <a href="/item-nao-chegou-counterflame">o que fazer</a>.</p>
     </div></details>
   </div>
 
   <a class="cta" href="/">Fazer meu pedido</a>
   <a class="next" href="/como-funciona"><div>Primeira compra?<span>Veja o passo a passo em 4 etapas</span></div><i>›</i></a>
 
+</main>
   <footer class="ft">
     <nav class="ft-nav" aria-label="Páginas"><a href="/como-funciona">Como funciona</a><a href="/perguntas-frequentes" aria-current="page">Dúvidas</a><a href="/suporte">Precisa de ajuda?</a></nav>
     <p class="ft-legal">Revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame. Pagamentos via Pix processados pelo Mercado Pago.</p>
