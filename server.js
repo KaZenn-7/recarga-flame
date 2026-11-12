@@ -313,7 +313,7 @@ app.get(['/', '/index.html'], (req, res) => {
   res.type('html').set('Cache-Control', 'no-cache').send(html);
 });
 // páginas de conteúdo (SEO); a de Coins recebe a tabela de preços dos produtos ativos
-const PAGES_SEO = Object.fromEntries(['onde-encontrar-id-counterflame', 'comprar-coins-counterflame', 'gold-pass-counterflame', 'item-nao-chegou-counterflame', 'e-seguro-comprar-coins-counterflame']
+const PAGES_SEO = Object.fromEntries(['onde-encontrar-id-counterflame', 'comprar-coins-counterflame', 'gold-pass-counterflame', 'colecao-wildfire-counterflame', 'item-nao-chegou-counterflame', 'e-seguro-comprar-coins-counterflame']
   .map((s) => [s, fs.existsSync(path.join('public', s + '.html')) ? fs.readFileSync(path.join('public', s + '.html'), 'utf8') : null]));
 for (const [s, html] of Object.entries(PAGES_SEO)) if (html) app.get(['/' + s, '/' + s + '.html'], (req, res) => res.type('html').set('Cache-Control', 'no-cache').send(pageHtml(html, prodsPublic())));
 app.use(express.static('public'));
