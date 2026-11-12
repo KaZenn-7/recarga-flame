@@ -192,7 +192,7 @@ function blockReason(p, d, gameId) {
 
 // Carrinho: além das regras de cada item, as regras do conjunto (o jogo aplica tudo na mesma conta).
 // Repetir o mesmo item só vale para Coins e níveis do passe (decisão do operador, 12/11/2026).
-const CARRINHO_MAX = 5;
+const CARRINHO_MAX = 10;
 const repetivel = (p) => !p.tipo; // Coins e níveis (tipo '')
 function blockReasonCarrinho(itens, d, gameId) {
   for (const p of itens) { const why = blockReason(p, d, gameId); if (why) return `${p.nome}: ${why}`; }

@@ -33,9 +33,9 @@ test('cria um Pix só com o total; cada item vira um pedido ligado ao carrinho',
   assert.equal(v.email, undefined);
 });
 
-test('regras do carrinho: até 5 itens; Gold, Wildfire e ticket do Arsenal não repetem; soma de níveis até 100', async () => {
+test('regras do carrinho: até 10 itens; Gold, Wildfire e ticket do Arsenal não repetem; soma de níveis até 100', async () => {
   const casos = [
-    [['c1000', 'c1000', 'c1000', 'c1000', 'c1000', 'c1000'], 400, /até 5 itens/],
+    [Array(11).fill('c1000'), 400, /até 10 itens/],
     [[], 400, /vazio/],
     [['c1000', 'naoexiste'], 400, /Produto inválido/],
     [['gold', 'gold'], 409, /uma vez/],
@@ -56,6 +56,8 @@ test('regras do carrinho: até 5 itens; Gold, Wildfire e ticket do Arsenal não 
   const g = await carrinho(['c1000', 'gold'], '555555');
   assert.equal(g.status, 409);
   assert.match((await g.json()).error, /^Gold Pass: /);
+  // 10 itens cabem num Pix só
+  assert.equal((await carrinho(Array(10).fill('c1000'))).status, 200);
   // Coins e níveis podem repetir
   assert.equal((await carrinho(['c1000', 'c1000', 'bp1', 'bp1', 'arsenal'])).status, 200);
 });

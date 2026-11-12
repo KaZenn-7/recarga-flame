@@ -279,7 +279,7 @@ input:focus{outline:0;border-color:#45454c}
       <div class="line hide" id="rdesc"><span class="k">Cupom <b id="rdcode" style="color:var(--txt)"></b></span><span class="v mono" id="rdval" style="color:var(--green)"></span></div>
       <div class="line hide" id="rtot"><span class="k">Total · um Pix só</span><span class="v big mono" id="rtotal"></span></div>
     </div>
-    <button class="add" id="addItem">+ Adicionar outro item<small>Pague tudo num Pix só (até 5 itens)</small></button>
+    <button class="add" id="addItem">+ Adicionar outro item<small>Pague tudo num Pix só (até 10 itens)</small></button>
     <details class="cupin" id="cupin" open><summary><span class="ci">🎟️</span><span class="ct"><b>Tem cupom de desconto?</b><small>De criador ou promoção</small></span><span class="ca">Inserir</span></summary>
       <div class="cp"><input id="cupinput" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO" maxlength="20"><button id="cupok">Aplicar</button></div>
       <p class="err" id="cuperr"></p>
@@ -337,7 +337,7 @@ const $=id=>document.getElementById(id);
 const brl=c=>(c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let produtos=[],car=[],conta=null; // car = chaves dos produtos escolhidos (1 = pedido avulso; 2+ = carrinho, um Pix só); conta={id,nick,avatar}
-const CAR_MAX=5;let addMode=false;
+const CAR_MAX=10;let addMode=false;
 // níveis do passe: o carrinho nunca passa do que ainda cabe na conta (conta.niveis vem do servidor, que confere de novo)
 const nvCar=()=>car.reduce((a,k)=>a+((prodOf(k)||{}).nv||0),0);
 const cabeNv=p=>!p.nv||!conta||conta.niveis==null||nvCar()+p.nv<=conta.niveis;
@@ -498,7 +498,7 @@ function render(){
     if(why){$('err2').textContent=why;$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
     const p=prodOf(el.dataset.k);
     if(addMode&&car.length){
-      // regras do carrinho (o servidor confere de novo): até 5 itens; Gold, coleção e Arsenal só uma vez
+      // regras do carrinho (o servidor confere de novo): até 10 itens; Gold, coleção e Arsenal só uma vez
       if(car.length>=CAR_MAX){$('err2').textContent='O pedido aceita até '+CAR_MAX+' itens.';return;}
       if(!cabeNv(p)){$('err2').textContent=nvMsg();$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
       if(p.rep===false&&car.includes(p.key)){$('err2').textContent=p.nome+' já está no pedido e só pode ser comprado uma vez.';$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
