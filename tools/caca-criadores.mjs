@@ -49,7 +49,7 @@ function walk(o, key, out = []) {
 }
 const txt = (t) => (t?.simpleText ?? (t?.runs || []).map((r) => r.text).join('')) || '';
 const num = (s) => { // "22.118 visualizações", "4,73 mil inscritos", "1,2 mi"
-  const m = String(s).replace(/ /g, ' ').match(/([\d.,]+)\s*(mil|mi|bi)?/i);
+  const m = String(s).replace(/\u00a0/g, ' ').match(/([\d.,]+)\s*(mil|mi|bi)?/i);
   if (!m) return null;
   const mult = { mil: 1e3, mi: 1e6, bi: 1e9 }[(m[2] || '').toLowerCase()] || 1;
   const n = mult > 1 ? Number(m[1].replace(/\./g, '').replace(',', '.')) : Number(m[1].replace(/[.,]/g, ''));
