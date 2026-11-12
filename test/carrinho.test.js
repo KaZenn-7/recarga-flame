@@ -2,7 +2,7 @@
 // o Pix é único (valor total) e pagar/cancelar/estornar vale para todos os itens juntos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setupStore, mock, tgSent, base, db, RISK, riskOf, SRV, freshIP, postJ, pedir, webhookMP, adm, ateQue, _setInvoiceChecker, _setInvoicePayer } from './helpers.js';
+import { setupStore, mock, tgSent, tgCalls, base, db, RISK, riskOf, SRV, freshIP, postJ, pedir, pagar, webhookMP, adm, ateQue, cb, _setInvoiceChecker, _setInvoicePayer } from './helpers.js';
 
 setupStore();
 
@@ -230,5 +230,123 @@ test('teto de 24h e saldo contam os itens que já estão sendo pagos', async () 
     await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 4000 });
     await adm('POST', '/api/admin/autopay', { mode: 0 });
     _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+  }
+});
+
+test('Telegram: aviso de cada item mostra "🛒 Carrinho #X · n/N"; pedido avulso não', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c3000', 'bp1'])).json();
+  const n0 = tgSent.length;
+  mock.approve = true;
+  await ver(j.token);
+  await ateQue(() => tgSent.slice(n0).filter((m) => /Pedido pago/.test(m.text)).length === 3);
+  const avisos = tgSent.slice(n0).filter((m) => /Pedido pago/.test(m.text));
+  j.itens.forEach((it, i) => {
+    const a = avisos.find((m) => m.text.includes(`Pedido pago #${it.id}`));
+    assert.ok(a.text.includes(`🛒 Carrinho #${j.id} · ${i + 1}/3`), a.text);
+  });
+  // pedido avulso: sem a linha do carrinho
+  mock.approve = false;
+  const p = await (await pedir('c1000', novoId(), `c${seq}@ex.com`)).json();
+  mock.approve = true;
+  await pagar(p.token);
+  await ateQue(() => tgSent.some((m) => m.text.includes(`Pedido pago #${p.id}`)));
+  assert.ok(!tgSent.find((m) => m.text.includes(`Pedido pago #${p.id}`)).text.includes('🛒 Carrinho'));
+  mock.approve = false;
+});
+
+// carrinho pago em REVISAR (valor alto do carrinho), com conferência ✅ em todos os itens e modo 1 toque
+async function carrinhoRevisar(itens, checker) {
+  const starsDo = (code) => db.prepare('SELECT stars FROM products WHERE code=?').get(code).stars;
+  const codeDe = (sp) => sp.slice(2, sp.lastIndexOf('_'));
+  _setInvoiceChecker(checker || (async (sp) => ({ currency: 'XTR', stars: starsDo(codeDe(sp)), account: 'jogador_teste', produto: '', msgId: 1 })));
+  await adm('POST', '/api/admin/autopay', { mode: 1 });
+  RISK.review = 1; // qualquer carrinho cai em REVISAR por valor
+  mock.approve = false;
+  const j = await (await carrinho(itens)).json();
+  mock.approve = true;
+  await ver(j.token);
+  await ateQue(() => itensDB(j.id).every((o) => o.chk && o.tg_msg));
+  return j;
+}
+const kbDe = (msgId) => tgCalls.filter((c) => c.body?.message_id === msgId && c.body.reply_markup).at(-1).body.reply_markup.inline_keyboard.flat();
+
+test('REVISAR: "Aprovar carrinho" aprova uma vez e paga todos os itens (só o operador, só depois de confirmar)', async () => {
+  const antes = RISK.review;
+  const pays = [];
+  _setInvoicePayer(async (a) => { pays.push(a.startParam); return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }; });
+  try {
+    await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 50000 });
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 100000 });
+    const j = await carrinhoRevisar(['c1000', 'c3000', 'c1000']);
+    const [o1] = itensDB(j.id);
+    const tot = itensDB(j.id).reduce((a, o) => a + o.prod_stars, 0);
+    const kb = kbDe(o1.tg_msg);
+    assert.ok(kb.some((b) => b.callback_data === 'c:' + o1.id && b.text.includes(`Aprovar carrinho #${j.id} · 3 itens · ${tot}★`)), JSON.stringify(kb));
+    assert.ok(!kb.some((b) => /^[ap]:/.test(b.callback_data)));
+    await cb('C:' + o1.id, o1.tg_msg, 999);   // estranho: nada
+    await cb('c:' + o1.id, o1.tg_msg);        // 1º toque: só pede confirmação
+    assert.equal(pays.length, 0);
+    assert.ok(kbDe(o1.tg_msg).some((b) => b.callback_data === 'C:' + o1.id));
+    await cb('C:' + o1.id, o1.tg_msg);
+    assert.equal(pays.length, 3);
+    const its = itensDB(j.id);
+    assert.ok(its.every((o) => o.status === 'delivered' && o.entrega_via === 'aprovado' && o.approved_at > 0 && o.autopay === 'sent'));
+    await cb('C:' + o1.id, o1.tg_msg);        // toque repetido: não paga de novo
+    assert.equal(pays.length, 3);
+  } finally {
+    RISK.review = antes; _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 4000 });
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
+  }
+});
+
+test('REVISAR: carrinho que não cabe no teto de 24h não é pago pela metade', async () => {
+  const antes = RISK.review;
+  const pays = [];
+  _setInvoicePayer(async (a) => { pays.push(a); return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }; });
+  try {
+    await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 50000 });
+    const usado = db.prepare("SELECT COALESCE(SUM(prod_stars),0) s FROM orders WHERE autopay IN ('sent','paying') AND autopay_at > ?").get(Date.now() - 86_400_000).s;
+    const j = await carrinhoRevisar(['c1000', 'c1000']);
+    const st = itensDB(j.id)[0].prod_stars;
+    await adm('POST', '/api/admin/autopay/limites', { max: st, dia: usado + st }); // cabe 1 item, não 2
+    const [o1] = itensDB(j.id);
+    const n0 = tgSent.length;
+    await cb('C:' + o1.id, o1.tg_msg);
+    assert.equal(pays.length, 0);
+    assert.ok(itensDB(j.id).every((o) => o.status === 'paid' && !o.approved_at));
+    assert.ok(tgSent.slice(n0).some((m) => m.text.includes(`Carrinho #${j.id}`) && /teto de \d+★ em 24h/.test(m.text)));
+  } finally {
+    RISK.review = antes; _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 4000 });
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
+  }
+});
+
+test('REVISAR: item com conferência que não bateu fica fora da aprovação e vai para entrega manual', async () => {
+  const antes = RISK.review;
+  const pays = [];
+  _setInvoicePayer(async (a) => { pays.push(a.startParam); return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }; });
+  const starsDo = (code) => db.prepare('SELECT stars FROM products WHERE code=?').get(code).stars;
+  const codeDe = (sp) => sp.slice(2, sp.lastIndexOf('_'));
+  try {
+    await adm('POST', '/api/admin/stars', { kind: 'ajuste', saldo_real: 50000 });
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 100000 });
+    // o bot cobra diferente no c_3000: conferência ❌
+    const j = await carrinhoRevisar(['c1000', 'c3000', 'c1000'], async (sp) => ({ currency: 'XTR',
+      stars: starsDo(codeDe(sp)) + (codeDe(sp) === 'c_3000' ? 1 : 0), account: 'jogador_teste', produto: '', msgId: 1 }));
+    const [o1, o2, o3] = itensDB(j.id);
+    assert.ok(kbDe(o1.tg_msg).some((b) => b.callback_data === 'c:' + o1.id && /2 itens/.test(b.text)));
+    const n0 = tgSent.length;
+    await cb('C:' + o1.id, o1.tg_msg);
+    assert.equal(pays.length, 2);
+    const st = Object.fromEntries(itensDB(j.id).map((o) => [o.id, o.status]));
+    assert.deepEqual([st[o1.id], st[o2.id], st[o3.id]], ['delivered', 'paid', 'delivered']);
+    assert.ok(tgSent.slice(n0).some((m) => m.text.includes(`Carrinho #${j.id}: 2 item(ns) pago(s); #${o2.id} segue(m) para entrega manual`)));
+  } finally {
+    RISK.review = antes; _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 4000 });
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
   }
 });

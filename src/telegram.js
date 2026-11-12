@@ -123,13 +123,19 @@ async function configurarTopicos(msg) {
   return reply('✅ Pronto: a loja passa a mandar cada assunto no seu tópico. O código de login do painel continua no chat privado com o bot. Silencie os tópicos que não precisam tocar (ex.: Sistema).');
 }
 const doneKeyboard = (label) => ({ inline_keyboard: [[{ text: label, callback_data: 'x' }]] });
+// item de carrinho: "🛒 Carrinho #12 · 2/3" (posição do item entre os itens do carrinho); vazio no pedido avulso
+function carTag(db, o) {
+  if (!o?.carrinho_id) return '';
+  const ids = db.prepare('SELECT id FROM orders WHERE carrinho_id=? ORDER BY id').all(o.carrinho_id).map((x) => x.id);
+  return `🛒 Carrinho #${o.carrinho_id} · ${ids.indexOf(o.id) + 1}/${ids.length}`;
+}
 const hhmmSP = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
-export { paragrafos, tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
+export { carTag, paragrafos, tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
 
 // ---------- Avisos de pedido no Telegram ----------
 // O corpo fica sem recuo extra de propósito: são as funções originais do server.js, sem mudança.
-export function initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, autopay, chkOf, chkLine, conferir, saldoLine }) {
+export function initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine }) {
 const refundKb = (o) => ({ inline_keyboard: [[{ text: `💸 Reembolsar ${brlTxt(o.cents)}`, callback_data: `r:${o.id}` }]] });
 // desbloqueio pelo painel de um pedido bloqueado automaticamente: edita o aviso 🚫 (sem mensagem nova)
 function tgDesbloqueado(o) {
@@ -153,7 +159,13 @@ function paidKeyboard(o) {
   const url = donateLink(o);
   if (url) rows.push([{ text: `🎮 Abrir entrega · ${starsOf(o)}★`, url }]);
   if (canAutopay(o).ok) rows.push([{ text: `⭐ Pagar ${starsOf(o)}★ e entregar`, callback_data: `p:${o.id}` }]);
-  else if (canApprove(o)) rows.push([{ text: `✅ Aprovar e pagar ${starsOf(o)}★`, callback_data: `a:${o.id}` }]);
+  else if (canApprove(o)) {
+    // item de carrinho com outros itens aprováveis: aprova o carrinho todo (o risco é do Pix inteiro)
+    const car = o.carrinho_id ? carrinhoAprovavel(o.carrinho_id) : [];
+    rows.push(car.length > 1
+      ? [{ text: `✅ Aprovar carrinho #${o.carrinho_id} · ${car.length} itens · ${car.reduce((a, x) => a + starsOf(x), 0)}★`, callback_data: `c:${o.id}` }]
+      : [{ text: `✅ Aprovar e pagar ${starsOf(o)}★`, callback_data: `a:${o.id}` }]);
+  }
   rows.push([{ text: '✅ Já entreguei', callback_data: `d:${o.id}` }]);
   return { inline_keyboard: rows };
 }
@@ -177,7 +189,7 @@ async function handleTgUpdate(u) {
     return answer('Sem permissão.');
   }
   const cqChat = cq.message.chat.id;
-  const m = /^([dDbpPaArR]):(\d+)$/.exec(cq.data || '');
+  const m = /^([dDbpPaArRcC]):(\d+)$/.exec(cq.data || '');
   if (!m) return answer('Nada a fazer aqui.');
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(Number(m[2]));
   if (!o) return answer('Pedido não encontrado.');
@@ -236,6 +248,34 @@ async function handleTgUpdate(u) {
     ] });
     return answer(`Pedido em REVISAR: ${riskOf(o).join('; ')}.\n\nSó aprove se conferiu o Pix no app do Mercado Pago. Vai gastar ${starsOf(o)}★ da conta separada.`, true);
   }
+  if (m[1] === 'c') {
+    const car = carrinhoAprovavel(o.carrinho_id || 0);
+    if (!car.length) { await setKb(paidKeyboard(o)); return answer('Não dá para aprovar o carrinho agora (conferência, tetos, saldo ou modo desligado).', true); }
+    const tot = car.reduce((a, x) => a + starsOf(x), 0);
+    await setKb({ inline_keyboard: [
+      [{ text: `✅ Sim, aprovei — pagar ${car.length} itens (${tot}★)`, callback_data: `C:${o.id}` }],
+      [{ text: '↩ Voltar', callback_data: `b:${o.id}` }],
+    ] });
+    return answer(`Carrinho #${o.carrinho_id} em REVISAR: ${riskOf(o).join('; ')}.\n\nVai pagar ${car.map((x) => '#' + x.id).join(', ')} (${tot}★ da conta separada). `
+      + 'Só aprove se conferiu o Pix no app do Mercado Pago.', true);
+  }
+  if (m[1] === 'C') {
+    await answer('Pagando o carrinho… (até ~30 s por item)');
+    await setKb(doneKeyboard('⏳ Pagando carrinho…'));
+    const r = await aprovarCarrinho(o.carrinho_id || 0);
+    // itens pagos: cada aviso já foi editado pelo markDelivered. Falhas: aviso do item volta com os botões + alerta
+    for (const f of r.falhas) {
+      const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(f.id);
+      if (!f.incerto && cur.status === 'paid') await tgFalha(f.id, `⚠️ Aprovação do carrinho: pagamento falhou às ${hhmmSP()}: ${f.why}`, `⚠️ Pedido #${f.id} (carrinho #${o.carrinho_id}): ${f.why} — detalhes no aviso original.`);
+    }
+    const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(o.id);
+    if (cur.status === 'paid' && cur.autopay !== 'incerto') await setKb(paidKeyboard(cur));
+    if (!r.ok && !r.falhas.length) tgSend(`⚠️ Carrinho #${o.carrinho_id}: ${r.why}`, 'pedidos');
+    // itens do carrinho que seguem sem entrega (conferência sem ✅ etc.): lembrete único
+    const resta = db.prepare("SELECT id FROM orders WHERE carrinho_id=? AND status='paid' AND (autopay IS NULL OR autopay='erro')").all(o.carrinho_id || 0).map((x) => '#' + x.id);
+    if (r.ok && resta.length) tgSend(`🖐 Carrinho #${o.carrinho_id}: ${r.pagos.length} item(ns) pago(s); ${resta.join(', ')} segue(m) para entrega manual.`, 'pedidos');
+    return;
+  }
   if (m[1] === 'P' || m[1] === 'A') {
     const aprovar = m[1] === 'A';
     await answer('Pagando… (até ~30 s)');
@@ -273,6 +313,7 @@ function paidText(o) {
   const ck = chkOf(o);
   return [
     `💰 Pedido pago #${o.id}`,
+    carTag(db, o),
     `${o.prod_nome || o.product} · ${brlTxt(o.cents)} · ${stars}★${o.coupon ? ` · cupom ${o.coupon}` : ''}`,
     `${o.nickname} · ID ${o.game_id}`,
     ...(() => { const w = riskOf(o); return w.length ? [`⚠️ REVISAR antes de entregar: ${w.join('; ')}`] : []; })(),
@@ -292,6 +333,7 @@ async function tgAviso(id, { icone, titulo, extras = [], botao, kb, saldo = true
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   const text = [
     `${icone} Pedido #${o.id} · ${titulo} às ${hhmmSP()}`,
+    carTag(db, o),
     `${o.prod_nome || o.product} · ${brlTxt(o.cents)} · ${starsOf(o)}★${o.coupon ? ` · cupom ${o.coupon}` : ''}`,
     `${o.nickname} · ID ${o.game_id}`,
     ...extras.filter(Boolean),

@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { tgApi, tgPedidoMsg, saveOrderMsg, orderDest, dest } from './telegram.js';
+import { tgApi, tgPedidoMsg, saveOrderMsg, orderDest, dest, carTag } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js, linha por linha.
 export function initMercadoPago({ env, MP_URL, db, findOrder, mpHeaders, chkOf, brlTxt, notifyPaid, tgAviso, refundKb, orderEv, avisoFaixa, maxPriceCents }) {
@@ -142,7 +142,7 @@ function bloquearPedido(o, motivo) {
   blockClient(o, 'bloqueio automático (sinal de estorno)');
   const v = brlTxt(o.cents);
   tgPedidoMsg({ disable_web_page_preview: true, reply_markup: refundKb(o),
-    text: `🚫 Pedido #${o.id} BLOQUEADO automaticamente: ${motivo}.\n${o.prod_nome || o.product} · ${v} · ${o.nickname} · ID ${o.game_id}\n`
+    text: `🚫 Pedido #${o.id} BLOQUEADO automaticamente: ${motivo}.\n${o.carrinho_id ? carTag(db, o) + '\n' : ''}${o.prod_nome || o.product} · ${v} · ${o.nickname} · ID ${o.game_id}\n`
     + `NÃO foi entregue. O cliente PAGOU: devolva ${v} (botão abaixo ou app do Mercado Pago — Termos: não entregue = reembolso integral).\n`
     + 'ID e e-mail deste pedido também foram bloqueados. Se for engano, desbloqueie no card do pedido (aba Cancelados).' })
     .then((j) => saveOrderMsg(db, o.id, j));

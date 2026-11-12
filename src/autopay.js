@@ -58,6 +58,27 @@ function canAutopay(o) {
 }
 // pedido em REVISAR que poderia ser pago se aprovado (conferência ✅, tetos, saldo, modo ligado)
 const canApprove = (o) => o.status === 'paid' && !o.approved_at && riskOf(o).length > 0 && canAutopay({ ...o, approved_at: 1 }).ok;
+// Carrinho em REVISAR: o risco é do Pix inteiro, então o operador aprova uma vez e a loja paga, um por um, os itens
+// que podem ser pagos (conferência ✅, tetos, saldo). Item sem conferência ✅ fica para entrega manual.
+const carrinhoAprovavel = (cid) => db.prepare("SELECT * FROM orders WHERE carrinho_id=? AND status='paid' ORDER BY id").all(cid).filter(canApprove);
+async function aprovarCarrinho(cid) {
+  const its = carrinhoAprovavel(cid);
+  if (!its.length) return { ok: false, why: 'nada a aprovar neste carrinho (ou fora dos tetos/saldo/conferência)', pagos: [], falhas: [] };
+  // tetos e saldo com a SOMA dos itens antes de começar: não paga o carrinho pela metade por falta de teto/saldo
+  const tot = its.reduce((a, o) => a + starsOf(o), 0);
+  const dia = autopayDay(), sal = starsEff();
+  if (autopay24() + tot > dia) return { ok: false, why: `o carrinho (${tot}★) passa do teto de ${dia}★ em 24h`, pagos: [], falhas: [] };
+  const livre = sal.s - emCurso(-1);
+  if (sal.n && livre < tot) return { ok: false, why: `saldo insuficiente para o carrinho (${tot}★; ${livre}★ livres)`, pagos: [], falhas: [] };
+  const agora = Date.now();
+  db.transaction(() => { for (const o of its) db.prepare('UPDATE orders SET approved_at=? WHERE id=? AND approved_at IS NULL').run(agora, o.id); })();
+  const pagos = [], falhas = [];
+  for (const o of its) {
+    const r = await autopay(o.id, { via: 'aprovado' });
+    if (r.ok) pagos.push(o.id); else falhas.push({ id: o.id, why: r.why, incerto: !!r.incerto });
+  }
+  return { ok: pagos.length > 0, pagos, falhas };
+}
 async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toque' } = {}) {
   let o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o) return { ok: false, why: 'pedido não encontrado' };
@@ -136,6 +157,14 @@ async function conferir(id, fromPaid = false, attempt = 1) {
     tgApi('editMessageText', { chat_id: orderDest(cur).chat_id, message_id: cur.tg_msg, text: paidText(cur),
       disable_web_page_preview: true, reply_markup: paidKeyboard(cur) });
   }
+  // item de carrinho: quando o último item termina a conferência, redesenha os botões dos outros (o "Aprovar
+  // carrinho" só aparece com todos conferidos). Uma edição por item, uma vez só: o grupo tem limite de mensagens.
+  if (!retry && cur.carrinho_id) {
+    const irmaos = db.prepare("SELECT * FROM orders WHERE carrinho_id=? AND status='paid' AND id<>?").all(cur.carrinho_id, id);
+    if (irmaos.every((x) => chkOf(x)?.final !== false && chkOf(x)) && carrinhoAprovavel(cur.carrinho_id).length > 1) {
+      for (const x of irmaos) if (x.tg_msg) tgApi('editMessageReplyMarkup', { chat_id: orderDest(x).chat_id, message_id: x.tg_msg, reply_markup: paidKeyboard(x) });
+    }
+  }
   if (retry) { const t = setTimeout(() => conferir(id, true, attempt + 1), RETRY_MS); t.unref?.(); return ck; }
   if (fromPaid && autoMode()) await entregaAuto(id);
   else if (fromPaid) setMotivo(id, autopayMode() === '1' ? 'modo 1 toque (automático desligado)' : 'modo desligado');
@@ -184,5 +213,5 @@ async function entregaAuto(id, attempt = 1) {
   }
 }
 
-return { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, autopay, chkOf, chkLine, conferir, saldoLine };
+return { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
 }

@@ -201,11 +201,11 @@ const donateLink = (o) => {
 let receiptChecker = invoicePaid;            // trocável nos testes
 const _setReceiptChecker = (fn) => { receiptChecker = fn || invoicePaid; };
 // (paidKeyboard/tgFalha/paidText/tgIncerto/setMotivo/stopping são declarados mais abaixo: vão como funções que repassam)
-const { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
+const { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
   sessionDown, markDelivered, paidKeyboard: (o) => paidKeyboard(o), tgFalha: (...a) => tgFalha(...a), paidText: (o) => paidText(o),
   tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping });
 // ---- Avisos de pedido no Telegram (mensagem, botões, edições, toques): src/telegram.js ----
-const { refundKb, tgDesbloqueado, paidKeyboard, handleTgUpdate, tgPoll, paidText, tgEntregue, tgAviso, notifyPaid, tgIncerto, tgFalha } = initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, autopay, chkOf, chkLine, conferir, saldoLine });
+const { refundKb, tgDesbloqueado, paidKeyboard, handleTgUpdate, tgPoll, paidText, tgEntregue, tgAviso, notifyPaid, tgIncerto, tgFalha } = initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine });
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
 const setMotivo = (id, m) => db.prepare('UPDATE orders SET manual_motivo=? WHERE id=? AND manual_motivo IS NULL').run(String(m).slice(0, 160), id);
 function motivoCat(m) {
