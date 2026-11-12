@@ -10,6 +10,9 @@ export function initCheckout({ env, db, app, PRODUCTS, MP_URL, mpHeaders, limit,
 // ---------- Lembretes de Pix (e-mail transacional sobre o próprio pedido) ----------
 // 1) faltando ≤ 10 min para vencer: "seu Pix vence em X min" (1x)  2) venceu sem pagar: "gere um novo Pix" (1x).
 // Nunca se o cliente já fez um pedido mais novo (mesmo ID ou e-mail) — ele já voltou por conta própria.
+// Pix em aberto por ID/e-mail: um carrinho (vários itens, um Pix) conta como 1
+const pixAbertos = (gameId, email) => db.prepare(`SELECT COUNT(DISTINCT COALESCE('c' || carrinho_id, 'o' || id)) n FROM orders
+  WHERE (game_id=? OR lower(email)=?) AND status='pending'`).get(String(gameId), lc(email)).n;
 const hasNewer = (o) => !!db.prepare('SELECT 1 FROM orders WHERE id > ? AND (game_id=? OR lower(email)=?)').get(o.id, o.game_id, lc(o.email));
 function pixMail(o, kind, mins) {
   const nome = o.prod_nome || PRODUCTS[o.product]?.nome || o.product;
@@ -43,7 +46,7 @@ async function remindPending() {
   let sent = 0;
   for (const o of rows) {
     db.prepare('UPDATE orders SET remind_at=? WHERE id=?').run(now, o.id); // marca antes: nunca repete
-    if (hasNewer(o) || !o.email) continue;
+    if (hasNewer(o) || !o.email || o.carrinho_id) continue; // carrinho: e-mail próprio (ainda não)
     try { await syncPayment(o.mp_id); } catch { continue; }
     if (db.prepare('SELECT status FROM orders WHERE id=?').get(o.id).status !== 'pending') continue;
     const m = pixMail(o, 'lembrete', Math.max(1, Math.round((o.expires_at - now) / 60_000)));
@@ -62,7 +65,7 @@ async function expirePending() {
     try { if (o.mp_id) await syncPayment(o.mp_id); } catch (e) { console.error('expirePending sync', o.id, e.message); continue; }
     const r = db.prepare("UPDATE orders SET status='cancelled' WHERE id=? AND status='pending'").run(o.id);
     // venceu sem pagar (não foi o cliente que cancelou): avisa 1x, se ele não voltou por conta própria
-    if (r.changes && o.mp_id && o.email && !o.expired_mail && !hasNewer(o)) {
+    if (r.changes && o.mp_id && o.email && !o.carrinho_id && !o.expired_mail && !hasNewer(o)) {
       db.prepare('UPDATE orders SET expired_mail=1 WHERE id=?').run(o.id);
       const m = pixMail(o, 'expirou');
       sendMail(o.email, m.subject, m.html, m.text);
@@ -71,6 +74,32 @@ async function expirePending() {
   return rows.length;
 }
 if (env.NODE_ENV !== 'test') setInterval(() => expirePending().catch((e) => console.error('expirePending', e)), 5 * 60_000).unref();
+
+// Cria o Pix no Mercado Pago (pedido avulso ou carrinho). Vence em 30 min. ref = external_reference (token).
+async function criarPix({ cents, description, ref, email }) {
+  const expiresAt = Date.now() + 30 * 60_000;
+  // Formato exigido pelo MP: ISO com offset (ex: -03:00), no horário local do servidor
+  const expira = (() => {
+    const d = new Date(expiresAt);
+    const off = -d.getTimezoneOffset();
+    const sign = off >= 0 ? '+' : '-';
+    const pad = (n) => String(Math.floor(Math.abs(n))).padStart(2, '0');
+    const tz = `${sign}${pad(off / 60)}:${pad(off % 60)}`;
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 23);
+    return `${local}${tz}`;
+  })();
+  const r = await fetch(MP_URL, {
+    method: 'POST',
+    headers: { ...mpHeaders, 'Content-Type': 'application/json', 'X-Idempotency-Key': ref },
+    signal: AbortSignal.timeout(15000),
+    body: JSON.stringify({ transaction_amount: cents / 100, description, payment_method_id: 'pix', external_reference: ref,
+      date_of_expiration: expira, payer: { email } }),
+  });
+  const pay = await r.json();
+  return { r, pay, tx: pay.point_of_interaction?.transaction_data, expiresAt };
+}
+// e-mail recusado pelo MP (ex.: domínio inexistente como "gmail.con")
+const emailRecusado = (r, pay) => r.status === 400 && /payer\.email/i.test(JSON.stringify(pay));
 
 function validSignature(req, id) {
   const parts = Object.fromEntries((req.get('x-signature') || '').split(',').map((s) => s.trim().split('=')));
@@ -100,8 +129,7 @@ app.post('/api/orders', limit(5), async (req, res) => {
   if (reason) return res.status(409).json({ error: reason });
   const device = devOf(req);
   if (isBlocked(gameId, email, device)) return res.status(403).json({ error: 'Não foi possível concluir esta compra. Fale com o suporte.' });
-  const pend = db.prepare("SELECT COUNT(*) n FROM orders WHERE (game_id=? OR lower(email)=?) AND status='pending'").get(String(gameId), lc(email)).n;
-  if (pend >= RISK.pend) return res.status(429).json({ error: 'Você já tem Pix em aberto. Pague ou cancele antes de gerar outro.' });
+  if (pixAbertos(gameId, email) >= RISK.pend) return res.status(429).json({ error: 'Você já tem Pix em aberto. Pague ou cancele antes de gerar outro.' });
 
   if (paid24(gameId, email) + finalCents > RISK.cap) {
     return res.status(409).json({ error: 'Limite diário de compras atingido para esta conta. Fale com o suporte para compras maiores.' });
@@ -112,39 +140,14 @@ app.post('/api/orders', limit(5), async (req, res) => {
     .run(token, product, finalCents, String(gameId), player.nickname, email, p.nome, p.stars, p.code,
       coupon?.code || null, p.cents, p.cents - finalCents, coupon ? coupon.comissao_pct : null, device, fp('ip:' + req.ip), starNow());
 
-  // Pix expira em 30 min. Formato exigido pelo MP: ISO com offset (ex: -03:00).
-  const expiresAt = Date.now() + 30 * 60_000;
-  const expira = (() => {
-    const d = new Date(expiresAt);
-    const off = -d.getTimezoneOffset(); // minutos; servidor em -03:00 => 180... usamos valor real
-    const sign = off >= 0 ? '+' : '-';
-    const pad = (n) => String(Math.floor(Math.abs(n))).padStart(2, '0');
-    const tz = `${sign}${pad(off / 60)}:${pad(off % 60)}`;
-    // monta a data no horário local do servidor
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 23);
-    return `${local}${tz}`;
-  })();
-  const r = await fetch(MP_URL, {
-    method: 'POST',
-    headers: { ...mpHeaders, 'Content-Type': 'application/json', 'X-Idempotency-Key': token },
-    signal: AbortSignal.timeout(15000),
-    body: JSON.stringify({
-      transaction_amount: finalCents / 100,
-      // aparece para o cliente no app do banco/MP: nº do pedido e ID da conta ajudam a achar a compra no suporte
-      description: `Pedido #${Number(ins.lastInsertRowid)} - ${p.nome} CounterFlame - ID ${gameId} - Recarga Flame`,
-      payment_method_id: 'pix',
-      external_reference: token,
-      date_of_expiration: expira,
-      payer: { email },
-    }),
-  });
-  const pay = await r.json();
-  const tx = pay.point_of_interaction?.transaction_data;
+  const { r, pay, tx, expiresAt } = await criarPix({ cents: finalCents, ref: token, email,
+    // aparece para o cliente no app do banco/MP: nº do pedido e ID da conta ajudam a achar a compra no suporte
+    description: `Pedido #${Number(ins.lastInsertRowid)} - ${p.nome} CounterFlame - ID ${gameId} - Recarga Flame` });
   if (!r.ok || !tx?.qr_code) {
     console.error('Erro no Mercado Pago:', pay);
     db.prepare("UPDATE orders SET status='cancelled' WHERE token=?").run(token);
     // e-mail recusado pelo MP (ex.: domínio inexistente como "gmail.con"): diz ao cliente o que corrigir
-    if (r.status === 400 && /payer\.email/i.test(JSON.stringify(pay))) {
+    if (emailRecusado(r, pay)) {
       return res.status(400).json({ error: 'O Mercado Pago não aceitou esse e-mail. Confira se está digitado certo (ex.: @gmail.com).', field: 'email' });
     }
     return res.status(502).json({ error: 'Não foi possível gerar o Pix. Tente de novo em instantes.' });
@@ -186,7 +189,13 @@ app.get('/api/orders/:token', async (req, res) => {
 app.post('/api/orders/:token/cancel', limit(10), async (req, res) => {
   const o = findOrder.get(req.params.token);
   if (!o) return res.status(404).json({ error: 'Pedido não encontrado.' });
-  if (o.status !== 'pending') return res.json({ status: o.status });
+  res.json({ status: await cancelarPendente(o) });
+});
+// Cancela o Pix pendente DE VERDADE no Mercado Pago (o QR antigo não pode mais ser pago: evita pagamento em dobro
+// ao trocar de produto). Item de carrinho cancela o carrinho inteiro (é um Pix só). Se o MP recusar — ex.: já foi
+// pago — sincroniza com o MP e devolve o status real; pedido pago nunca é cancelado aqui.
+async function cancelarPendente(o) {
+  if (o.status !== 'pending') return o.status;
   let cancelled = !o.mp_id; // sem Pix no MP: nada a cancelar lá
   if (o.mp_id) {
     const r = await fetch(`${MP_URL}/${encodeURIComponent(o.mp_id)}`, {
@@ -199,9 +208,12 @@ app.post('/api/orders/:token/cancel', limit(10), async (req, res) => {
     cancelled = r.ok && j.status === 'cancelled';
     if (!cancelled) await syncPayment(o.mp_id);
   }
-  if (cancelled) db.prepare("UPDATE orders SET status='cancelled' WHERE id=? AND status='pending'").run(o.id);
-  res.json({ status: findOrder.get(o.token).status });
-});
+  if (cancelled) {
+    if (o.carrinho_id) db.prepare("UPDATE orders SET status='cancelled' WHERE carrinho_id=? AND status='pending'").run(o.carrinho_id);
+    else db.prepare("UPDATE orders SET status='cancelled' WHERE id=? AND status='pending'").run(o.id);
+  }
+  return findOrder.get(o.token).status;
+}
 
 app.post('/webhook/mercadopago', async (req, res) => {
   const type = req.query.type ?? req.body?.type;
@@ -212,5 +224,5 @@ app.post('/webhook/mercadopago', async (req, res) => {
   res.sendStatus(200);
 });
 
-return { remindPending, expirePending };
+return { remindPending, expirePending, criarPix, emailRecusado, pixAbertos, cancelarPendente };
 }

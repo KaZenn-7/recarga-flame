@@ -30,8 +30,11 @@ const _setInvoicePayer = (fn) => { invoicePayer = fn || payInvoice; };
 const autopayMode = () => (chkOn() ? getSetting('autopay', '0') : '0');
 const autopayOn = () => autopayMode() !== '0';
 const autoMode = () => autopayMode() === '2';
-const autopay24 = () => db.prepare("SELECT * FROM orders WHERE autopay='sent' AND autopay_at > ?").all(Date.now() - 86_400_000)
+// teto de 24h conta também o que está sendo pago agora ('paying'): itens de um carrinho são checados quase juntos
+const autopay24 = () => db.prepare("SELECT * FROM orders WHERE autopay IN ('sent','paying') AND autopay_at > ?").all(Date.now() - 86_400_000)
   .reduce((a, o) => a + starsOf(o), 0);
+// Stars já comprometidas com pagamentos em andamento (ainda não saíram do saldo lido)
+const emCurso = (exceto) => db.prepare("SELECT * FROM orders WHERE autopay='paying' AND id<>?").all(exceto).reduce((a, o) => a + starsOf(o), 0);
 // pode pagar com 1 toque? { ok, why }
 function canAutopay(o) {
   if (stopping()) return { ok: false, why: 'loja reiniciando — tente de novo em 1 min' };
@@ -49,7 +52,8 @@ function canAutopay(o) {
   if (st > max) return { ok: false, why: `acima do teto por pedido (${max}★)` };
   if (autopay24() + st > dia) return { ok: false, why: `teto de ${dia}★ em 24h atingido` };
   const sal = starsEff();
-  if (sal.n && sal.s < st) return { ok: false, why: `saldo insuficiente (${sal.s}★)` };
+  const livre = sal.s - emCurso(o.id);
+  if (sal.n && livre < st) return { ok: false, why: `saldo insuficiente (${livre}★ livres)` };
   return { ok: true };
 }
 // pedido em REVISAR que poderia ser pago se aprovado (conferência ✅, tetos, saldo, modo ligado)

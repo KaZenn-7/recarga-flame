@@ -30,6 +30,7 @@ export const mock = {
   payer: null,     // dados do pagador devolvidos pelo MP (CPF/conta)
   lastBody: null,  // corpo do último pagamento criado no MP
   tgFailChat: null, // chat_id em que o Telegram falso recusa tudo
+  refunds: [],     // reembolsos pedidos ao MP ({ url, body, key })
 };
 export const tgSent = [];               // mensagens enviadas ao Telegram
 export const mailSent = [];             // e-mails enviados ao Resend
@@ -90,6 +91,11 @@ globalThis.fetch = async (url, opts) => {
       return new Response(JSON.stringify({ message: 'Payment already approved' }), { status: 400, headers: { 'content-type': 'application/json' } });
     }
     return new Response(JSON.stringify({ id: 123456, status: 'cancelled' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  // reembolso no MP (integral: corpo {}; parcial: { amount })
+  if (u.startsWith('https://api.mercadopago.com/v1/payments/') && u.endsWith('/refunds') && opts?.method === 'POST') {
+    mock.refunds.push({ url: u, body: JSON.parse(opts.body || '{}'), key: opts.headers['X-Idempotency-Key'] });
+    return new Response(JSON.stringify({ id: 9000 + mock.refunds.length, status: 'approved' }), { status: 201, headers: { 'content-type': 'application/json' } });
   }
   // consultar pagamento no MP (usado por syncPayment)
   if (u.startsWith('https://api.mercadopago.com/v1/payments/')) {

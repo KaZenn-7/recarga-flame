@@ -129,6 +129,16 @@ export const MIGRATIONS = [
   } },
   // aviso do pedido no grupo com tópicos: chat e tópico onde ficou a mensagem (NULL = chat privado do operador)
   { v: 2, nome: 'tg_chat', up(db) { addCols(db, 'orders', ['tg_chat TEXT', 'tg_thread INTEGER']); } },
+  // carrinho: um Pix para vários itens. Cada item continua sendo um pedido (orders) com a entrega, o reembolso e a
+  // comissão de sempre; o carrinho só junta os itens e guarda o Pix único (orders.mp_id = carrinhos.mp_id).
+  { v: 3, nome: 'carrinhos', up(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS carrinhos (
+  id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, cents INTEGER NOT NULL, game_id TEXT NOT NULL, email TEXT NOT NULL,
+  coupon TEXT, mp_id TEXT, qr TEXT, qr_b64 TEXT, expires_at INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+    addCols(db, 'orders', ['carrinho_id INTEGER']);
+    db.exec('CREATE INDEX IF NOT EXISTS orders_carrinho ON orders(carrinho_id)');
+  } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

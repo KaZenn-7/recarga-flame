@@ -17,6 +17,7 @@ import { initMercadoPago } from './src/mercadopago.js';
 import { initAutopay } from './src/autopay.js';
 import { initStars } from './src/stars.js';
 import { initCheckout } from './src/checkout.js';
+import { initCarrinho } from './src/carrinho.js';
 
 const env = process.env;
 for (const k of ['MP_ACCESS_TOKEN', 'MP_WEBHOOK_SECRET', 'ADMIN_USER', 'ADMIN_PASS', 'PUBLIC_URL']) {
@@ -152,10 +153,31 @@ const BP_NIVEIS = 100;
 function blockReason(p, d) {
   const bp = d.battlePass;
   const ap = d.arsenalPass;
-  if (p.niveis && bp && bp.level + p.niveis > BP_NIVEIS) return 'Essa conta não tem níveis suficientes disponíveis.';
+  if (p.niveis && p.tipo !== 'arsenal' && bp && bp.level + p.niveis > BP_NIVEIS) return 'Essa conta não tem níveis suficientes disponíveis.';
   if (p.tipo === 'gold' && bp?.gold) return 'Essa conta já tem o Gold Pass.';
   if (p.tipo === 'arsenal' && ap && ap.tickets >= ap.maxTickets) return 'Essa conta atingiu o limite do Arsenal Pass.';
   if (p.tipo === 'wildfire' && d.wildfireLevel > 0) return 'Essa conta já tem progresso na Wildfire. Fale com o suporte.';
+  return null;
+}
+
+// Carrinho: além das regras de cada item, as regras do conjunto (o jogo aplica tudo na mesma conta).
+// Repetir o mesmo item só vale para Coins e níveis do passe (decisão do operador, 12/11/2026).
+const CARRINHO_MAX = 5;
+const repetivel = (p) => !p.tipo; // Coins e níveis (tipo '')
+function blockReasonCarrinho(itens, d) {
+  for (const p of itens) { const why = blockReason(p, d); if (why) return `${p.nome}: ${why}`; }
+  const vistos = new Set();
+  for (const p of itens) {
+    if (!repetivel(p) && vistos.has(p.key)) return `${p.nome} só pode entrar uma vez no carrinho.`;
+    vistos.add(p.key);
+  }
+  if (itens.filter((p) => p.tipo === 'gold').length > 1) return 'O Gold Pass só pode entrar uma vez no carrinho.';
+  const niveis = itens.reduce((a, p) => a + (p.niveis && p.tipo !== 'arsenal' ? p.niveis : 0), 0);
+  const bp = d.battlePass;
+  if (niveis && bp && bp.level + niveis > BP_NIVEIS) return `Essa conta não tem níveis suficientes para ${niveis} níveis (está no nível ${bp.level} de ${BP_NIVEIS}).`;
+  const tickets = itens.filter((p) => p.tipo === 'arsenal').length;
+  const ap = d.arsenalPass;
+  if (tickets && ap && ap.tickets + tickets > ap.maxTickets) return `Essa conta só pode receber mais ${Math.max(0, ap.maxTickets - ap.tickets)} ticket(s) do Arsenal Pass.`;
   return null;
 }
 
@@ -343,9 +365,12 @@ app.get('/api/player/:id/avatar', limit(30), async (req, res) => {
 
 // ---- Checkout (pedido + Pix, status, cancelar, webhook do MP, lembretes/expiração do Pix): src/checkout.js ----
 // (orderEv é declarado mais abaixo: vai como função que repassa)
-const { remindPending, expirePending } = initCheckout({ env, db, app, PRODUCTS, MP_URL, mpHeaders, limit, findOrder, getCoupon, priceWith, validId,
+const { remindPending, expirePending, criarPix, emailRecusado, pixAbertos, cancelarPendente } = initCheckout({ env, db, app, PRODUCTS, MP_URL, mpHeaders, limit, findOrder, getCoupon, priceWith, validId,
   getPlayer, blockReason, devOf, isBlocked, lc, RISK, paid24, fp, starNow, orderEv: (...a) => orderEv(...a), syncPayment, entregaState, safeEq,
   brlTxt, esc, sendMail });
+// ---- Carrinho (vários itens, um Pix; cada item é um pedido): src/carrinho.js ----
+initCarrinho({ db, app, PRODUCTS, limit, getCoupon, priceWith, validId, getPlayer, blockReasonCarrinho, CARRINHO_MAX, devOf, isBlocked, lc, RISK,
+  paid24, fp, starNow, orderEv: (...a) => orderEv(...a), syncPayment, entregaState, criarPix, emailRecusado, pixAbertos, cancelarPendente });
 
 // ---------- Funil (estatística própria, sem serviço externo) ----------
 // Etapas: visit → lookup (ID buscado) → select (item escolhido) → pix → paid → delivered.

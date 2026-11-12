@@ -1,0 +1,234 @@
+// Carrinho: vários itens num Pix só. Cada item é um pedido normal (entrega, reembolso e comissão por item);
+// o Pix é único (valor total) e pagar/cancelar/estornar vale para todos os itens juntos.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { setupStore, mock, tgSent, base, db, RISK, riskOf, SRV, freshIP, postJ, pedir, webhookMP, adm, ateQue, _setInvoiceChecker, _setInvoicePayer } from './helpers.js';
+
+setupStore();
+
+let seq = 0;
+const novoId = () => String(700000 + ++seq); // um ID por teste: o antifraude conta por ID/e-mail
+const carrinho = (itens, gameId = novoId(), extra = {}) => postJ('/api/carrinho', { itens, gameId, email: `c${seq}@ex.com`, ...extra });
+const ver = async (token) => (await fetch(base + '/api/carrinho/' + token, { headers: freshIP() })).json();
+const itensDB = (cid) => db.prepare('SELECT * FROM orders WHERE carrinho_id=? ORDER BY id').all(cid);
+const preco = (k) => db.prepare('SELECT cents FROM products WHERE key=?').get(k).cents;
+
+test('cria um Pix só com o total; cada item vira um pedido ligado ao carrinho', async () => {
+  mock.approve = false;
+  const r = await carrinho(['c1000', 'c1000', 'gold']);
+  assert.equal(r.status, 200, await r.clone().text());
+  const j = await r.json();
+  const total = 2 * preco('c1000') + preco('gold');
+  assert.equal(j.cents, total);
+  assert.equal(j.itens.length, 3);
+  assert.equal(mock.lastBody.transaction_amount, total / 100);
+  assert.equal(mock.lastBody.external_reference, j.token);
+  assert.match(mock.lastBody.description, new RegExp(`^Pedidos #${j.itens[0].id}, #${j.itens[1].id}, #${j.itens[2].id} - 3 itens CounterFlame - ID \\d+ - Recarga Flame$`));
+  const its = itensDB(j.id);
+  assert.deepEqual(its.map((o) => o.product), ['c1000', 'c1000', 'gold']);
+  assert.ok(its.every((o) => o.status === 'pending' && o.mp_id === '123456' && o.expires_at === j.expiresAt));
+  const v = await ver(j.token);
+  assert.equal(v.status, 'pending');
+  assert.equal(v.qr, 'PIXCODE');
+  assert.equal(v.email, undefined);
+});
+
+test('regras do carrinho: até 5 itens; Gold, Wildfire e ticket do Arsenal não repetem; soma de níveis até 100', async () => {
+  const casos = [
+    [['c1000', 'c1000', 'c1000', 'c1000', 'c1000', 'c1000'], 400, /até 5 itens/],
+    [[], 400, /vazio/],
+    [['c1000', 'naoexiste'], 400, /Produto inválido/],
+    [['gold', 'gold'], 409, /uma vez/],
+    [['wildfire', 'wildfire'], 409, /uma vez/],
+    [['arsenal', 'arsenal'], 409, /uma vez/],
+  ];
+  for (const [itens, st, msg] of casos) {
+    const r = await carrinho(itens);
+    assert.equal(r.status, st, JSON.stringify(itens));
+    assert.match((await r.json()).error, msg);
+  }
+  // conta no nível 96: 1 nível passa; 1 + 5 = 6 níveis não cabem (96 + 6 > 100)
+  assert.equal((await carrinho(['bp1', 'c1000'], '444096')).status, 200);
+  const r = await carrinho(['bp1', 'bp5'], '444096');
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /níveis suficientes/);
+  // conta com Gold: o item bloqueado aparece com o nome
+  const g = await carrinho(['c1000', 'gold'], '555555');
+  assert.equal(g.status, 409);
+  assert.match((await g.json()).error, /^Gold Pass: /);
+  // Coins e níveis podem repetir
+  assert.equal((await carrinho(['c1000', 'c1000', 'bp1', 'bp1', 'arsenal'])).status, 200);
+});
+
+test('carrinho em aberto conta como 1 Pix no limite de Pix em aberto', async () => {
+  mock.approve = false;
+  const antes = RISK.pend;
+  RISK.pend = 2;
+  try {
+    const id = novoId();
+    assert.equal((await carrinho(['c1000', 'c3000', 'c5000'], id)).status, 200); // 3 itens = 1 Pix
+    assert.equal((await pedir('c1000', id, `c${seq}@ex.com`)).status, 200);      // 2º Pix
+    const r = await carrinho(['c1000'], id);
+    assert.equal(r.status, 429);
+  } finally { RISK.pend = antes; }
+});
+
+test('pagamento do Pix marca todos os itens como pagos uma vez só (consulta + webhook)', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c3000', 'bp1'])).json();
+  mock.approve = true;
+  const n0 = tgSent.length;
+  const v = await ver(j.token);
+  assert.equal(v.status, 'paid');
+  assert.ok(v.itens.every((it) => it.status === 'paid'));
+  await webhookMP(); // o webhook chegando depois não avisa de novo
+  await ver(j.token);
+  const avisos = tgSent.slice(n0).filter((m) => /Pedido pago #/.test(m.text));
+  assert.deepEqual(avisos.map((m) => Number(m.text.match(/#(\d+)/)[1])).sort(), j.itens.map((it) => it.id).sort());
+  assert.ok(itensDB(j.id).every((o) => o.status === 'paid' && o.paid_at));
+});
+
+test('valor pago diferente do total do carrinho não confirma nenhum item', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c3000'])).json();
+  mock.approve = true;
+  mock.lastBody.transaction_amount = preco('c1000') / 100; // pagou só o valor de 1 item
+  try {
+    const v = await ver(j.token);
+    assert.equal(v.status, 'pending');
+    assert.ok(itensDB(j.id).every((o) => o.status === 'pending'));
+  } finally { mock.approve = false; }
+});
+
+test('cancelar pelo carrinho ou por um item cancela o Pix inteiro', async () => {
+  mock.approve = false;
+  const a = await (await carrinho(['c1000', 'c3000'])).json();
+  const ra = await postJ(`/api/carrinho/${a.token}/cancel`, {});
+  assert.equal((await ra.json()).status, 'cancelled');
+  assert.ok(itensDB(a.id).every((o) => o.status === 'cancelled'));
+  const b = await (await carrinho(['c1000', 'c3000'])).json();
+  const rb = await postJ(`/api/orders/${b.itens[1].token}/cancel`, {});
+  assert.equal((await rb.json()).status, 'cancelled');
+  assert.ok(itensDB(b.id).every((o) => o.status === 'cancelled'));
+});
+
+test('reembolso de um item devolve só o valor dele; os outros seguem', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c5000'])).json();
+  mock.approve = true;
+  await ver(j.token);
+  const [i1, i2] = j.itens;
+  const r = await SRV.reembolsar(i2.id);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const ref = mock.refunds.at(-1);
+  assert.deepEqual(ref.body, { amount: i2.cents / 100 });
+  assert.equal(ref.key, `recargaflame-reembolso-${i2.id}`);
+  const its = itensDB(j.id);
+  assert.equal(its[0].status, 'paid');
+  assert.equal(its[1].status, 'cancelled');
+  assert.equal(its[1].refund_state, 'done');
+  const v = await ver(j.token);
+  assert.deepEqual(v.itens.map((it) => it.status), ['paid', 'refunded']);
+  assert.equal(v.status, 'paid'); // ainda entregando o 1º
+  // pedido avulso continua com devolução integral
+  mock.approve = false;
+  const o = await (await pedir('c1000', novoId(), 'avulso@ex.com')).json();
+  mock.approve = true;
+  await fetch(base + '/api/orders/' + o.token, { headers: freshIP() });
+  assert.equal((await SRV.reembolsar(o.id)).ok, true);
+  assert.deepEqual(mock.refunds.at(-1).body, {});
+  mock.approve = false;
+  void i1;
+});
+
+test('REVISAR: valor alto e primeira compra olham o carrinho inteiro', async () => {
+  const antes = [RISK.review, RISK.first];
+  try {
+    RISK.review = preco('c3000') + preco('c1000'); // nenhum item sozinho chega lá; o carrinho chega
+    RISK.first = 10 ** 9;
+    mock.approve = false;
+    const j = await (await carrinho(['c1000', 'c3000'])).json();
+    mock.approve = true;
+    await ver(j.token);
+    for (const o of itensDB(j.id)) assert.ok(riskOf(o).some((w) => /valor alto .* no carrinho/.test(w)), `item #${o.id}`);
+    // 1ª compra: entregar o 1º item do carrinho não tira o 2º da revisão
+    RISK.review = 10 ** 9;
+    RISK.first = preco('c3000') + preco('c1000');
+    const [o1] = itensDB(j.id);
+    db.prepare("UPDATE orders SET status='delivered', delivered_at=CURRENT_TIMESTAMP WHERE id=?").run(o1.id);
+    const o2 = itensDB(j.id)[1];
+    assert.ok(riskOf(o2).includes('primeira compra deste ID'));
+  } finally { [RISK.review, RISK.first] = antes; mock.approve = false; }
+});
+
+test('estorno do Pix (chargeback) atinge todos os itens: entregue vira estornado, pago vira cancelado', async () => {
+  mock.approve = false;
+  const j = await (await carrinho(['c1000', 'c3000'])).json();
+  mock.approve = true;
+  await ver(j.token);
+  const [o1] = itensDB(j.id);
+  db.prepare("UPDATE orders SET status='delivered', delivered_at=CURRENT_TIMESTAMP WHERE id=?").run(o1.id);
+  mock.status = 'charged_back';
+  try {
+    await webhookMP();
+    const its = itensDB(j.id);
+    assert.deepEqual(its.map((o) => o.status), ['reversed', 'cancelled']);
+    assert.ok(db.prepare("SELECT 1 FROM blocked WHERE kind='game' AND value=?").get(o1.game_id));
+  } finally { mock.status = null; mock.approve = false; }
+});
+
+test('entrega automática: cada item é conferido e pago no bot uma vez', async () => {
+  const starsDo = (code) => db.prepare('SELECT stars FROM products WHERE code=?').get(code).stars;
+  const codeDe = (sp) => sp.slice(2, sp.lastIndexOf('_'));
+  const pays = [];
+  _setInvoiceChecker(async (sp) => ({ currency: 'XTR', stars: starsDo(codeDe(sp)), account: 'jogador_teste', produto: codeDe(sp), msgId: 1 }));
+  _setInvoicePayer(async (a) => {
+    await new Promise((r) => setTimeout(r, 20));
+    pays.push(a.startParam);
+    return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: 'ok' };
+  });
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 2 });
+    mock.approve = false;
+    const j = await (await carrinho(['c1000', 'c3000', 'c1000'])).json();
+    mock.approve = true;
+    await ver(j.token);
+    await ateQue(() => itensDB(j.id).every((o) => o.status === 'delivered'));
+    assert.equal(pays.length, 3); // um pagamento por item, nenhum repetido
+    assert.deepEqual(pays.map(codeDe).sort(), ['c_1000', 'c_1000', 'c_3000']);
+    assert.ok(pays.every((sp) => sp.endsWith('_' + itensDB(j.id)[0].game_id)));
+    // (a fila de uma fatura por vez fica no tg-user.js, que os testes não usam: conta real nunca entra em teste)
+    const v = await ver(j.token);
+    assert.equal(v.status, 'delivered');
+  } finally {
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
+    _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+  }
+});
+
+test('teto de 24h e saldo contam os itens que já estão sendo pagos', async () => {
+  const pays = [];
+  let libera;
+  const trava = new Promise((r) => { libera = r; });
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }));
+  _setInvoicePayer(async (a) => { pays.push(a); await trava; return { stars: a.expectStars, account: a.expectAccount, produto: '', botReply: '' }; });
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 2 });
+    await adm('POST', '/api/admin/autopay/limites', { max: 100, dia: 26 * 2 + db.prepare("SELECT COALESCE(SUM(prod_stars),0) s FROM orders WHERE autopay='sent'").get().s });
+    mock.approve = false;
+    const j = await (await carrinho(['c1000', 'c1000', 'c1000'])).json();
+    mock.approve = true;
+    await ver(j.token);
+    await ateQue(() => pays.length === 2 && itensDB(j.id).some((o) => o.manual_motivo));
+    const motivos = itensDB(j.id).map((o) => o.manual_motivo).filter(Boolean);
+    assert.equal(motivos.length, 1);
+    assert.match(motivos[0], /teto de \d+★ em 24h/);
+    libera();
+    await ateQue(() => itensDB(j.id).filter((o) => o.status === 'delivered').length === 2);
+  } finally {
+    libera();
+    await adm('POST', '/api/admin/autopay/limites', { max: 1000, dia: 4000 });
+    await adm('POST', '/api/admin/autopay', { mode: 0 });
+    _setInvoiceChecker(null); _setInvoicePayer(null); mock.approve = false;
+  }
+});

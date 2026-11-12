@@ -75,9 +75,13 @@ function riskOf(o) {
   const ck = chkOf(o);
   if (ck?.status === 'diverge') why.push('conferência no bot do CF não bateu: ' + ck.motivo);
   if (blockedIn('ip', o.ip_h)) why.push('mesmo IP de um pedido estornado (só alerta: IP de 4G é compartilhado)');
-  if (o.cents >= RISK.review) why.push(`valor alto (${brlTxt(o.cents)})`);
-  const prev = db.prepare("SELECT COUNT(*) n FROM orders WHERE game_id=? AND id<? AND status='delivered'").get(o.game_id, o.id).n;
-  if (!prev && (o.list_cents || o.cents) >= RISK.first) why.push('primeira compra deste ID');
+  // item de carrinho: valor e 1ª compra contam o carrinho inteiro (um Pix só) — o carrinho todo vai para REVISAR junto
+  const tot = o.carrinho_id ? db.prepare('SELECT SUM(cents) c, SUM(COALESCE(list_cents, cents)) l FROM orders WHERE carrinho_id=?').get(o.carrinho_id)
+    : { c: o.cents, l: o.list_cents || o.cents };
+  if (tot.c >= RISK.review) why.push(`valor alto (${brlTxt(tot.c)}${o.carrinho_id ? ' no carrinho' : ''})`);
+  const prev = db.prepare("SELECT COUNT(*) n FROM orders WHERE game_id=? AND id<? AND status='delivered' AND COALESCE(carrinho_id, -1) <> COALESCE(?, -2)")
+    .get(o.game_id, o.id, o.carrinho_id ?? null).n;
+  if (!prev && tot.l >= RISK.first) why.push('primeira compra deste ID');
   const day = paid24(o.game_id, o.email);
   if (day >= RISK.day) why.push(`${brlTxt(day)} pagos em 24h por este ID/e-mail`);
   return why;
@@ -90,7 +94,8 @@ async function mpRefund(o) {
   const r = await fetch(`${MP_URL}/${encodeURIComponent(o.mp_id)}/refunds`, {
     method: 'POST', signal: AbortSignal.timeout(15000),
     headers: { ...mpHeaders, 'Content-Type': 'application/json', 'X-Idempotency-Key': `recargaflame-reembolso-${o.id}` },
-    body: '{}', // devolução integral
+    // pedido avulso: devolução integral; item de carrinho: só o valor dele (o resto do Pix é dos outros itens)
+    body: o.carrinho_id ? JSON.stringify({ amount: o.cents / 100 }) : '{}',
   });
   const j = await r.json().catch(() => ({}));
   return { ok: r.ok && ['approved', 'in_process', 'authorized'].includes(j.status || 'approved'), status: r.status, id: j.id, estado: j.status,
@@ -147,43 +152,49 @@ async function syncPayment(mpId) {
   const r = await fetch(`${MP_URL}/${encodeURIComponent(mpId)}`, { headers: mpHeaders, signal: AbortSignal.timeout(8000) });
   if (!r.ok) return;
   const pay = await r.json();
-  const o = findOrder.get(pay.external_reference);
-  if (!o) return;
+  const o1 = findOrder.get(pay.external_reference);
+  const car = o1 ? null : db.prepare('SELECT * FROM carrinhos WHERE token=?').get(pay.external_reference);
+  if (!o1 && !car) return;
+  const itens = car ? db.prepare('SELECT * FROM orders WHERE carrinho_id=? ORDER BY id').all(car.id) : [o1];
+  const total = car ? car.cents : o1.cents;
 
-  if (pay.status === 'approved' && Math.round(pay.transaction_amount * 100) === o.cents) {
+  if (pay.status === 'approved' && Math.round(pay.transaction_amount * 100) === total) {
     const pp = payerPrints(pay);
-    const r = db.prepare("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP, payer_acct=? WHERE id=? AND status='pending'")
-      .run(pp.acct, o.id);
-    // só avisa na transição pending→paid (webhook + polling podem chegar juntos: changes evita aviso duplo)
-    if (r.changes) {
+    // todos os itens do Pix numa transação; só avisa na transição pending→paid (webhook + polling podem chegar juntos)
+    const up = db.prepare("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP, payer_acct=? WHERE id=? AND status='pending'");
+    const pagos = db.transaction(() => itens.filter((o) => up.run(pp.acct, o.id).changes))();
+    for (const o of pagos) {
       orderEv(o, 'paid');
       const oo = { ...o, payer_acct: pp.acct };
       const sinal = estornoSinal(oo);
       if (sinal) bloquearPedido(oo, sinal); else { notifyPaid(oo); avisoFaixa(oo); }
     }
   } else if (['cancelled', 'rejected', 'refunded', 'charged_back'].includes(pay.status)) {
-    const before = o.status;
-    const r = db.prepare(`UPDATE orders SET status = CASE status WHEN 'delivered' THEN 'reversed' ELSE 'cancelled' END
-      WHERE id=? AND status IN ('pending','paid','delivered')`).run(o.id);
-    // estorno/chargeback de pedido já pago ou entregue: operador precisa saber (risco de MED)
-    // (reembolso feito pela própria loja — refund_state — não é contestação do cliente: não bloqueia)
-    if (r.changes && (before === 'paid' || before === 'delivered') && !o.refund_state) {
-      const pp = payerPrints(pay);
-      blockClient({ ...o, payer_acct: o.payer_acct || pp.acct }, pay.status);
-      tgAviso(o.id, { icone: before === 'delivered' ? '⚠️' : '⛔', saldo: false,
-        titulo: `${before === 'delivered' ? 'ESTORNADO após entrega' : 'cancelado após pagamento'} (${pay.status})`,
-        botao: before === 'delivered' ? '⚠️ Estornado após entrega' : '⛔ Cancelado — não entregar',
-        extras: ['Bloqueados: ID, e-mail, aparelho e conta que pagou (desbloqueie no painel se for engano).'] });
-      // e um alerta curto (a edição não notifica): responde ao aviso original, que tem os detalhes
-      tgApi('sendMessage', { ...(o.tg_msg ? orderDest(o) : dest('pedidos')), disable_web_page_preview: true,
-        ...(o.tg_msg ? { reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true } } : {}),
-        text: before === 'delivered'
-          ? `⚠️ Estorno no pedido #${o.id} (${brlTxt(o.cents)}, já entregue · ${pay.status}) — detalhes no aviso original.`
-          : `⛔ Pedido #${o.id} cancelado após pagamento (${brlTxt(o.cents)} · ${pay.status}) — não entregar; detalhes no aviso original.` });
-    }
+    for (const o of itens) cancelarItem(o, pay);
   }
 }
-
+// Pix cancelado/recusado/devolvido/contestado: vale para o pedido avulso ou para cada item do carrinho
+function cancelarItem(o, pay) {
+  const before = o.status;
+  const r = db.prepare(`UPDATE orders SET status = CASE status WHEN 'delivered' THEN 'reversed' ELSE 'cancelled' END
+    WHERE id=? AND status IN ('pending','paid','delivered')`).run(o.id);
+  // estorno/chargeback de pedido já pago ou entregue: operador precisa saber (risco de MED)
+  // (reembolso feito pela própria loja — refund_state — não é contestação do cliente: não bloqueia)
+  if (r.changes && (before === 'paid' || before === 'delivered') && !o.refund_state) {
+    const pp = payerPrints(pay);
+    blockClient({ ...o, payer_acct: o.payer_acct || pp.acct }, pay.status);
+    tgAviso(o.id, { icone: before === 'delivered' ? '⚠️' : '⛔', saldo: false,
+      titulo: `${before === 'delivered' ? 'ESTORNADO após entrega' : 'cancelado após pagamento'} (${pay.status})`,
+      botao: before === 'delivered' ? '⚠️ Estornado após entrega' : '⛔ Cancelado — não entregar',
+      extras: ['Bloqueados: ID, e-mail, aparelho e conta que pagou (desbloqueie no painel se for engano).'] });
+    // e um alerta curto (a edição não notifica): responde ao aviso original, que tem os detalhes
+    tgApi('sendMessage', { ...(o.tg_msg ? orderDest(o) : dest('pedidos')), disable_web_page_preview: true,
+      ...(o.tg_msg ? { reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true } } : {}),
+      text: before === 'delivered'
+        ? `⚠️ Estorno no pedido #${o.id} (${brlTxt(o.cents)}, já entregue · ${pay.status}) — detalhes no aviso original.`
+        : `⛔ Pedido #${o.id} cancelado após pagamento (${brlTxt(o.cents)} · ${pay.status}) — não entregar; detalhes no aviso original.` });
+  }
+}
 
 return { RISK, lc, fp, payerPrints, isBlocked, orderBlocked, blockClient, unblockClient, paid24, riskOf, podeReembolsar, reembolsar, _setRefundCaller, bloqAuto, syncPayment };
 }
