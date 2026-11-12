@@ -2,9 +2,10 @@
 // Procura no YouTube canais brasileiros que fazem vídeo de CounterFlame (ou "CS2/CS mobile", como a comunidade chama), para prospecção de parceiros.
 //   node --env-file=.env tools/caca-criadores.mjs [--dias 90] [--sem-telegram]
 // Sem API e sem login: lê a página pública de busca e a página de cada canal (dados em ytInitialData).
-// Poucas requisições, com pausa entre elas (~80 por execução). Se o YouTube mudar a página, o script avisa e para.
+// Poucas requisições, com pausa entre elas (~300 por execução, ~10 min). Se o YouTube mudar a página, o script avisa e para.
 // Guarda o histórico em data/criadores.json e a lista completa em data/criadores.csv (fora do git).
-// O Instagram vem das descrições dos próprios canais: o Instagram não permite busca sem login.
+// Contatos: descrição e links do painel "Sobre" de cada canal (o Instagram não permite busca sem login).
+// Para cada canal, conta os vídeos do jogo nos últimos N dias (aba Vídeos + busca "counterflame" dentro do canal).
 // Manda no Telegram (tópico "parcerias", se configurado) só os canais NOVOS desde a última execução.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,7 +22,7 @@ const PAGINAS = 3; // por termo: 1ª página + 2 continuações (~60 vídeos)
 const QUERIES = ['counterflame', 'counter flame', 'counterflame mobile', 'counter flame cs2 mobile', 'counterflame skins', 'counterflame gameplay',
   // termos que a comunidade usa para o jogo; só contam vídeos de CS no celular que não citam outro jogo
   'cs2 mobile', 'cs mobile', 'cs2 celular', 'cs go mobile', 'counter strike mobile', 'cs2 android', 'cs2 mobile gameplay'];
-const CF = /counter\s?flame/i;
+const CF = /counter[\s-]?flame/i;
 const CS_MOBILE = /\b(cs\s?2|cs:?\s?go|cs|counter[\s-]?strike)\b[^|]{0,40}\b(mobile|celular|android|ios)\b|\b(mobile|celular|android)\b[^|]{0,40}\b(cs\s?2|cs:?\s?go|counter[\s-]?strike)\b/i;
 const OUTRO_JOGO = /standoff|\bso\s?2\b|critical ops|free\s?fire|blood strike|pubg|call of duty|\bcodm?\b|valorant|warzone|roblox|minecraft|fortnite|project\s?a|forward assault|bullet force|restrike/i;
 const CHEAT = /\b(cheat|hack|aimbot|wallhack|mod\s?menu|esp)\b/i;
@@ -56,10 +57,10 @@ const num = (s) => { // "22.118 visualizações", "4,73 mil inscritos", "1,2 mi"
   return Math.round(n * mult);
 };
 const diasAtras = (s) => { // "há 5 dias", "há 2 semanas", "há 3 meses", "Transmitido há 1 ano"
-  const m = String(s).match(/(\d+)\s*(segundo|minuto|hora|dia|semana|m[eê]s|meses|ano)/i);
+  const m = String(s).match(/(\d+)\s*(segundo|minuto|hora|dia|sem|m[eê]s|meses|ano)/i);
   if (!m) return null;
   const u = m[2].toLowerCase();
-  return Number(m[1]) * (u.startsWith('dia') ? 1 : u.startsWith('semana') ? 7 : u.startsWith('m') && u !== 'minuto' ? 30 : u.startsWith('ano') ? 365 : 0);
+  return Number(m[1]) * (u.startsWith('dia') ? 1 : u.startsWith('sem') ? 7 : u.startsWith('m') && u !== 'minuto' ? 30 : u.startsWith('ano') ? 365 : 0);
 };
 const chunksVideos = (data) => walk(data, 'videoRenderer').map((v) => ({
   id: v.videoId, titulo: txt(v.title), snippet: (v.detailedMetadataSnippets || []).map((s) => txt(s.snippetText)).join(' '),
@@ -68,7 +69,7 @@ const chunksVideos = (data) => walk(data, 'videoRenderer').map((v) => ({
 }));
 const insta = (t) => {
   const s = String(t);
-  const hs = [...s.matchAll(/instagram\.com\/([A-Za-z0-9_.]{2,30})/gi), ...s.matchAll(/\b(?:instagram|insta|ig)\b\s*[:\-–]?\s*@?([A-Za-z0-9_.]{2,30})/gi)]
+  const hs = [...s.matchAll(/instagram\.com\/([A-Za-z0-9_.]{2,30})/gi), ...s.matchAll(/\b(?:instagram|insta|ig)\b(?!\.com)\s*[:\-–]?\s*@?([A-Za-z0-9_][A-Za-z0-9_.]{1,29})/gi)]
     .map((m) => m[1].replace(/\.$/, '').toLowerCase());
   return [...new Set(hs)].filter((h) => !['p', 'reel', 'reels', 'explore', 'stories', 'accounts', 'com', 'e', 'do', 'da'].includes(h));
 };
@@ -96,12 +97,58 @@ async function buscar(q) {
   return out;
 }
 
+async function browse(html, token) { // continuação de página de canal (youtubei/v1/browse)
+  const key = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/)?.[1], ver = html.match(/"clientVersion":"([^"]+)"/)?.[1];
+  if (!key || !ver || !token) return null;
+  await sleep(1200 + Math.random() * 800); reqs++;
+  const r = await fetch(`https://www.youtube.com/youtubei/v1/browse?key=${key}&prettyPrint=false`, {
+    method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: ver, hl: 'pt', gl: 'BR' } }, continuation: token }),
+  });
+  return r.ok ? r.json() : null;
+}
+const ehDoJogo = (t) => !CHEAT.test(t) && (CF.test(t) || (CS_MOBILE.test(t) && !OUTRO_JOGO.test(t)));
+// vídeos da aba Vídeos (formato lockupViewModel) e da busca do canal (videoRenderer)
+const videosCanalDe = (d) => [...walk(d, 'videoRenderer').map((v) => ({ id: v.videoId, titulo: txt(v.title), dias: diasAtras(txt(v.publishedTimeText)) })),
+  ...walk(d, 'lockupViewModel').filter((l) => l.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO').map((l) => {
+    const m = l.metadata?.lockupMetadataViewModel;
+    return { id: l.contentId, titulo: m?.title?.content || '', dias: diasAtras(JSON.stringify(m?.metadata || {}).match(/há [^"]+/)?.[0] || '') };
+  })];
+
+// Vídeos do jogo publicados nos últimos DIAS: até ~90 vídeos da aba Vídeos + busca "counterflame" no canal.
+async function videosDoJogo(id) {
+  const html = await get(`https://www.youtube.com/channel/${id}/videos?hl=pt-BR&gl=BR`);
+  const d = initialData(html);
+  const lista = videosCanalDe(d);
+  let token = walk(d, 'continuationCommand')[0]?.token;
+  for (let p = 0; p < 2 && token && !lista.some((v) => v.dias > DIAS); p++) {
+    const j = await browse(html, token);
+    if (!j) break;
+    lista.push(...videosCanalDe(j));
+    token = walk(j, 'continuationCommand')[0]?.token;
+  }
+  lista.push(...videosCanalDe(initialData(await get(`https://www.youtube.com/channel/${id}/search?query=counterflame&hl=pt-BR&gl=BR`))));
+  const jogo = lista.filter((v, i) => lista.findIndex((x) => x.id === v.id) === i && v.dias != null && v.dias <= DIAS && ehDoJogo(v.titulo));
+  return { total: jogo.length, comNome: jogo.filter((v) => CF.test(v.titulo)).length };
+}
+
 async function canal(id) {
-  const data = initialData(await get(`https://www.youtube.com/channel/${id}?hl=pt-BR&gl=BR`));
+  const html = await get(`https://www.youtube.com/channel/${id}?hl=pt-BR&gl=BR`);
+  const data = initialData(html);
   const md = data.metadata?.channelMetadataRenderer || {};
   const s = JSON.stringify(data.header || {});
   const insc = s.match(/"content":"([^"]{0,30}inscrit[^"]{0,10})"/i)?.[1];
-  return { nome: md.title, desc: md.description || '', url: md.vanityChannelUrl ? md.vanityChannelUrl.replace('http://www.', 'https://') : `https://youtube.com/channel/${id}`, inscritos: insc ? num(insc) : null };
+  // painel "Sobre": links do topo do canal, país e se há e-mail comercial (só visível com login)
+  let links = [], pais = '', emailOculto = false;
+  try {
+    const j = await browse(html, walk(data.header, 'continuationCommand')[0]?.token);
+    const a = j && walk(j, 'aboutChannelViewModel')[0];
+    if (a) {
+      links = walk(a, 'channelExternalLinkViewModel').map((l) => String(l.link?.content || '')).filter(Boolean);
+      pais = a.country || ''; emailOculto = !!a.signInForBusinessEmail;
+    }
+  } catch { /* sem painel: segue só com a descrição */ }
+  return { nome: md.title, desc: md.description || '', url: md.vanityChannelUrl ? md.vanityChannelUrl.replace('http://www.', 'https://') : `https://youtube.com/channel/${id}`, inscritos: insc ? num(insc) : null, links, pais, emailOculto };
 }
 
 function parceirosAtuais() {
@@ -158,33 +205,42 @@ async function main() {
   const canais = [];
   for (const [id, c] of porCanal) {
     const old = prev.vistos[id];
-    const cache = old && old.atualizado && (Date.now() - Date.parse(old.atualizado)) < 30 * 864e5;
-    let ch = cache ? { nome: old.nome, desc: old._desc || '', url: old.url, inscritos: old.inscritos } : null;
+    const cache = old && old.links && old.atualizado && (Date.now() - Date.parse(old.atualizado)) < 30 * 864e5;
+    let ch = cache ? { nome: old.nome, desc: old._desc || '', url: old.url, inscritos: old.inscritos, links: old.links, pais: old.pais, emailOculto: old.email_oculto } : null;
     if (!ch) { try { ch = await canal(id); } catch { await sleep(8000); try { ch = await canal(id); } catch (e) { console.error('canal', id, e.message); continue; } } }
     const pt = score(c.texto + ' ' + ch.desc, PT) - score(c.texto + ' ' + ch.desc, EN);
     if (pt < 2) continue; // sem sinal de português
+    let vj = null; // contagem refeita a cada execução
+    try { vj = await videosDoJogo(id); } catch (e) { console.error('vídeos', id, e.message); }
+    const contato = ch.desc + ' ' + ch.links.join(' ');
+    const outros = ch.links.filter((l) => !/instagram\.com|@/.test(l));
     const norm = String(ch.nome).toLowerCase().replace(/[^a-z0-9]/g, '');
     canais.push({
-      id, nome: ch.nome, url: ch.url, inscritos: ch.inscritos, videos_cf: c.videos, media_views_cf: Math.round(c.views / c.videos),
-      ultimo_video_dias: c.dias, fonte: c.cf ? 'counterflame' : 'cs mobile', instagram: insta(ch.desc).join(' '), email: emails(ch.desc).join(' '), sinal_pt: pt,
+      id, nome: ch.nome, url: ch.url, inscritos: ch.inscritos, videos_jogo: vj?.total ?? c.videos, videos_com_nome_cf: vj?.comNome ?? c.cf,
+      videos_cf: c.videos, media_views_cf: Math.round(c.views / c.videos),
+      ultimo_video_dias: c.dias, fonte: c.cf ? 'counterflame' : 'cs mobile', instagram: insta(contato).join(' '), email: emails(contato).join(' '),
+      email_oculto: ch.emailOculto, outros_links: outros.join(' '), links: ch.links, pais: ch.pais, sinal_pt: pt,
       parceiro: norm.length >= 4 && parceiros.some((p) => norm.includes(p) || p.includes(norm)), exemplo: c.titulos[0] || '',
       atualizado: cache ? old.atualizado : hoje, _desc: ch.desc.slice(0, 1000),
     });
   }
-  canais.sort((a, b) => b.media_views_cf * Math.min(b.videos_cf, 5) - a.media_views_cf * Math.min(a.videos_cf, 5));
+  const ordem = (a, b) => (b.videos_jogo ?? 0) - (a.videos_jogo ?? 0) || (b.inscritos ?? 0) - (a.inscritos ?? 0);
+  canais.sort(ordem);
 
   // 3) histórico e saída
   const novos = canais.filter((c) => !prev.vistos[c.id] && !c.parceiro);
   for (const c of canais) prev.vistos[c.id] = { ...c, visto_em: prev.vistos[c.id]?.visto_em || hoje };
   prev.ultima_execucao = hoje;
   fs.writeFileSync(STATE, JSON.stringify(prev, null, 1));
-  const cols = ['nome', 'url', 'inscritos', 'fonte', 'videos_cf', 'media_views_cf', 'ultimo_video_dias', 'instagram', 'email', 'sinal_pt', 'parceiro', 'visto_em', 'exemplo'];
+  const cols = ['nome', 'url', 'inscritos', 'videos_jogo', 'videos_com_nome_cf', 'media_views_cf', 'ultimo_video_dias', 'instagram', 'email', 'email_oculto', 'outros_links', 'pais', 'fonte', 'sinal_pt', 'parceiro', 'visto_em', 'exemplo'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const todos = Object.values(prev.vistos).sort((a, b) => b.media_views_cf - a.media_views_cf);
-  fs.writeFileSync(CSV, '﻿' + [cols.join(';'), ...todos.map((c) => cols.map((k) => q(k === 'parceiro' ? (c[k] ? 'sim' : '') : c[k])).join(';'))].join('\n'));
+  const todos = Object.values(prev.vistos).sort(ordem);
+  const cel = (c, k) => (k === 'parceiro' || k === 'email_oculto' ? (c[k] ? 'sim' : '') : c[k]);
+  fs.writeFileSync(CSV, '﻿' + [cols.join(';'), ...todos.map((c) => cols.map((k) => q(cel(c, k))).join(';'))].join('\n'));
 
   const n = (x) => (x == null ? '?' : x >= 1e6 ? (x / 1e6).toFixed(1).replace('.', ',') + ' mi' : x >= 1000 ? (x / 1000).toFixed(x >= 1e4 ? 0 : 1).replace('.', ',') + ' mil' : String(x));
-  const linhas = novos.slice(0, 12).map((c) => `• ${c.nome} — ${n(c.inscritos)} inscr., ${c.videos_cf} víd.${c.fonte === 'cs mobile' ? ' (cs mobile)' : ''}, ~${n(c.media_views_cf)} views${c.instagram ? ', IG @' + c.instagram.split(' ')[0] : ''}`);
+  const contatoDe = (c) => c.email ? ', ✉️ ' + c.email.split(' ')[0] : c.instagram ? ', IG @' + c.instagram.split(' ')[0] : c.email_oculto ? ', e-mail só com login' : ', sem contato';
+  const linhas = novos.slice(0, 12).map((c) => `• ${c.nome} — ${c.videos_jogo} víd. do jogo, ${n(c.inscritos)} inscr., ~${n(c.media_views_cf)} views${contatoDe(c)}`);
   const msg = `🔎 Criadores de CounterFlame (YouTube, últimos ${DIAS} dias)\n${canais.length} canais BR encontrados, ${novos.length} novos.\n\n${linhas.join('\n') || 'Nenhum canal novo desde a última busca.'}\n\nLista completa no CSV.`;
   console.log(msg.replace(/\n\n/g, '\n'), `\n(${reqs} requisições ao YouTube)`);
   if (!process.argv.includes('--sem-telegram') && novos.length) await telegram(msg, CSV);
