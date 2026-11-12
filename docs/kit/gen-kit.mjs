@@ -31,21 +31,22 @@ body{font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#f4f4f5;back
 .pills{display:flex;gap:14px;flex-wrap:wrap}
 .pills span{color:#c9c9cf;border:2px solid #2a2a2e;background:#161618;border-radius:99px}`;
 const brand = (img, font) => `<div class="brand"><img src="${IMG}/brand-mark.png" style="width:${img}px;height:${img}px"><b style="font-size:${font}px">Recarga <span>Flame</span></b></div>`;
-const prods = (keys, size, cols) => `<div class="prods" style="display:grid;grid-template-columns:repeat(${cols},${size}px);gap:22px;justify-content:center">${keys.map((k) => `<img src="${CUT}/${k}.png" style="width:${size}px;height:${size}px">`).join('')}</div>`;
+// produtos em linhas de até `cols`, centralizadas (a última linha incompleta também fica no centro)
+const prods = (keys, size, cols) => `<div class="prods" style="display:flex;flex-wrap:wrap;gap:22px;justify-content:center;width:${cols * size + (cols - 1) * 22}px;margin:0 auto">${keys.map((k) => `<img src="${CUT}/${k}.png" style="width:${size}px;height:${size}px">`).join('')}</div>`;
 const pills = (fs_, center) => `<div class="pills" style="${center ? 'justify-content:center;' : ''}">${['⚡ Entrega automática em até 10 min', '🔒 Só o ID, sem senha'].map((p) => `<span style="font-size:${fs_}px;padding:10px 22px">${p}</span>`).join('')}</div>`;
 
 const pages = {
   post: [1080, 1080, `body{width:1080px;height:1080px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;padding:64px 70px 60px;
     background-image:radial-gradient(circle at 50% 38%,rgba(255,90,31,.32),rgba(255,90,31,0) 55%)}`,
     `<div>${brand(76, 50)}<div class="sub" style="font-size:32px;margin-top:14px">Coins e passes do CounterFlame no Pix</div></div>
-     ${prods(['c200000', 'gold', 'wildfire'], 230, 3)}
+     ${prods(['c200000', 'gold', 'arsenal', 'wildfire'], 200, 4)}
      <div><div class="off" style="font-size:150px">${PCT}% OFF<small style="font-size:38px">com o cupom</small></div>
        <div class="cup" style="margin-top:20px;font-size:46px;padding:12px 36px">${esc(CODE)}</div></div>
      <div><div class="link" style="font-size:44px;padding:18px 40px">${LINK}</div><div style="margin-top:22px">${pills(25, true)}</div></div>`],
   story: [1080, 1920, `body{width:1080px;height:1920px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;padding:180px 80px 280px;
     background-image:radial-gradient(circle at 50% 42%,rgba(255,90,31,.32),rgba(255,90,31,0) 55%)}`,
     `<div>${brand(76, 50)}<div class="sub" style="font-size:40px;margin-top:22px">Coins e passes do CounterFlame no Pix</div></div>
-     <div style="margin:40px 0 30px">${prods(['c200000', 'gold', 'wildfire', 'bp25'], 240, 2)}</div>
+     <div style="margin:40px 0 30px">${prods(['c200000', 'gold', 'arsenal', 'wildfire', 'bp25'], 250, 3)}</div>
      <div><div class="off" style="font-size:180px">${PCT}% OFF<small style="font-size:48px">com o cupom</small></div>
        <div class="cup" style="margin-top:30px;font-size:60px;padding:12px 36px">${esc(CODE)}</div></div>
      <div><div class="link" style="font-size:${LINK.length > 28 ? 50 : 56}px;padding:18px 40px">${LINK}</div><div style="margin-top:34px">${pills(32, true)}</div></div>`],
@@ -60,7 +61,7 @@ const pages = {
        <div><div class="link" style="font-size:54px;padding:18px 40px">${LINK}</div></div>
        ${pills(30, false)}
      </div>
-     ${prods(['c200000', 'gold', 'wildfire', 'bp25'], 300, 2)}`],
+     ${prods(['c200000', 'gold', 'arsenal', 'wildfire', 'bp25'], 230, 3)}`],
 };
 
 for (const [name, [w, h, css, body]] of Object.entries(pages)) {

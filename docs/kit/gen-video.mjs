@@ -28,6 +28,8 @@ const QR_URL = CODE ? `https://recargaflame.com.br/${CODE.toLowerCase()}?src=${e
 const qrSvg = await QRCode.toString(QR_URL, { type: 'svg', errorCorrectionLevel: 'M', margin: 2, color: { dark: '#000000', light: '#ffffff' } });
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// produtos da cena 2 (recortes de docs/kit/img)
+const PRODS = [['c200000', 'Coins'], ['gold', 'Gold Pass'], ['arsenal', 'Arsenal Pass'], ['wildfire', 'Coleções'], ['bp25', 'Pass Levels']];
 const page = (V) => `<!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0}
 html,body{width:${V ? 1080 : 1920}px;height:${V ? 1920 : 1080}px;overflow:hidden;background:#0e0e10;font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#f4f4f5}
@@ -38,10 +40,11 @@ html,body{width:${V ? 1080 : 1920}px;height:${V ? 1920 : 1080}px;overflow:hidden
 h1{font-weight:900;letter-spacing:-.04em;line-height:.95}
 .w{display:inline-block}
 .sub{color:#c9c9cf;font-weight:700}
-.prods{display:grid;gap:${V ? '40px 30px' : '30px'};grid-template-columns:repeat(${V ? 2 : 4},${V ? 420 : 380}px)}
+.prods{display:flex;flex-wrap:wrap;justify-content:center;gap:${V ? '40px 20px' : '30px 20px'};width:${V ? 3 * 330 + 2 * 20 : 5 * 330 + 4 * 20}px}
+.prod{width:330px}
 .prod{display:flex;flex-direction:column;align-items:center}
-.prod img{width:${V ? 360 : 330}px;height:${V ? 360 : 330}px;object-fit:contain;filter:drop-shadow(0 24px 36px rgba(0,0,0,.55))}
-.prod b{font-size:${V ? 44 : 38}px;margin-top:6px}
+.prod img{width:${V ? 300 : 290}px;height:${V ? 300 : 290}px;object-fit:contain;filter:drop-shadow(0 24px 36px rgba(0,0,0,.55))}
+.prod b{font-size:${V ? 40 : 36}px;margin-top:6px}
 .phone{position:absolute;width:${V ? 640 : 470}px;height:${V ? 1376 : 1010}px;border-radius:${V ? 76 : 58}px;background:#1b1b1f;padding:${V ? 18 : 14}px;
   box-shadow:0 40px 120px rgba(0,0,0,.6),0 0 0 3px #2c2c32;${V ? 'left:220px;top:440px' : 'right:250px;top:35px'}}
 .scr{position:absolute;inset:${V ? 18 : 14}px;border-radius:${V ? 60 : 46}px;overflow:hidden;background:#0e0e10}
@@ -75,7 +78,7 @@ h1{font-weight:900;letter-spacing:-.04em;line-height:.95}
 <div class="sc" id="s2">
   <div class="sub" id="s2t" style="font-size:${V ? 64 : 64}px;margin-bottom:${V ? 60 : 50}px;color:#f4f4f5;font-weight:900">Coins, passes e coleções</div>
   <div class="prods">
-    ${[['c200000', 'Coins'], ['gold', 'Gold Pass'], ['wildfire', 'Coleções'], ['bp25', 'Níveis de Passe']].map(([k, n], i) => `<div class="prod" id="p${i}"><img src="${CUT}/${k}.png"><b>${n}</b></div>`).join('')}
+    ${PRODS.map(([k, n], i) => `<div class="prod" id="p${i}"><img src="${CUT}/${k}.png"><b>${n}</b></div>`).join('')}
   </div>
 </div>
 
@@ -129,7 +132,7 @@ window.render=function(t){
   set('w1',a,(1-a)*60,.85+.15*back((t-.15)/.5)); set('w2',b,(1-b)*60,.85+.15*back((t-.75)/.5)); set('s1sub',inn(t,1.4),(1-inn(t,1.4))*30);
   // 2. produtos
   set('s2',vis(t,3,6.65)); set('s2t',inn(t,3.05),(1-inn(t,3.05))*30);
-  for(let i=0;i<4;i++){const k=inn(t,3.25+i*.22,.5);set('p'+i,k,(1-k)*80,.7+.3*back((t-3.25-i*.22)/.6));$('p'+i).querySelector('img').style.transform='translateY('+Math.sin(t*2+i)*8+'px)';}
+  for(let i=0;i<${PRODS.length};i++){const k=inn(t,3.25+i*.18,.5);set('p'+i,k,(1-k)*80,.7+.3*back((t-3.25-i*.18)/.6));$('p'+i).querySelector('img').style.transform='translateY('+Math.sin(t*2+i)*8+'px)';}
   // 3. passo a passo nas telas
   set('s3',vis(t,7,13.65)); const ph=inn(t,7,.6); set('phone',ph,(1-ph)*140);
   const T=[7,8.75,10.5,12.25,14];
