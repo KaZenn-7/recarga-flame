@@ -22,7 +22,7 @@ ${cats.map((c) => `    <div class="cat"><h3>${escH(c)}</h3><ul class="vgrid">${g
 }
 
 export function ldJson(prods) {
-  const org = { '@type': 'Organization', '@id': SITE + '/#org', name: 'Recarga Flame', url: SITE + '/', logo: SITE + '/img/icon-192.png', email: 'suporte@recargaflame.com.br' };
+  const org = { '@type': 'Organization', '@id': SITE + '/#org', name: 'Recarga Flame', url: SITE + '/', logo: SITE + '/img/icon-192.png', email: 'suporte@recargaflame.com.br', sameAs: ['https://www.instagram.com/recargaflame'] };
   const site = { '@type': 'WebSite', '@id': SITE + '/#site', name: 'Recarga Flame', url: SITE + '/', inLanguage: 'pt-BR', publisher: { '@id': SITE + '/#org' } };
   const list = {
     '@type': 'ItemList', name: 'Produtos e preços', itemListElement: prods.map((p, i) => ({
