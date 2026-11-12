@@ -40,8 +40,21 @@ const isOrderMsg = (o, chatId, msgId) => !!o.tg_msg && o.tg_msg === msgId && Str
 // Chamada genérica à API do bot; devolve o JSON ou null (nunca lança).
 // getUpdates com erro passageiro do Telegram (5xx/rede): só registra se continuar falhando (5 seguidas).
 let getUpdFalhas = 0;
+// Mensagens mais fáceis de ler: linha vazia entre cada parágrafo (pedido do operador). Itens de lista ("• ...")
+// e a linha que os apresenta (termina em ":") ficam juntos. Aplicar de novo não muda nada (edições de mensagem).
+function paragrafos(text) {
+  const ls = String(text).split('\n');
+  const out = [ls[0]];
+  for (let i = 1; i < ls.length; i++) {
+    const prev = ls[i - 1].trimEnd(), cur = ls[i];
+    if (prev && cur.trim() && !/^\s*[•\-–]/.test(cur) && !prev.endsWith(':')) out.push('');
+    out.push(cur);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
 async function tgApi(method, body, timeoutMs = 10000) {
   if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return null;
+  if ((method === 'sendMessage' || method === 'editMessageText') && typeof body.text === 'string') body = { ...body, text: paragrafos(body.text) };
   try {
     const r = await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/${method}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(timeoutMs),
@@ -112,7 +125,7 @@ async function configurarTopicos(msg) {
 const doneKeyboard = (label) => ({ inline_keyboard: [[{ text: label, callback_data: 'x' }]] });
 const hhmmSP = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
-export { tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
+export { paragrafos, tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
 
 // ---------- Avisos de pedido no Telegram ----------
 // O corpo fica sem recuo extra de propósito: são as funções originais do server.js, sem mudança.

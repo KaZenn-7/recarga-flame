@@ -115,3 +115,10 @@ test('suporte vai para o tópico Suporte', async () => {
   const m = calls('sendMessage', n).find((c) => /Suporte #/.test(c.body.text));
   assert.equal(m.body.chat_id, String(GRUPO)); assert.equal(m.body.message_thread_id, T.threads.suporte);
 });
+
+test('mensagens: linha vazia entre parágrafos; lista com "•" fica junta; aplicar de novo não muda', async () => {
+  const { paragrafos } = await import('../src/telegram.js');
+  const t = paragrafos('📊 Resumo\n💰 2 vendas\n📦 2 entregues\n\nPagar hoje:\n• A: R$ 1\n• B: R$ 2\nFim');
+  assert.equal(t, '📊 Resumo\n\n💰 2 vendas\n\n📦 2 entregues\n\nPagar hoje:\n• A: R$ 1\n• B: R$ 2\n\nFim');
+  assert.equal(paragrafos(t), t);
+});
