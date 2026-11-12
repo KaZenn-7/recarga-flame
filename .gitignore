@@ -22,3 +22,6 @@ docs/acordo/gerados/
 
 # configurações pessoais do Claude Code
 .claude/settings.local.json
+
+# prospecção de criadores (tem e-mails públicos de terceiros)
+data/
