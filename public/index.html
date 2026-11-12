@@ -338,6 +338,10 @@ const brl=c=>(c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let produtos=[],car=[],conta=null; // car = chaves dos produtos escolhidos (1 = pedido avulso; 2+ = carrinho, um Pix só); conta={id,nick,avatar}
 const CAR_MAX=5;let addMode=false;
+// níveis do passe: o carrinho nunca passa do que ainda cabe na conta (conta.niveis vem do servidor, que confere de novo)
+const nvCar=()=>car.reduce((a,k)=>a+((prodOf(k)||{}).nv||0),0);
+const cabeNv=p=>!p.nv||!conta||conta.niveis==null||nvCar()+p.nv<=conta.niveis;
+const nvMsg=()=>conta.niveis?'Essa conta só pode receber mais '+conta.niveis+' nível(is) do passe.':'Essa conta já está no nível máximo do passe.';
 const prodOf=k=>produtos.find(p=>p.key===k)||null;
 const carProds=()=>car.map(prodOf).filter(Boolean);
 
@@ -388,13 +392,13 @@ function fillPrice(){
   const cheio=car.length>=CAR_MAX;
   $('ritens').innerHTML=grupos.map(({p,n})=>{const f=finalCents(p);
     const ctl=p.rep!==false
-      ?`<span class="qty"><button data-k="${esc(p.key)}" data-d="-1" aria-label="Menos ${esc(p.nome)}"${um?' disabled':''}>−</button><b class="mono">${n}</b><button data-k="${esc(p.key)}" data-d="1" aria-label="Mais ${esc(p.nome)}"${cheio?' disabled':''}>+</button></span>`
+      ?`<span class="qty"><button data-k="${esc(p.key)}" data-d="-1" aria-label="Menos ${esc(p.nome)}"${um?' disabled':''}>−</button><b class="mono">${n}</b><button data-k="${esc(p.key)}" data-d="1" aria-label="Mais ${esc(p.nome)}"${cheio||!cabeNv(p)?' disabled':''}>+</button></span>`
       :'';
     return `<div class="line"><span class="k"><img class="pi" src="${esc(p.img)}" alt=""><span class="nm"><span>${esc(p.nome)}${n>1?` <small class="mono">${brl(f)} cada</small>`:''}</span>${ctl}</span></span>`+
       `<span class="vv"><span class="v mono${um?' big':''}">${!(f<p.cents)||um?'':'<s>'+brl(p.cents*n)+'</s>'}${brl(f*n)}</span>${um||p.rep!==false?'':`<button class="rm" data-k="${esc(p.key)}" data-d="-1" aria-label="Tirar ${esc(p.nome)}">×</button>`}</span></div>`;}).join('');
   $('ritens').querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{
     const k=b.dataset.k;$('err3').textContent='';
-    if(b.dataset.d==='1'){if(car.length>=CAR_MAX)return;car.splice(car.lastIndexOf(k)+1,0,k);if(car.length===2)track('cart');} // junto dos iguais
+    if(b.dataset.d==='1'){if(car.length>=CAR_MAX)return;const p=prodOf(k);if(p&&!cabeNv(p)){$('err3').textContent=nvMsg();return;}car.splice(car.lastIndexOf(k)+1,0,k);if(car.length===2)track('cart');} // junto dos iguais
     else{if(car.length<=1)return;car.splice(car.lastIndexOf(k),1);}
     fillPrice();saveState();
   });
@@ -452,8 +456,8 @@ $('buscar').onclick=async()=>{
   $('err1').textContent='';const b=$('buscar');b.disabled=true;b.innerHTML='<span class="ld"></span>Buscando';
   try{
     const id=$('gameId').value.trim();
-    const{nickname,avatar,blocked}=await api('/api/player/'+encodeURIComponent(id));
-    conta={id,nick:nickname,avatar,blocked:blocked||{}};
+    const{nickname,avatar,blocked,niveis}=await api('/api/player/'+encodeURIComponent(id));
+    conta={id,nick:nickname,avatar,blocked:blocked||{},niveis:niveis??null};
     $('av2').src=avatar;$('nick2').textContent=nickname;$('pid2').textContent=id;
     if(!produtos.length)await loadProds();else render();
     car=[];setAdd(false);saveState();$('err2').textContent='';
@@ -496,6 +500,7 @@ function render(){
     if(addMode&&car.length){
       // regras do carrinho (o servidor confere de novo): até 5 itens; Gold, coleção e Arsenal só uma vez
       if(car.length>=CAR_MAX){$('err2').textContent='O pedido aceita até '+CAR_MAX+' itens.';return;}
+      if(!cabeNv(p)){$('err2').textContent=nvMsg();$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
       if(p.rep===false&&car.includes(p.key)){$('err2').textContent=p.nome+' já está no pedido e só pode ser comprado uma vez.';$('err2').scrollIntoView({behavior:'smooth',block:'center'});return;}
       car.push(p.key);if(car.length===2)track('cart');
     }else{car=[p.key];track('select');}
@@ -717,7 +722,7 @@ async function restore(){
   conta=s.conta;
   if(!produtos.length)await loadProds();
   // bloqueios podem ter mudado desde que o estado foi salvo: atualiza em segundo plano
-  api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};render();saveState();}).catch(()=>{});
+  api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};conta.niveis=p.niveis??null;render();saveState();}).catch(()=>{});
   // preenche dados da conta nas telas
   $('gameId').value=conta.id;$('buscar').disabled=false;
   $('av2').src=conta.avatar;$('nick2').textContent=conta.nick;$('pid2').textContent=conta.id;
@@ -754,7 +759,7 @@ async function openFromLink({tk,car:ehCar}){
   const order={token:tk,id:o.id,expiresAt:o.expiresAt,qr:o.qr||'',qrBase64:o.qrBase64||'',...(ehCar?{car:true,itemTok:o.itens[0]&&o.itens[0].token,ids:o.itens.map(i=>i.id)}:{})};
   if(o.status==='pending'&&o.qr){saveState({order});showPayment(order);checkOnce(o.expiresAt&&Date.now()>o.expiresAt+60_000);}
   else{showPayment(order);finish(o.status==='pending'?'expired':o.status,entrega);}
-  api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};render();}).catch(()=>{});
+  api('/api/player/'+encodeURIComponent(conta.id)).then(p=>{conta.blocked=p.blocked||{};conta.niveis=p.niveis??null;render();}).catch(()=>{});
   return true;
 }
 

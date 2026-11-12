@@ -150,12 +150,42 @@ const ordemVitrine = (a, b) => CATEGORIAS.indexOf(categoria(a)) - CATEGORIAS.ind
 
 // Passe tem 100 níveis no jogo (a API do CounterFlame informa totalLevels 50; decisão do operador em 12/11/2026)
 const BP_NIVEIS = 100;
-function blockReason(p, d) {
-  const bp = d.battlePass;
+// Arsenal Pass: os tickets são em sequência. Só o próximo da conta fica disponível (nenhum → Ticket 1; tem N → Ticket N+1;
+// tem todos → nenhum) e só um por vez: com outro ticket já pago ou com Pix em aberto, nenhum fica disponível (decisão do operador, 12/11/2026).
+// O nº vem do código do bot (ap_N) ou, se não der, do nome ("Ticket N"); sem nº, o ticket nunca é vendido.
+function ticketNum(p) {
+  const m = /^ap_(\d+)$/i.exec(p.code || '') || /ticket\s*(\d+)/i.exec(p.nome || '');
+  return m ? Number(m[1]) : null;
+}
+const ticketEmCurso = (gameId) => db.prepare(`SELECT COUNT(*) n FROM orders o JOIN products p ON p.key=o.product
+  WHERE o.game_id=? AND o.status IN ('pending','paid') AND p.tipo='arsenal'`).get(String(gameId)).n > 0;
+function arsenalReason(p, d, gameId) {
   const ap = d.arsenalPass;
-  if (p.niveis && p.tipo !== 'arsenal' && bp && bp.level + p.niveis > BP_NIVEIS) return 'Essa conta não tem níveis suficientes disponíveis.';
+  if (!ap || !Number.isInteger(ap.tickets) || !Number.isInteger(ap.maxTickets)) return 'Não foi possível conferir o Arsenal Pass dessa conta. Fale com o suporte.';
+  if (ap.tickets >= ap.maxTickets) return 'Essa conta já tem todos os tickets do Arsenal Pass.';
+  if (ticketNum(p) !== ap.tickets + 1) return `Para essa conta, o próximo é o Ticket ${ap.tickets + 1}.`;
+  if (gameId != null && ticketEmCurso(gameId)) return 'Essa conta já tem um ticket do Arsenal Pass em andamento. Aguarde a entrega (ou pague/cancele o Pix em aberto) antes do próximo.';
+  return null;
+}
+// Níveis do passe: o nível do jogo + níveis já pagos/com Pix em aberto (ainda não entregues) nunca passam de BP_NIVEIS
+const ehNivel = (p) => !!p.niveis && p.tipo !== 'arsenal';
+const niveisEmCurso = (gameId) => db.prepare(`SELECT COALESCE(SUM(p.niveis),0) n FROM orders o JOIN products p ON p.key=o.product
+  WHERE o.game_id=? AND o.status IN ('pending','paid') AND p.niveis>0 AND p.tipo<>'arsenal'`).get(String(gameId)).n;
+// quantos níveis ainda cabem na conta (null = a API não informou o passe)
+function niveisLivres(d, gameId) {
+  const lv = d.battlePass?.level;
+  if (!Number.isInteger(lv)) return null;
+  return Math.max(0, BP_NIVEIS - lv - (gameId != null ? niveisEmCurso(gameId) : 0));
+}
+function blockReason(p, d, gameId) {
+  const bp = d.battlePass;
+  if (ehNivel(p)) {
+    const livres = niveisLivres(d, gameId);
+    if (livres === null) return 'Não foi possível conferir o passe dessa conta. Fale com o suporte.';
+    if (p.niveis > livres) return livres ? `Essa conta só pode receber mais ${livres} nível(is) do passe.` : 'Essa conta já está no nível máximo do passe.';
+  }
   if (p.tipo === 'gold' && bp?.gold) return 'Essa conta já tem o Gold Pass.';
-  if (p.tipo === 'arsenal' && ap && ap.tickets >= ap.maxTickets) return 'Essa conta atingiu o limite do Arsenal Pass.';
+  if (p.tipo === 'arsenal') { const why = arsenalReason(p, d, gameId); if (why) return why; }
   if (p.tipo === 'wildfire' && d.wildfireLevel > 0) return 'Essa conta já tem progresso na Wildfire. Fale com o suporte.';
   return null;
 }
@@ -164,20 +194,18 @@ function blockReason(p, d) {
 // Repetir o mesmo item só vale para Coins e níveis do passe (decisão do operador, 12/11/2026).
 const CARRINHO_MAX = 5;
 const repetivel = (p) => !p.tipo; // Coins e níveis (tipo '')
-function blockReasonCarrinho(itens, d) {
-  for (const p of itens) { const why = blockReason(p, d); if (why) return `${p.nome}: ${why}`; }
+function blockReasonCarrinho(itens, d, gameId) {
+  for (const p of itens) { const why = blockReason(p, d, gameId); if (why) return `${p.nome}: ${why}`; }
   const vistos = new Set();
   for (const p of itens) {
     if (!repetivel(p) && vistos.has(p.key)) return `${p.nome} só pode entrar uma vez no carrinho.`;
     vistos.add(p.key);
   }
   if (itens.filter((p) => p.tipo === 'gold').length > 1) return 'O Gold Pass só pode entrar uma vez no carrinho.';
-  const niveis = itens.reduce((a, p) => a + (p.niveis && p.tipo !== 'arsenal' ? p.niveis : 0), 0);
-  const bp = d.battlePass;
-  if (niveis && bp && bp.level + niveis > BP_NIVEIS) return `Essa conta não tem níveis suficientes para ${niveis} níveis (está no nível ${bp.level} de ${BP_NIVEIS}).`;
-  const tickets = itens.filter((p) => p.tipo === 'arsenal').length;
-  const ap = d.arsenalPass;
-  if (tickets && ap && ap.tickets + tickets > ap.maxTickets) return `Essa conta só pode receber mais ${Math.max(0, ap.maxTickets - ap.tickets)} ticket(s) do Arsenal Pass.`;
+  const niveis = itens.reduce((a, p) => a + (ehNivel(p) ? p.niveis : 0), 0);
+  const livres = niveisLivres(d, gameId);
+  if (niveis && livres !== null && niveis > livres) return `Essa conta só pode receber mais ${livres} nível(is) do passe e o pedido tem ${niveis}.`;
+  if (itens.filter((p) => p.tipo === 'arsenal').length > 1) return 'Só um ticket do Arsenal Pass por pedido.';
   return null;
 }
 
@@ -203,7 +231,7 @@ const _setReceiptChecker = (fn) => { receiptChecker = fn || invoicePaid; };
 // (paidKeyboard/tgFalha/paidText/tgIncerto/setMotivo/stopping são declarados mais abaixo: vão como funções que repassam)
 const { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
   sessionDown, markDelivered, paidKeyboard: (o) => paidKeyboard(o), tgFalha: (...a) => tgFalha(...a), paidText: (o) => paidText(o),
-  tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping });
+  tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping, getPlayer, ticketNum, BP_NIVEIS });
 // ---- Avisos de pedido no Telegram (mensagem, botões, edições, toques): src/telegram.js ----
 const { refundKb, tgDesbloqueado, paidKeyboard, handleTgUpdate, tgPoll, paidText, tgEntregue, tgAviso, notifyPaid, tgIncerto, tgFalha } = initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine });
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
@@ -294,7 +322,7 @@ const ogCupom = (c) => {
   return /^og-cupom\/[a-z0-9_-]+\.jpg$/.test(f) && fs.existsSync(path.join('public', 'img', f)) ? `${SITE_URL}/img/${f}` : null;
 };
 const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo).sort(([, a], [, b]) => ordemVitrine(a, b))
-  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg`, rep: repetivel(p) }));
+  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg`, rep: repetivel(p), nv: ehNivel(p) ? p.niveis : 0 }));
 app.get(['/', '/index.html'], (req, res) => {
   const home = homeHtml(INDEX_HTML, prodsPublic());
   const c = req.query.cupom ? getCoupon(req.query.cupom) : null;
@@ -345,10 +373,11 @@ app.get('/api/player/:id', limit(15), async (req, res) => {
   const blocked = {};
   for (const [key, p] of Object.entries(PRODUCTS)) {
     if (!p.ativo) continue;
-    const why = blockReason(p, player);
+    const why = blockReason(p, player, req.params.id);
     if (why) blocked[key] = why;
   }
-  res.json({ nickname: player.nickname, avatar: `/api/player/${encodeURIComponent(req.params.id)}/avatar`, blocked });
+  // niveis: quantos níveis do passe ainda cabem (a loja trava o carrinho nisso; null = desconhecido, o servidor decide)
+  res.json({ nickname: player.nickname, avatar: `/api/player/${encodeURIComponent(req.params.id)}/avatar`, blocked, niveis: niveisLivres(player, req.params.id) });
 });
 
 // Avatar do jogador. Conta sem avatar → imagem padrão em cache (o navegador não pede de novo) e o servidor lembra

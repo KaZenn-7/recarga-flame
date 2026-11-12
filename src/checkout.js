@@ -140,7 +140,7 @@ app.post('/api/orders', limit(5), async (req, res) => {
 
   const player = await getPlayer(gameId);
   if (!player) return res.status(404).json({ error: 'Conta não encontrada.' });
-  const reason = blockReason(p, player);
+  const reason = blockReason(p, player, gameId);
   if (reason) return res.status(409).json({ error: reason });
   const device = devOf(req);
   if (isBlocked(gameId, email, device)) return res.status(403).json({ error: 'Não foi possível concluir esta compra. Fale com o suporte.' });

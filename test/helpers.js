@@ -70,7 +70,7 @@ globalThis.fetch = async (url, opts) => {
     return new Response(JSON.stringify({
       success: true,
       data: { nickname: 'jogador_teste', wildfireLevel: 0,
-        arsenalPass: { tickets: 0, maxTickets: 5 },
+        arsenalPass: { tickets: Number(/\/33300(\d)$/.exec(u)?.[1] || 0), maxTickets: 5 }, // 33300N: conta com N tickets
         battlePass: { gold: u.includes('/555555'), level: u.includes('/444096') ? 96 : 0, totalLevels: 50 } }, // 444096: conta no nível 96
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }

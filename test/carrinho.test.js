@@ -47,11 +47,11 @@ test('regras do carrinho: até 5 itens; Gold, Wildfire e ticket do Arsenal não 
     assert.equal(r.status, st, JSON.stringify(itens));
     assert.match((await r.json()).error, msg);
   }
-  // conta no nível 96: 1 nível passa; 1 + 5 = 6 níveis não cabem (96 + 6 > 100)
+  // conta no nível 96: 1 nível passa; depois dele (Pix em aberto conta) sobram 3, e 1 + 5 não cabem
   assert.equal((await carrinho(['bp1', 'c1000'], '444096')).status, 200);
   const r = await carrinho(['bp1', 'bp5'], '444096');
   assert.equal(r.status, 409);
-  assert.match((await r.json()).error, /níveis suficientes/);
+  assert.match((await r.json()).error, /mais 3 nível\(is\) do passe/);
   // conta com Gold: o item bloqueado aparece com o nome
   const g = await carrinho(['c1000', 'gold'], '555555');
   assert.equal(g.status, 409);

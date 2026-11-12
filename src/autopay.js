@@ -6,7 +6,7 @@ import { userConfig, checkInvoice, payInvoice } from '../tg-user.js';
 import { tgApi, orderDest } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js.
-export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping }) {
+export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping, getPlayer, ticketNum, BP_NIVEIS }) {
 // ---------- Conferência da fatura no bot do CounterFlame (conta separada; NÃO paga) ----------
 // Compara com o pedido: valor em Stars (XTR) e nick da conta do ID. Nome do produto é só informativo
 // (o bot escreve "1 000 coins", a loja "1.000 Coins").
@@ -143,6 +143,21 @@ async function conferir(id, fromPaid = false, attempt = 1) {
     if (r.currency !== 'XTR') erros.push(`moeda ${r.currency}`);
     if (r.stars !== esperado) erros.push(`bot cobra ${r.stars}★, esperado ${esperado}★`);
     if (!sameNick(r.account, o.nickname)) erros.push(`conta no bot "${r.account}", pedido "${o.nickname}"`);
+    // Arsenal Pass: na hora de pagar, o ticket do pedido ainda tem que ser o próximo da conta (pode ter comprado no jogo nesse meio-tempo)
+    const prod = PRODUCTS[o.product];
+    // níveis do passe: o nível atual + este pedido não pode passar do máximo
+    if (prod?.niveis && prod.tipo !== 'arsenal') {
+      const lv = (await getPlayer(o.game_id))?.battlePass?.level;
+      if (!Number.isInteger(lv)) erros.push('não deu para ler o nível do passe da conta');
+      else if (lv + prod.niveis > BP_NIVEIS) erros.push(`conta no nível ${lv}: +${prod.niveis} passa de ${BP_NIVEIS}`);
+    }
+    if (prod?.tipo === 'arsenal') {
+      const n = ticketNum({ code, nome: o.prod_nome || prod.nome });
+      const ap = (await getPlayer(o.game_id))?.arsenalPass;
+      if (!ap || !Number.isInteger(ap.tickets)) erros.push('não deu para ler o Arsenal Pass da conta');
+      else if (ap.tickets >= ap.maxTickets) erros.push(`conta já tem os ${ap.maxTickets} tickets`);
+      else if (n !== ap.tickets + 1) erros.push(`conta tem ${ap.tickets} ticket(s): o próximo é o ${ap.tickets + 1}, pedido é o ${n ?? '?'}`);
+    }
     ck = { status: erros.length ? 'diverge' : 'ok', motivo: erros.join('; '), stars: r.stars, account: r.account,
       produto: r.produto || r.desc, at: Date.now() };
   } catch (e) {

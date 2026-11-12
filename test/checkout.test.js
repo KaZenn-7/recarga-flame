@@ -149,7 +149,7 @@ test('player devolve bloqueios por produto (conta com Gold não pode comprar Gol
 test('níveis do passe: limite é 100 (não o totalLevels 50 da API)', async () => {
   const r = await (await fetch(base + '/api/player/444096', { headers: freshIP() })).json(); // nível 96
   assert.equal(r.blocked.bp1, undefined); // 96 + 1 = 97
-  assert.match(r.blocked.bp5, /níveis suficientes/); // 96 + 5 = 101
+  assert.match(r.blocked.bp5, /mais 4 nível\(is\)/); // 96 + 5 = 101
   const ok = await (await fetch(base + '/api/player/749125', { headers: freshIP() })).json(); // nível 0
   assert.equal(ok.blocked.bp5, undefined);
 });
