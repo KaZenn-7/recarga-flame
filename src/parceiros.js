@@ -344,14 +344,46 @@ function fechamentoMsg() {
     if (s >= PAYOUT_MIN) pagar.push([c, s]); else if (s > 0) acumula.push([c, s]); else if (s < 0) credito.push([c, -s]);
   }
   if (!pagar.length && !acumula.length && !credito.length) return null;
-  const L = (a) => a.map(([c, s]) => `• ${c}${ctx.cupons[c]?.parceiro_nome ? ` (${ctx.cupons[c].parceiro_nome})` : ''}: ${brlTxt(s)}`).join('\n');
+  const falta = (c) => { const f = faltaDados(ctx.cupons[c]); return f.length ? ` — ⚠️ sem ${f.join(' e sem ')}` : ''; };
+  const L = (a, aviso) => a.map(([c, s]) => `• ${c}${ctx.cupons[c]?.parceiro_nome ? ` (${ctx.cupons[c].parceiro_nome})` : ''}: ${brlTxt(s)}${aviso ? falta(c) : ''}`).join('\n');
   return [
     `💸 Comissões dos parceiros — fechamento de ${nomeMesBR(prevMes(ctx.cur))}`,
-    pagar.length ? `Pagar hoje por Pix (total ${brlTxt(pagar.reduce((a, [, s]) => a + s, 0))}):\n${L(pagar)}` : '✅ Nenhum parceiro atingiu o mínimo para pagamento.',
-    acumula.length ? `Abaixo do mínimo de ${brlTxt(PAYOUT_MIN)} (acumula para o próximo mês):\n${L(acumula)}` : null,
+    pagar.length ? `Pagar hoje por Pix (total ${brlTxt(pagar.reduce((a, [, s]) => a + s, 0))}):\n${L(pagar, true)}` : '✅ Nenhum parceiro atingiu o mínimo para pagamento.',
+    acumula.length ? `Abaixo do mínimo de ${brlTxt(PAYOUT_MIN)} (acumula para o próximo mês):\n${L(acumula, true)}` : null,
     credito.length ? `Crédito (pago a mais; abate dos próximos):\n${L(credito)}` : null,
     pagar.length ? 'Depois de pagar, registre cada Pix no painel → Cupons → Comissões → Registrar pagamento.' : null,
   ].filter(Boolean).join('\n\n');
+}
+// dados que faltam para pagar (chave Pix) e mandar o extrato (e-mail)
+const faltaDados = (c) => (c ? [!c.parceiro_pix && 'chave Pix', !c.parceiro_email && 'e-mail'].filter(Boolean) : []);
+// Lembrete antes do fechamento: a partir do dia LEMBRETE_DIA às 9h, 1x por mês, lista no tópico Parcerias quem tem
+// comissão (a receber dos meses fechados + o mês em curso) e ainda está sem chave Pix ou e-mail. Dá tempo de pedir
+// os dados ao parceiro antes do 1º dia útil. Ninguém faltando → não manda nada.
+const LEMBRETE_DIA = 25;
+function lembreteDadosMsg() {
+  const ctx = makePartnerCtx(), linhas = [];
+  for (const c of Object.values(ctx.cupons).sort((a, b) => a.code.localeCompare(b.code))) {
+    const f = faltaDados(c);
+    if (!f.length) continue;
+    const valor = Math.max(0, saldoFechado(ctx, c.code)) + mesParceiro(ctx, c, ctx.cur).com;
+    if (valor <= 0) continue;
+    linhas.push(`• ${c.code}${c.parceiro_nome ? ` (${c.parceiro_nome})` : ''}: falta ${f.join(' e ')} — ${brlTxt(valor)} a receber até agora`);
+  }
+  if (!linhas.length) return null;
+  const [y, m] = ctx.cur.split('-').map(Number), prox = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+  return [`📝 Dados de parceiros para o fechamento de ${nomeMesBR(ctx.cur)} (pagamento em ${String(primeiroDiaUtil(prox)).padStart(2, '0')}/${prox.slice(5)}):`,
+    linhas.join('\n'),
+    'Sem chave Pix não dá para pagar; sem e-mail o parceiro não recebe o extrato. Peça ao parceiro e cadastre no painel → Cupons → Editar → Dados do parceiro.',
+  ].join('\n\n');
+}
+function lembreteDadosTick(now = Date.now()) {
+  const loc = new Date(now - 3 * 3600_000), mes = loc.toISOString().slice(0, 7);
+  if (getSetting('lembrete_dados_mes', '') === mes) return false;
+  if (loc.getUTCDate() < LEMBRETE_DIA || (loc.getUTCDate() === LEMBRETE_DIA && loc.getUTCHours() < FECH_HOUR)) return false;
+  setSetting('lembrete_dados_mes', mes);
+  const msg = lembreteDadosMsg();
+  if (msg) tgSend(msg, 'parcerias');
+  return !!msg;
 }
 // 1x por mês (guarda o mês enviado; sobrevive a reinício). Sem nada a pagar/acumular, não manda nada.
 function fechamentoTick(now = Date.now()) {
@@ -532,5 +564,5 @@ app.delete('/api/admin/payouts/:id', admin, (req, res) => {
 });
 
 
-return { makePartnerCtx, freezeClosedMonths, freezeTick, avisoFaixa, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, reservaAtual };
+return { lembreteDadosMsg, lembreteDadosTick, makePartnerCtx, freezeClosedMonths, freezeTick, avisoFaixa, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, reservaAtual };
 }

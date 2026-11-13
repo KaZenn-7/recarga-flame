@@ -38,7 +38,8 @@ Status de cada sugestão: **✅ feito** (com o commit) ou **⬜ pendente**.
 
 ## 6. Parcerias, cupons e comissões
 **Bem:** histórico de alterações, extrato mensal, fechamento automático no 1º dia útil.
-- ⬜ 🟡 Dados pendentes: NEXUS sem Pix e e-mail; AQUILA e IANSO2 sem dados de parceiro; origem do RAMOS5 não confirmada. **AQUILA é o cupom que mais vende (25 entregas)** — resolver antes do fechamento de 01/12.
+- ✅ 🟡 Dados pendentes dos parceiros. Situação em 13/11: AQUILA (cupom que mais vende) tem nome e e-mail, **falta só a chave Pix**; IANSO2 sem dados e sem vendas; NEXUS e RAMOS5 não existem mais.
+  Feito: lembrete no dia 25 às 9h (1x/mês, tópico Parcerias) com quem tem comissão e está sem Pix/e-mail; fechamento marca "⚠️ sem chave Pix/e-mail" (`lembreteDadosTick` em `src/parceiros.js`). ⬜ Cadastrar a chave Pix da AQUILA antes de 01/12.
 - ⬜ ⚪ Sem índice em `orders.coupon` / `events.coupon`. Irrelevante hoje (76 pedidos, 1.205 eventos).
 
 ## 7. E-mail
@@ -94,5 +95,5 @@ Funil dos últimos 7 dias (aparelhos únicos):
 1. ✅ Tempo limite e vigia na fila de pagamento do Telegram.
 2. ✅ Registro de erros não tratados.
 3. ✅ Perda entre escolher o produto e gerar o Pix (e-mail).
-4. ⬜ Dados de pagamento da AQUILA e dos outros parceiros antes de 01/12.
+4. ✅ Lembrete automático de dados de parceiros (⬜ falta a chave Pix da AQUILA).
 5. ⬜ `/api/health` completa, cache das imagens, índices + WAL, teste de restauração do backup.

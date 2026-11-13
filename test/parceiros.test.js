@@ -456,3 +456,32 @@ test('reservar para comissões: devido de meses fechados + estimado do mês; cr�
   assert.ok(wd >= 1 && wd <= 5);
   assert.ok(r.reserva.proximo >= new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10));
 });
+
+test('dados de parceiro faltando: lembrete no dia 25 (1x por mês) e aviso no fechamento', async () => {
+  assert.equal((await adm('POST', '/api/admin/coupons', { code: 'SEMPIX', desconto_pct: 5, comissao_pct: 20, ativo: true, parceiro_nome: 'Sem Pix', parceiro_email: 'sp@ex.com' })).status, 200);
+  db.prepare("UPDATE coupons SET plano='fixo' WHERE code='SEMPIX'").run();
+  mock.approve = true;
+  const { token } = await (await postJ('/api/orders', { product: 'c10000', gameId: '350001', email: 'cli@x.com', coupon: 'SEMPIX' })).json();
+  await pagar(token);
+  try {
+    assert.match(SRV.lembreteDadosMsg(), /• SEMPIX \(Sem Pix\): falta chave Pix — R\$\s?[\d.,]+ a receber até agora/);
+    assert.match(SRV.lembreteDadosMsg(), /painel → Cupons → Editar → Dados do parceiro/);
+    const mes = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7);
+    const em = (dd, hh) => Date.parse(`${mes}-${dd}T${hh}:00:00Z`) + 3 * 3600_000;
+    db.prepare("DELETE FROM settings WHERE k='lembrete_dados_mes'").run();
+    assert.equal(SRV.lembreteDadosTick(em('24', '10')), false); // antes do dia 25
+    assert.equal(SRV.lembreteDadosTick(em('25', '08')), false); // antes das 9h
+    const n = tgSent.length;
+    assert.equal(SRV.lembreteDadosTick(em('25', '10')), true);
+    await ateQue(() => tgSent.length > n);
+    assert.match(tgSent.at(-1).text, /📝 Dados de parceiros para o fechamento/);
+    assert.equal(SRV.lembreteDadosTick(em('26', '10')), false); // 1x por mês
+    // fechamento: o parceiro sem Pix aparece com aviso (venda vira mês fechado)
+    db.prepare("UPDATE orders SET paid_at=datetime(paid_at, '-40 days') WHERE coupon='SEMPIX'").run();
+    assert.match(SRV.fechamentoMsg(), /SEMPIX \(Sem Pix\): R\$\s?[\d.,]+ — ⚠️ sem chave Pix/);
+    // dados completos: some do lembrete
+    db.prepare("UPDATE coupons SET parceiro_pix='chave-teste' WHERE code='SEMPIX'").run();
+    assert.doesNotMatch(SRV.lembreteDadosMsg() || '', /SEMPIX/);
+    assert.doesNotMatch(SRV.fechamentoMsg(), /SEMPIX[^\n]*⚠️/);
+  } finally { db.exec("DELETE FROM orders WHERE coupon='SEMPIX'"); db.exec("DELETE FROM coupons WHERE code='SEMPIX'"); db.prepare("DELETE FROM settings WHERE k='lembrete_dados_mes'").run(); }
+});
