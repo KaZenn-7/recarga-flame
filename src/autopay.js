@@ -3,10 +3,10 @@
 // initAutopay no mesmo ponto em que este trecho ficava. Única mudança no código: `stopping` virou função
 // (o desligamento seguro muda esse valor no server.js e aqui ele é lido na hora).
 import { userConfig, checkInvoice, payInvoice } from '../tg-user.js';
-import { tgApi, orderDest } from './telegram.js';
+import { tgApi, orderDest, tgSend } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js.
-export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping, getPlayer, ticketNum, BP_NIVEIS }) {
+export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping, getPlayer, ticketNum, BP_NIVEIS, receiptOf }) {
 // ---------- Conferência da fatura no bot do CounterFlame (conta separada; NÃO paga) ----------
 // Compara com o pedido: valor em Stars (XTR) e nick da conta do ID. Nome do produto é só informativo
 // (o bot escreve "1 000 coins", a loja "1.000 Coins").
@@ -79,7 +79,8 @@ async function aprovarCarrinho(cid) {
   }
   return { ok: pagos.length > 0, pagos, falhas };
 }
-async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toque' } = {}) {
+// extra: campos a mais no autopay_info (2ª tentativa: retry/anterior/erro1); nota: linha a mais no aviso de entregue
+async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toque', extra = {}, nota = '' } = {}) {
   let o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o) return { ok: false, why: 'pedido não encontrado' };
   if (aprovar) {
@@ -94,27 +95,98 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
   if (!lock.changes) return { ok: false, why: 'já pago/pagando' };
   let invMsgId = null; // nº da mensagem da fatura paga: identifica o pagamento de forma única
   const save = (st, info) => db.prepare('UPDATE orders SET autopay=?, autopay_info=?, autopay_at=? WHERE id=?')
-    .run(st, JSON.stringify({ ...info, ...(invMsgId ? { invMsgId } : {}) }), Date.now(), id);
+    .run(st, JSON.stringify({ ...extra, ...info, ...(invMsgId ? { invMsgId } : {}) }), Date.now(), id);
   const code = o.prod_code || PRODUCTS[o.product]?.code;
   try {
     const r = await invoicePayer({ startParam: `s_${code}_${o.game_id}`, expectStars: starsOf(o), expectAccount: o.nickname,
-      onInvoice: (m) => { invMsgId = m; db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ invMsgId: m }), id); } }, env);
+      onInvoice: (m) => { invMsgId = m; db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ ...extra, invMsgId: m }), id); } }, env);
     save('sent', r);
-    markDelivered(id, via, [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`]);
+    markDelivered(id, via, [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`, nota]);
+    if (extra.anterior) agendar(() => conferirAtraso(id, extra.anterior), ATRASO_MS);
     syncStarsReal(true);
     return { ok: true, ...r };
   } catch (e) {
     const msg = String(e?.errorMessage || e?.message || e).slice(0, 160);
     if (e?.safe) { save('erro', { erro: msg }); return { ok: false, why: 'não pagou: ' + msg }; }
     save('incerto', { erro: msg });
-    tgIncerto(id, msg);
+    tgIncerto(id, msg, extra.retry ? 'confere' : 'tenta');
+    agendar(() => resolverIncerto(id), INCERTO_MS);
     return { ok: false, why: 'pagamento incerto: ' + msg, incerto: true };
   }
 }
-// pagamento que estava em andamento quando a loja caiu: nunca repete, vira incerto (e avisa, depois de subir)
-for (const o of db.prepare("SELECT id FROM orders WHERE autopay='paying'").all()) {
-  db.prepare("UPDATE orders SET autopay='incerto', autopay_info=? WHERE id=?").run(JSON.stringify({ erro: 'loja reiniciou durante o pagamento' }), o.id);
-  const t = setTimeout(() => tgIncerto(o.id, 'loja reiniciou durante o pagamento'), 3000); t.unref?.();
+
+// ---- Pagamento incerto resolvido sozinho (decisão do operador, 12/11/2026, pedido #74: FORM_SUBMIT_DUPLICATE sem cobrança) ----
+// 2 min depois do erro, olha o recibo da fatura EXATA que a loja tentou pagar (só leitura):
+//   recibo → foi cobrado 1 vez: marca entregue;
+//   sem recibo, 1ª tentativa → paga UMA vez de novo com fatura NOVA (nunca a mesma) e, 10 min depois, confere se a
+//     fatura antiga foi cobrada com atraso (aí avisa: cobrança dupla);
+//   sem recibo, já era a 2ª → libera o pedido para o operador pagar/entregar (aviso com os botões).
+// Não consegue ler o recibo → fica incerto, como antes (operador usa "verificar cobrança").
+// nos testes os timers ficam longos (não disparam): os testes chamam resolverIncerto/conferirAtraso direto
+const INCERTO_MS = env.NODE_ENV === 'test' ? 3_600_000 : 120_000;
+const ATRASO_MS = env.NODE_ENV === 'test' ? 3_600_000 : 600_000;
+const infoOf = (o) => { try { return o?.autopay_info ? JSON.parse(o.autopay_info) : {}; } catch { return {}; } };
+function agendar(fn, ms) {
+  const t = setTimeout(() => Promise.resolve().then(fn).catch((e) => console.error('autopay (incerto):', e?.message || e)), ms);
+  t.unref?.();
+}
+async function resolverIncerto(id) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (!o || o.status !== 'paid' || o.autopay !== 'incerto') return; // já resolvido (painel, entrega manual…)
+  const info = infoOf(o);
+  const head = `#${id} · ${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}`;
+  if (!info.invMsgId) return; // sem fatura registrada: fica com o operador
+  let r;
+  try { r = await receiptOf(info.invMsgId, env); } catch (e) {
+    await tgFalha(id, `🔍 Não consegui conferir o recibo sozinho (${String(e?.message || e).slice(0, 80)}) — use "verificar cobrança" no painel.`); return;
+  }
+  const cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
+  if (r.paid) {
+    db.prepare("UPDATE orders SET autopay='sent', autopay_info=? WHERE id=? AND autopay='incerto'")
+      .run(JSON.stringify({ ...info, stars: starsOf(o), resolvido: 'recibo', recibo: r.receiptMsgId || null, em: Date.now() }), id);
+    markDelivered(id, 'auto', [`🔍 Recibo conferido sozinho: a fatura foi cobrada 1 vez (o Telegram tinha respondido "${info.erro}").`]);
+    syncStarsReal(true);
+    return;
+  }
+  // sem recibo: nada foi cobrado nessa fatura
+  db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=? AND autopay='incerto'")
+    .run(JSON.stringify({ ...info, erro: `verificado sozinho: sem cobrança (${info.erro})` }), id);
+  if (info.retry) {
+    setMotivo(id, 'pagamento incerto 2x (sem cobrança)');
+    await tgFalha(id, `🔍 Recibo conferido às ${hhmm()}: a 2ª tentativa também não cobrou (${info.erro}). Nada foi cobrado — pague ou entregue manualmente.`,
+      `🖐 Entrega MANUAL necessária ${head}: 2 tentativas sem cobrança — detalhes no aviso original.`);
+    return;
+  }
+  const r2 = await autopay(id, { via: 'auto', extra: { retry: 1, anterior: info.invMsgId, erro1: info.erro },
+    nota: `🔁 1ª tentativa: "${info.erro}" sem cobrança (recibo conferido); paga de novo com fatura nova.` });
+  if (!r2.ok && !r2.incerto) {
+    setMotivo(id, 'pagamento incerto (sem cobrança); 2ª tentativa: ' + r2.why);
+    await tgFalha(id, `🔍 Recibo conferido: a 1ª tentativa não cobrou. 2ª tentativa não feita: ${r2.why} — pague ou entregue manualmente.`,
+      `🖐 Entrega MANUAL necessária ${head}: ${r2.why} — detalhes no aviso original.`);
+  }
+}
+// 2ª tentativa paga: a fatura da 1ª foi cobrada com atraso? (seria cobrança dupla — só avisa, o operador decide)
+async function conferirAtraso(id, msgId) {
+  const r = await receiptOf(msgId, env);
+  if (!r.paid) return;
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ ...infoOf(o), cobrancaDupla: msgId }), id);
+  tgSend(`⚠️ Cobrança DUPLA no pedido #${id} (${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}): a fatura da 1ª tentativa, `
+    + `que estava sem recibo, foi cobrada com atraso. A conta pagou ${starsOf(o)}★ a mais no bot do CounterFlame.`, 'alertas');
+}
+const hhmm = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+// pagamento que estava em andamento quando a loja caiu: nunca repete na hora, vira incerto (e avisa, depois de subir);
+// guarda o nº da fatura (se já tinha) para a conferência automática do recibo
+for (const o of db.prepare("SELECT * FROM orders WHERE autopay='paying'").all()) {
+  db.prepare("UPDATE orders SET autopay='incerto', autopay_info=?, autopay_at=? WHERE id=?")
+    .run(JSON.stringify({ ...infoOf(o), erro: 'loja reiniciou durante o pagamento' }), Date.now(), o.id);
+  const t = setTimeout(() => tgIncerto(o.id, 'loja reiniciou durante o pagamento', infoOf(o).retry ? 'confere' : 'tenta'), 3000); t.unref?.();
+}
+// incertos recentes (a loja reiniciou antes da conferência): agenda de novo, no tempo que faltava
+for (const o of db.prepare("SELECT * FROM orders WHERE autopay='incerto' AND status='paid' AND autopay_at > ?").all(Date.now() - 3600_000)) {
+  agendar(() => resolverIncerto(o.id), Math.max(5000, o.autopay_at + INCERTO_MS - Date.now()));
 }
 
 function chkOf(o) { try { return o?.chk ? JSON.parse(o.chk) : null; } catch { return null; } }
@@ -228,5 +300,5 @@ async function entregaAuto(id, attempt = 1) {
   }
 }
 
-return { chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
+return { resolverIncerto, conferirAtraso, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
 }
