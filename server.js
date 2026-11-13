@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
@@ -132,13 +133,31 @@ const validId = (id) => /^\d{1,12}$/.test(id);
 const limit = (max) => rateLimit({ windowMs: 60_000, limit: max, standardHeaders: true, legacyHeaders: false });
 const mpHeaders = { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` };
 
+// Conta no CounterFlame. 404 e 400 (ID que o jogo não aceita) = conta não encontrada (null), sem erro no log.
+// Outras falhas (429 limite, 5xx, sem resposta) viram erro "cf": o cliente vê "o jogo não respondeu" (503), não 500.
+const cfErro = (msg) => Object.assign(new Error(msg), { cf: true });
 async function getPlayer(id) {
-  const r = await fetch(`${CF_BASE}/api/users/${id}`, { signal: AbortSignal.timeout(8000) });
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`CounterFlame respondeu ${r.status}`);
-  const j = await r.json();
-  return j.success && j.data?.nickname ? j.data : null;
+  let r;
+  try { r = await fetch(`${CF_BASE}/api/users/${id}`, { signal: AbortSignal.timeout(8000) }); } catch (e) { throw cfErro(`CounterFlame sem resposta (${e.name})`); }
+  if (r.status === 404 || r.status === 400) return null;
+  if (!r.ok) throw cfErro(`CounterFlame respondeu ${r.status}`);
+  const j = await r.json().catch(() => null);
+  return j?.success && j.data?.nickname ? j.data : null;
 }
+// Vitrine (/api/player): a mesma conta consultada de novo em 30 s usa a resposta guardada (busca do ID, atualização
+// da tela, volta ao catálogo). Menos carga no CounterFlame (que já respondeu 429). Pedido, carrinho e a conferência
+// antes de pagar continuam consultando na hora (getPlayer direto).
+let PLAYER_TTL = env.NODE_ENV === 'test' ? 0 : 30_000;
+const playerCache = new Map();
+async function getPlayerVitrine(id) {
+  const c = playerCache.get(id);
+  if (c && Date.now() - c.at < PLAYER_TTL) return c.p;
+  const p = await getPlayer(id);
+  if (playerCache.size > 2000) playerCache.clear();
+  playerCache.set(id, { at: Date.now(), p });
+  return p;
+}
+const _setPlayerTtl = (ms) => { PLAYER_TTL = ms; playerCache.clear(); };
 
 // Vitrine: categorias nesta ordem e, dentro de cada uma, do mais barato ao mais caro (produto novo entra no lugar certo sozinho);
 // em Battle Pass, o Gold Pass vem antes dos níveis (pedido do operador)
@@ -373,7 +392,7 @@ app.get('/api/coupon/:code', limit(20), (req, res) => {
 
 app.get('/api/player/:id', limit(15), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
-  const player = await getPlayer(req.params.id);
+  const player = await getPlayerVitrine(req.params.id);
   if (!player) return res.status(404).json({ error: 'Conta não encontrada.' });
   // bloqueios por produto (Gold já comprado etc.) para o catálogo marcar como indisponível.
   // Só informativo: o POST /api/orders continua validando.
@@ -930,6 +949,11 @@ app.use((err, req, res, next) => {
     console.error(`Requisição inválida ${err.status}: ${req.method} ${String(req.originalUrl).slice(0, 120)} (${err.message})`);
     return res.status(err.status).json({ error: 'Requisição inválida.' });
   }
+  // CounterFlame fora do ar / limite: uma linha no log, mensagem clara para o cliente
+  if (err?.cf) {
+    console.error(`${err.message}: ${req.method} ${String(req.originalUrl).slice(0, 80)}`);
+    return res.status(503).json({ error: 'O jogo não respondeu agora. Tente de novo em instantes.' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Erro interno. Tente novamente.' });
 });
@@ -978,6 +1002,28 @@ app.get('/api/health', (req, res, next) => {
   res.status(falhas.length ? 503 : 200).json({ ok: !falhas.length, falhas });
 });
 
+// ---------- Registro do que foi publicado ----------
+// Várias sessões fazem commits nesta pasta e um restart publica tudo o que está no código. Ao subir, compara o commit
+// atual com o último publicado e avisa no tópico Sistema a lista do que entrou (e se há alterações não commitadas).
+// Restart sem código novo não avisa.
+function registrarDeploy(git = (...a) => execFileSync('git', a, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim()) {
+  try {
+    const head = git('rev-parse', '--short', 'HEAD');
+    const ant = getSetting('deploy_hash', '');
+    const sujo = git('status', '--porcelain', '--untracked-files=no').split('\n').filter(Boolean).map((l) => l.slice(3));
+    if (ant === head && !sujo.length) return null;
+    let novos;
+    try { novos = ant ? git('log', '--format=%h %s', `${ant}..HEAD`).split('\n').filter(Boolean) : []; } catch { novos = []; }
+    if (!novos.length && ant !== head) novos = [git('log', '-1', '--format=%h %s')];
+    setSetting('deploy_hash', head);
+    const msg = [`🚀 Loja publicada: ${head}${ant && ant !== head ? ` (antes: ${ant})` : ''}`,
+      novos.length ? novos.slice(0, 15).map((l) => '• ' + l).join('\n') + (novos.length > 15 ? `\n… e mais ${novos.length - 15}` : '') : null,
+      sujo.length ? `⚠️ Com alterações NÃO commitadas: ${sujo.slice(0, 10).join(', ')}` : null].filter(Boolean).join('\n');
+    tgSend(msg, 'sistema');
+    return msg;
+  } catch (e) { console.error('registro de deploy:', e.message); return null; }
+}
+
 // ---------- Erros não tratados ----------
 // Promise rejeitada sem catch: no Node 24 derrubaria o processo (e um pagamento em andamento viraria "incerto").
 // Registra, avisa no tópico Sistema (no máximo 1 aviso a cada 10 min) e segue no ar.
@@ -997,7 +1043,7 @@ function erroNaoTratado(tipo, e, { agora = Date.now(), forcar = false } = {}) {
 if (process.env.NODE_ENV !== 'test') {
   // Só aceita conexões da própria máquina (nginx). Ninguém fala com o Node direto,
   // mesmo se o firewall mudar — assim não dá pra forjar X-Forwarded-For e burlar rate limits.
-  const server = app.listen(env.PORT || 3000, '127.0.0.1', () => console.log('Loja no ar'));
+  const server = app.listen(env.PORT || 3000, '127.0.0.1', () => { console.log('Loja no ar'); registrarDeploy(); });
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => gracefulStop({ server }));
   process.on('unhandledRejection', (e) => erroNaoTratado('unhandledRejection', e));
   process.on('uncaughtException', (e) => { erroNaoTratado('uncaughtException', e, { forcar: true }); setTimeout(() => gracefulStop({ server, exit: (c) => process.exit(c || 1) }), 1500); });
@@ -1010,4 +1056,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

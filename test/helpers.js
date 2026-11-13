@@ -32,6 +32,7 @@ export const mock = {
   tgFailChat: null, // chat_id em que o Telegram falso recusa tudo
   refunds: [],     // reembolsos pedidos ao MP ({ url, body, key })
 };
+export const cfCalls = [];              // consultas de conta ao CounterFlame
 export const tgSent = [];               // mensagens enviadas ao Telegram
 export const mailSent = [];             // e-mails enviados ao Resend
 export const tgCalls = [];               // todas as chamadas à API do bot ({ method, body })
@@ -66,7 +67,10 @@ globalThis.fetch = async (url, opts) => {
   }
   // player do CounterFlame
   if (u.startsWith('https://counterflame.test/api/users/')) {
+    cfCalls.push(u);
     if (u.includes('/999999')) return new Response('{}', { status: 404 });
+    if (u.endsWith('/400400')) return new Response('{}', { status: 400 }); // ID que o jogo não aceita
+    if (u.endsWith('/429429')) return new Response('{}', { status: 429 }); // limite do CounterFlame
     return new Response(JSON.stringify({
       success: true,
       data: { nickname: 'jogador_teste', wildfireLevel: 0,

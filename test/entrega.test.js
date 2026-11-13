@@ -640,3 +640,16 @@ test('saúde: /api/health só pela própria máquina; aponta pagamento preso e b
     assert.ok(!saude().some((f) => /botões/.test(f)));
   } finally { Object.assign(POLL, antes); }
 });
+
+test('registro de deploy: avisa no Sistema os commits novos e alterações não commitadas; restart igual não avisa', async () => {
+  const { registrarDeploy } = SRV;
+  db.prepare("DELETE FROM settings WHERE k='deploy_hash'").run();
+  const fake = (head, sujo = '', log = '') => (...a) => (a[0] === 'rev-parse' ? head : a[0] === 'status' ? sujo : a.includes('-1') ? `${head} Último` : log);
+  assert.match(registrarDeploy(fake('aaa111')), /🚀 Loja publicada: aaa111\n• aaa111 Último/);
+  assert.equal(registrarDeploy(fake('aaa111')), null); // restart sem código novo
+  const m = registrarDeploy(fake('ccc333', ' M server.js\n', 'ccc333 Outra sessão\nbbb222 Minha mudança'));
+  assert.match(m, /ccc333 \(antes: aaa111\)\n• ccc333 Outra sessão\n• bbb222 Minha mudança/);
+  assert.match(m, /⚠️ Com alterações NÃO commitadas: server\.js/);
+  await ateQue(() => tgSent.some((x) => /Loja publicada: ccc333/.test(x.text)));
+  db.prepare("DELETE FROM settings WHERE k='deploy_hash'").run();
+});

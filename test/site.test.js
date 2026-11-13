@@ -134,3 +134,34 @@ test('imagens: navegador guarda por 1 dia; página e API continuam sem cache lon
   const pg = await fetch(base + '/', { headers: freshIP() });
   assert.doesNotMatch(pg.headers.get('cache-control') || '', /max-age=86400/);
 });
+
+test('CounterFlame: 400 = conta não encontrada (sem erro no log); 429 = "o jogo não respondeu" (503, uma linha)', async () => {
+  const { cfCalls } = await import('./helpers.js');
+  const erros = [], orig = console.error; console.error = (...a) => erros.push(a.map(String).join(' '));
+  try {
+    const a = await fetch(base + '/api/player/400400', { headers: freshIP() });
+    assert.equal(a.status, 404); assert.equal((await a.json()).error, 'Conta não encontrada.');
+    const b = await fetch(base + '/api/player/429429', { headers: freshIP() });
+    assert.equal(b.status, 503); assert.match((await b.json()).error, /O jogo não respondeu agora/);
+    const c = await postJ('/api/orders', { product: 'c1000', gameId: '429429', email: 'cf@x.com' });
+    assert.equal(c.status, 503);
+  } finally { console.error = orig; }
+  assert.ok(!erros.some((e) => /respondeu 400/.test(e)));
+  assert.ok(erros.every((e) => !/\n\s+at /.test(e)), 'sem stack no log'); // 429: uma linha só
+  assert.ok(cfCalls.length > 0);
+});
+
+test('vitrine: mesma conta em 30 s usa a consulta guardada; pedido consulta o jogo na hora', async () => {
+  const { cfCalls } = await import('./helpers.js');
+  const { SRV } = await import('./helpers.js');
+  const { _setPlayerTtl } = SRV;
+  _setPlayerTtl(30_000);
+  try {
+    const n = cfCalls.length;
+    for (let i = 0; i < 3; i++) assert.equal((await fetch(base + '/api/player/360001', { headers: freshIP() })).status, 200);
+    assert.equal(cfCalls.length - n, 1);
+    mock.approve = true;
+    await postJ('/api/orders', { product: 'c1000', gameId: '360001', email: 'cache@x.com' });
+    assert.equal(cfCalls.length - n, 2);
+  } finally { _setPlayerTtl(0); }
+});

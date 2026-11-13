@@ -13,7 +13,7 @@ Status de cada sugestão: **✅ feito** (com o commit) ou **⬜ pendente**.
 ## 1. Pagamento (Pix / Mercado Pago)
 **Bem:** preço sempre calculado no servidor; webhook com assinatura HMAC; pagamento conferido pela API do MP (não pelo corpo do webhook); confirmação dupla (consulta + webhook) sem aviso duplicado; tempo limite de 15 s no Pix e 8 s na sincronização.
 - ⬜ ⚪ O webhook não confere a idade do `ts` da assinatura. Risco baixo (só dispara uma consulta ao MP); recusar avisos com mais de 10 min fecha a porta para repetição.
-- ⬜ 🟡 Sem `MP_WEBHOOK_SECRET` no `.env`, o HMAC é calculado com chave indefinida e a falha aparece só como 401 silencioso. A loja deveria se recusar a subir sem essa chave.
+- ✅ 🟡 ~~Sem `MP_WEBHOOK_SECRET` a loja subiria~~ — falso positivo: `server.js` já recusa subir sem `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `ADMIN_USER`, `ADMIN_PASS` e `PUBLIC_URL`.
 
 ## 2. Entrega automática (Stars / conta do Telegram)
 **Bem:** um pagamento por vez; trava atômica por pedido; desligamento seguro (espera até 25 s, `kill_timeout` 30 s); "incerto" resolvido sozinho; saldo real lido a cada 5 min.
@@ -24,8 +24,8 @@ Status de cada sugestão: **✅ feito** (com o commit) ou **⬜ pendente**.
 
 ## 3. Carrinho e regras de produto
 **Bem:** limites (Arsenal em sequência, níveis até 100, 10 itens) valem na tela, no servidor e na conferência antes de pagar. 4 carrinhos na última semana.
-- ⬜ 🟡 `getPlayer` (CounterFlame) sem cache: chamado em cada busca de ID, atualização de tela e pedido. Cache de 30–60 s por ID só na vitrine; ao gerar o Pix e antes de pagar continua consultando na hora.
-- ⬜ 🟡 CounterFlame 400 (ID inválido) vira erro 500 com stack no log ("CounterFlame respondeu 400", `server.js` getPlayer). Tratar como "Conta não encontrada" limpa o log de erros.
+- ✅ 🟡 (feito: `getPlayerVitrine`, 30 s só no `/api/player`; logs mostravam também 429 do CounterFlame) `getPlayer` (CounterFlame) sem cache: chamado em cada busca de ID, atualização de tela e pedido. Cache de 30–60 s por ID só na vitrine; ao gerar o Pix e antes de pagar continua consultando na hora.
+- ✅ 🟡 (feito: 400 = conta não encontrada; 429/5xx/sem resposta = 503 "o jogo não respondeu", uma linha no log) CounterFlame 400 (ID inválido) vira erro 500 com stack no log ("CounterFlame respondeu 400", `server.js` getPlayer). Tratar como "Conta não encontrada" limpa o log de erros.
 
 ## 4. Telegram (avisos e botões)
 **Bem:** só o operador usa os botões; mensagens editadas em vez de duplicadas; tópicos; se o grupo falhar, vai no privado.
@@ -44,7 +44,7 @@ Status de cada sugestão: **✅ feito** (com o commit) ou **⬜ pendente**.
 
 ## 7. E-mail
 **Bem:** um e-mail por carrinho; chave do Resend só de envio; DKIM `resend._domainkey`; SPF do Resend no subdomínio `send.`.
-- ⬜ 🟡 DMARC `p=none` e sem `rua`. Adicionar `rua=mailto:...`; após 2–4 semanas de relatórios limpos, `p=quarantine`.
+- ⬜ 🟡 DMARC `p=none` e sem `rua`. DNS no Registro.br (operador). Passos: (1) alias `dmarc@` no ImprovMX → seu e-mail; (2) TXT `_dmarc` = `v=DMARC1; p=none; rua=mailto:dmarc@recargaflame.com.br; adkim=r; aspf=r`; (3) após 2–4 semanas de relatórios limpos, trocar `p=none` por `p=quarantine`.
 - ⬜ ⚪ Sem registro CAA no DNS.
 
 ## 8. Loja (frontend), SEO e desempenho
@@ -76,7 +76,7 @@ Funil dos últimos 7 dias (aparelhos únicos):
 **Bem:** Node só em 127.0.0.1; `trust proxy 1`; certificado até 05/02/2027 com renovação automática; logrotate; PM2 sobe com o sistema; json limit 10 kb; rate limits (/api 120/min, pedidos 5/min, player 15/min).
 - ✅ 🔴 **Erros não tratados.** Não havia `unhandledRejection`/`uncaughtException`; no Node 24 uma promise rejeitada sem `catch` derruba o processo (pagamento em andamento viraria "incerto").
   Feito: `unhandledRejection` registra, avisa no tópico Sistema (no máximo 1 aviso a cada 10 min) e a loja segue no ar; `uncaughtException` registra, avisa e sai pelo desligamento seguro (espera o pagamento em andamento) e o PM2 sobe de novo (`erroNaoTratado` em `server.js`).
-- ⬜ 🟡 Várias sessões fazendo commits na mesma pasta: um restart publica tudo o que estiver no código (já aconteceu com a9b5720). Antes de cada restart, conferir `git log` desde o último deploy e registrar o hash publicado.
+- ✅ 🟡 (feito: `registrarDeploy` — ao subir, avisa no tópico Sistema o commit publicado, os commits novos desde o último deploy e alterações não commitadas) Várias sessões fazendo commits na mesma pasta: um restart publica tudo o que estiver no código (já aconteceu com a9b5720). Antes de cada restart, conferir `git log` desde o último deploy e registrar o hash publicado.
 - ⬜ 🟡 Decisões do operador (pendentes da auditoria anterior): reboot da VPS (67 atualizações), SSH só por chave (`PasswordAuthentication`), `X11Forwarding`, portas em todas as interfaces (bloqueadas pelo UFW).
 - ⬜ ⚪ Sem `max_memory_restart` no PM2. Sem rate limit nem cache no nginx para `/img`.
 - Contexto: VPS no ar há 26 dias, carga 2,4–2,9 (compartilhada), disco 34%, 3,1 GB de RAM livre.
