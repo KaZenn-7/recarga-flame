@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Procura no YouTube canais brasileiros que fazem vídeo de CounterFlame (ou "CS2/CS mobile", como a comunidade chama), para prospecção de parceiros.
-//   node --env-file=.env tools/caca-criadores.mjs [--dias 90] [--sem-telegram]
+// Procura no YouTube e no TikTok canais brasileiros que fazem vídeo de CounterFlame (ou "CS2/CS mobile", como a comunidade chama), para prospecção de parceiros.
+//   node --env-file=.env tools/caca-criadores.mjs [--dias 90] [--sem-telegram] [--sem-tiktok]
+// TikTok: tools/caca-tiktok.mjs (páginas Discover + perfis públicos, só vídeos postados do Brasil).
 // Sem API e sem login: lê a página pública de busca e a página de cada canal (dados em ytInitialData).
 // Poucas requisições, com pausa entre elas (~300 por execução, ~10 min). Se o YouTube mudar a página, o script avisa e para.
 // Guarda o histórico em data/criadores.json e a lista completa em data/criadores.csv (fora do git).
@@ -11,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { buscarTiktok, contarVideos } from './caca-tiktok.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const DATA = path.join(ROOT, 'data');
@@ -202,6 +204,8 @@ async function main() {
   const prev = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { vistos: {} };
   const hoje = new Date().toISOString().slice(0, 10);
   const parceiros = parceirosAtuais();
+  const ehParceiro = (nomes) => nomes.map((x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '')).filter((x) => x.length >= 4)
+    .some((norm) => parceiros.some((p) => norm.includes(p) || p.includes(norm)));
   const canais = [];
   for (const [id, c] of porCanal) {
     const old = prev.vistos[id];
@@ -214,15 +218,24 @@ async function main() {
     try { vj = await videosDoJogo(id); } catch (e) { console.error('vídeos', id, e.message); }
     const contato = ch.desc + ' ' + ch.links.join(' ');
     const outros = ch.links.filter((l) => !/instagram\.com|@/.test(l));
-    const norm = String(ch.nome).toLowerCase().replace(/[^a-z0-9]/g, '');
     canais.push({
       id, nome: ch.nome, url: ch.url, inscritos: ch.inscritos, videos_jogo: vj?.total ?? c.videos, videos_com_nome_cf: vj?.comNome ?? c.cf,
       videos_cf: c.videos, media_views_cf: Math.round(c.views / c.videos),
       ultimo_video_dias: c.dias, fonte: c.cf ? 'counterflame' : 'cs mobile', instagram: insta(contato).join(' '), email: emails(contato).join(' '),
       email_oculto: ch.emailOculto, outros_links: outros.join(' '), links: ch.links, pais: ch.pais, sinal_pt: pt,
-      parceiro: norm.length >= 4 && parceiros.some((p) => norm.includes(p) || p.includes(norm)), exemplo: c.titulos[0] || '',
+      parceiro: ehParceiro([ch.nome]), exemplo: c.titulos[0] || '', rede: 'YouTube',
       atualizado: cache ? old.atualizado : hoje, _desc: ch.desc.slice(0, 1000),
     });
+  }
+  // TikTok: mesma régua (vídeos do jogo nos últimos DIAS); hashtags como #cs2mobile também contam
+  let ttReqs = 0;
+  if (!process.argv.includes('--sem-tiktok')) {
+    try {
+      const ehDoJogoTT = (t) => ehDoJogo(t) || (/#?(cs2?|csgo|counterstrike2?)_?mobile\b/i.test(t) && !CHEAT.test(t) && !OUTRO_JOGO.test(t));
+      const r = await buscarTiktok({ dias: DIAS, ehDoJogo: ehDoJogoTT, cheat: CHEAT, insta, emails, ehParceiro });
+      ttReqs = r.reqs;
+      for (const p of r.perfis) canais.push({ ...contarVideos(p, prev.vistos[p.id]?._vids, DIAS), atualizado: hoje });
+    } catch (e) { console.error('TikTok:', e.message); }
   }
   const ordem = (a, b) => (b.videos_jogo ?? 0) - (a.videos_jogo ?? 0) || (b.inscritos ?? 0) - (a.inscritos ?? 0);
   canais.sort(ordem);
@@ -232,17 +245,19 @@ async function main() {
   for (const c of canais) prev.vistos[c.id] = { ...c, visto_em: prev.vistos[c.id]?.visto_em || hoje };
   prev.ultima_execucao = hoje;
   fs.writeFileSync(STATE, JSON.stringify(prev, null, 1));
-  const cols = ['nome', 'url', 'inscritos', 'videos_jogo', 'videos_com_nome_cf', 'media_views_cf', 'ultimo_video_dias', 'instagram', 'email', 'email_oculto', 'outros_links', 'pais', 'fonte', 'sinal_pt', 'parceiro', 'visto_em', 'exemplo'];
+  const cols = ['nome', 'rede', 'url', 'inscritos', 'videos_jogo', 'videos_com_nome_cf', 'media_views_cf', 'ultimo_video_dias', 'instagram', 'email', 'email_oculto', 'outros_links', 'pais', 'fonte', 'sinal_pt', 'parceiro', 'visto_em', 'exemplo'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const todos = Object.values(prev.vistos).sort(ordem);
+  const todos = Object.values(prev.vistos).map((c) => ({ rede: 'YouTube', ...c })).sort(ordem);
   const cel = (c, k) => (k === 'parceiro' || k === 'email_oculto' ? (c[k] ? 'sim' : '') : c[k]);
   fs.writeFileSync(CSV, '﻿' + [cols.join(';'), ...todos.map((c) => cols.map((k) => q(cel(c, k))).join(';'))].join('\n'));
 
   const n = (x) => (x == null ? '?' : x >= 1e6 ? (x / 1e6).toFixed(1).replace('.', ',') + ' mi' : x >= 1000 ? (x / 1000).toFixed(x >= 1e4 ? 0 : 1).replace('.', ',') + ' mil' : String(x));
   const contatoDe = (c) => c.email ? ', ✉️ ' + c.email.split(' ')[0] : c.instagram ? ', IG @' + c.instagram.split(' ')[0] : c.email_oculto ? ', e-mail só com login' : ', sem contato';
-  const linhas = novos.slice(0, 12).map((c) => `• ${c.nome} — ${c.videos_jogo} víd. do jogo, ${n(c.inscritos)} inscr., ~${n(c.media_views_cf)} views${contatoDe(c)}`);
-  const msg = `🔎 Criadores de CounterFlame (YouTube, últimos ${DIAS} dias)\n${canais.length} canais BR encontrados, ${novos.length} novos.\n\n${linhas.join('\n') || 'Nenhum canal novo desde a última busca.'}\n\nLista completa no CSV.`;
-  console.log(msg.replace(/\n\n/g, '\n'), `\n(${reqs} requisições ao YouTube)`);
+  const tt = (c) => c.rede === 'TikTok';
+  const linhas = novos.slice(0, 15).map((c) => `• ${tt(c) ? '🎵 ' : '▶️ '}${c.nome} — ${c.videos_jogo} víd. do jogo, ${n(c.inscritos)} ${tt(c) ? 'seg.' : 'inscr.'}, ~${n(c.media_views_cf)} views${contatoDe(c)}`);
+  const nTT = canais.filter(tt).length;
+  const msg = `🔎 Criadores de CounterFlame (▶️ YouTube e 🎵 TikTok, últimos ${DIAS} dias)\n${canais.length - nTT} canais no YouTube e ${nTT} perfis no TikTok (BR), ${novos.length} novos.\n\n${linhas.join('\n') || 'Nenhum criador novo desde a última busca.'}\n\nLista completa no CSV.`;
+  console.log(msg.replace(/\n\n/g, '\n'), `\n(${reqs} requisições ao YouTube, ${ttReqs} ao TikTok)`);
   if (!process.argv.includes('--sem-telegram') && novos.length) await telegram(msg, CSV);
 }
 
