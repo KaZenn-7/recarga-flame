@@ -229,7 +229,7 @@ const donateLink = (o) => {
 let receiptChecker = invoicePaid;            // trocável nos testes
 const _setReceiptChecker = (fn) => { receiptChecker = fn || invoicePaid; };
 // (paidKeyboard/tgFalha/paidText/tgIncerto/setMotivo/stopping são declarados mais abaixo: vão como funções que repassam)
-const { resolverIncerto, conferirAtraso, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
+const { vigiaPagamentos, resolverIncerto, conferirAtraso, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
   sessionDown, markDelivered, paidKeyboard: (o) => paidKeyboard(o), tgFalha: (...a) => tgFalha(...a), paidText: (o) => paidText(o),
   tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping, getPlayer, ticketNum, BP_NIVEIS, receiptOf: (m, e) => receiptChecker(m, e) });
 // ---- Avisos de pedido no Telegram (mensagem, botões, edições, toques): src/telegram.js ----
@@ -945,12 +945,29 @@ async function gracefulStop({ exit = (c) => process.exit(c), maxMs = STOP_MAX_MS
 }
 const _resetStopping = () => { stopping = false; };
 
+// ---------- Erros não tratados ----------
+// Promise rejeitada sem catch: no Node 24 derrubaria o processo (e um pagamento em andamento viraria "incerto").
+// Registra, avisa no tópico Sistema (no máximo 1 aviso a cada 10 min) e segue no ar.
+// Exceção não capturada: o estado do processo não é confiável — registra, avisa e sai pelo desligamento seguro
+// (espera o pagamento em andamento); o pm2 sobe de novo.
+let ultimoAvisoErro = 0;
+function erroNaoTratado(tipo, e, { agora = Date.now(), forcar = false } = {}) {
+  console.error(`${tipo}:`, e);
+  if (!forcar && agora - ultimoAvisoErro < 10 * 60_000) return false;
+  ultimoAvisoErro = agora;
+  const msg = String(e?.stack || e?.message || e).split('\n').slice(0, 3).join('\n').slice(0, 300);
+  tgSend(`🐞 Erro não tratado na loja (${tipo}):\n${msg}\n\nDetalhes: pm2 logs cf-teste --err`, 'sistema').catch(() => {});
+  return true;
+}
+
 // Sobe o servidor só quando executado diretamente (não durante os testes).
 if (process.env.NODE_ENV !== 'test') {
   // Só aceita conexões da própria máquina (nginx). Ninguém fala com o Node direto,
   // mesmo se o firewall mudar — assim não dá pra forjar X-Forwarded-For e burlar rate limits.
   const server = app.listen(env.PORT || 3000, '127.0.0.1', () => console.log('Loja no ar'));
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => gracefulStop({ server }));
+  process.on('unhandledRejection', (e) => erroNaoTratado('unhandledRejection', e));
+  process.on('uncaughtException', (e) => { erroNaoTratado('uncaughtException', e, { forcar: true }); setTimeout(() => gracefulStop({ server, exit: (c) => process.exit(c || 1) }), 1500); });
   if (env.TG_BOT_TOKEN && env.TG_CHAT_ID) tgPoll(); // botões do aviso de pago
   if (realOn()) { syncStarsReal(true); setInterval(() => syncStarsReal(true), 5 * 60_000); } // saldo real a cada 5 min
   setInterval(summaryTick, 60_000); // resumo diário à 00h (do dia que terminou)
@@ -960,4 +977,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

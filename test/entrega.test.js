@@ -560,3 +560,55 @@ test('incerto resolvido sozinho: recibo → entregue; sem recibo → paga 1x com
     assert.match(lastCall('editMessageText').body.text, /Não consegui conferir o recibo sozinho/);
   } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
+
+test('fila da conta do Telegram: chamada travada esgota o tempo, a fila segue e o pagamento não cobra depois', async () => {
+  const { makeSerial } = await import('../tg-user.js');
+  const serial = makeSerial(40);
+  let cobrou = false;
+  // trava antes de cobrar: erro "safe" (nada cobrado) e, quando destrava, desiste de cobrar
+  const travada = serial(async (ctx) => { await new Promise((r) => setTimeout(r, 80)); if (!ctx.dead) cobrou = true; });
+  const depois = serial(async () => 'seguiu');
+  await assert.rejects(travada, (e) => e.timeout && e.safe && /não respondeu em/.test(e.message));
+  assert.equal(await depois, 'seguiu');
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(cobrou, false);
+  // travada DEPOIS de enviar a cobrança: tempo esgotado é incerto (não "safe")
+  const enviada = serial(async (ctx) => { ctx.sent = true; await new Promise((r) => setTimeout(r, 80)); });
+  await assert.rejects(enviada, (e) => e.timeout && e.safe === false);
+  assert.equal(await serial(async () => 2), 2);
+});
+
+test('vigia: pagamento "pagando" há mais de 5 min avisa no Telegram uma vez só', async () => {
+  const { vigiaPagamentos } = SRV;
+  mock.approve = true;
+  const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '333381', email: 'vg@x.com' })).json();
+  await pagar(token);
+  await new Promise((r) => setTimeout(r, 20));
+  try {
+    db.prepare("UPDATE orders SET autopay='paying', autopay_at=? WHERE id=?").run(Date.now() - 60_000, id);
+    const n = tgSent.length;
+    vigiaPagamentos();
+    assert.equal(tgSent.length, n); // 1 min: normal
+    db.prepare('UPDATE orders SET autopay_at=? WHERE id=?').run(Date.now() - 6 * 60_000, id);
+    assert.ok(vigiaPagamentos() >= 1);
+    await ateQue(() => tgSent.length > n);
+    assert.match(tgSent.at(-1).text, new RegExp(`Pedido #${id} .*pagando" há 6 min`));
+    const m = tgSent.length;
+    vigiaPagamentos();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(tgSent.length, m);
+  } finally { db.prepare("UPDATE orders SET autopay=NULL WHERE id=?").run(id); }
+});
+
+test('erro não tratado: registra e avisa no Sistema no máximo 1x a cada 10 min (exceção força o aviso)', async () => {
+  const { erroNaoTratado } = SRV;
+  const orig = console.error; console.error = () => {};
+  try {
+    const t0 = Date.now() + 3600_000;
+    assert.equal(erroNaoTratado('unhandledRejection', new Error('boom'), { agora: t0 }), true);
+    assert.equal(erroNaoTratado('unhandledRejection', new Error('boom2'), { agora: t0 + 60_000 }), false);
+    assert.equal(erroNaoTratado('uncaughtException', new Error('boom3'), { agora: t0 + 60_000, forcar: true }), true);
+    assert.equal(erroNaoTratado('unhandledRejection', new Error('boom4'), { agora: t0 + 11 * 60_000 }), true);
+    await ateQue(() => tgSent.some((x) => /Erro não tratado na loja \(unhandledRejection\):\nError: boom\n/.test(x.text)));
+  } finally { console.error = orig; }
+});

@@ -68,8 +68,30 @@ export async function readStarsBalance(env = process.env) {
 // O bot do CF responde ao deep link com "<produto>\n\nAccount: <nick>" + fatura em Stars (MessageMediaInvoice, XTR).
 export const CF_BOT = 'CounterFlameDonate_bot';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let chain = Promise.resolve();
-const serial = (fn) => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
+// Fila com tempo limite por tarefa: uma chamada travada (rede caiu, TIMEOUT do GramJS) não pode parar todas as
+// entregas. Esgotado o tempo, a fila segue e a tarefa recebe ctx.dead = true: o pagamento confere isso logo antes de
+// cobrar e desiste. O erro de tempo é "safe" (nada cobrado) se a cobrança não foi enviada; se foi, é incerto (o
+// recibo é conferido sozinho depois). JOB_MS cobre o FLOOD_WAIT de até 2 min que a biblioteca espera sozinha.
+export const JOB_MS = 180_000;
+export function makeSerial(ms = JOB_MS) {
+  let chain = Promise.resolve();
+  return (fn) => {
+    const job = () => {
+      const ctx = { dead: false, sent: false };
+      let t;
+      const limite = new Promise((_, rej) => {
+        t = setTimeout(() => {
+          ctx.dead = true;
+          rej(Object.assign(new Error(`o Telegram não respondeu em ${Math.round(ms / 1000)} s`), { safe: !ctx.sent, timeout: true }));
+        }, ms);
+        t.unref?.();
+      });
+      return Promise.race([Promise.resolve().then(() => fn(ctx)), limite]).finally(() => clearTimeout(t));
+    };
+    const p = chain.then(job, job); chain = p.catch(() => {}); return p;
+  };
+}
+const serial = makeSerial();
 
 async function fetchInvoice(c, startParam) {
   const { Api } = await import('telegram');
@@ -108,7 +130,7 @@ export function checkInvoice(startParam, env = process.env) {
 // onInvoice(msgId) é chamado ANTES de cobrar: o servidor grava o nº da mensagem da fatura no pedido,
 // que identifica este pagamento de forma única (ver invoicePaid).
 export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }, env = process.env) {
-  return serial(async () => {
+  return serial(async (ctx) => {
     const { Api } = await import('telegram');
     const safe = (msg) => Object.assign(new Error(msg), { safe: true });
     let c, inv, form, invoice;
@@ -128,7 +150,10 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       throw safe(String(e?.errorMessage || e?.message || e)); // nada foi enviado ainda
     }
     const before = inv.msgId;
+    if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
     if (onInvoice) await onInvoice(inv.msgId);
+    if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
+    ctx.sent = true; // daqui em diante, tempo esgotado = incerto
     let r;
     try {
       r = await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice })); // ← COBRA

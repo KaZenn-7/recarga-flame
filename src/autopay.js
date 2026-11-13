@@ -189,6 +189,23 @@ for (const o of db.prepare("SELECT * FROM orders WHERE autopay='incerto' AND sta
   agendar(() => resolverIncerto(o.id), Math.max(5000, o.autopay_at + INCERTO_MS - Date.now()));
 }
 
+// Vigia: pagamento em andamento ('paying') há mais de 5 min. A fila da conta do Telegram tem tempo limite de 3 min
+// por chamada (tg-user.js), então isso só acontece se algo travou fora do previsto. Avisa uma vez por pedido.
+const PRESO_MS = 5 * 60_000;
+const presosAvisados = new Set();
+function vigiaPagamentos(agora = Date.now()) {
+  const presos = db.prepare("SELECT * FROM orders WHERE autopay='paying' AND autopay_at < ?").all(agora - PRESO_MS);
+  for (const o of presos) {
+    if (presosAvisados.has(o.id)) continue;
+    presosAvisados.add(o.id);
+    tgSend(`⏳ Pedido #${o.id} (${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}) está "pagando" há `
+      + `${Math.round((agora - o.autopay_at) / 60_000)} min: a fila da conta do Telegram pode ter travado e as entregas automáticas estão paradas.\n`
+      + 'Reiniciar a loja (pm2 restart cf-teste) destrava: o pedido vira "incerto" e a loja confere o recibo sozinha (nada é cobrado 2 vezes).', 'alertas');
+  }
+  return presos.length;
+}
+if (env.NODE_ENV !== 'test') { const t = setInterval(() => { try { vigiaPagamentos(); } catch (e) { console.error('vigia:', e.message); } }, 60_000); t.unref?.(); }
+
 function chkOf(o) { try { return o?.chk ? JSON.parse(o.chk) : null; } catch { return null; } }
 function chkLine(ck) {
   if (ck.status === 'ok') return `🔎 Conferido no bot do CF: ${ck.stars}★ · ${ck.account} ✅`;
@@ -300,5 +317,5 @@ async function entregaAuto(id, attempt = 1) {
   }
 }
 
-return { resolverIncerto, conferirAtraso, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
+return { vigiaPagamentos, resolverIncerto, conferirAtraso, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
 }
