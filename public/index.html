@@ -117,6 +117,7 @@ input:focus{outline:0;border-color:#45454c}
 .cupin .cp{margin-top:10px}.cupin input{text-transform:uppercase}
 .cupin .cp button{background:var(--orange);border-color:var(--orange);color:#160a04;font-weight:800}
 .cupin .err:empty{display:none}.cupin .err{margin:8px 0 0}
+#emailErr{margin-top:6px}#emailErr:empty{display:none}
 @media(max-width:380px){.cupin{padding:10px}.cupin summary{gap:8px}.cupin .ct b{font-size:13px}.cupin .ca{padding:6px 10px}}
 .help{margin-top:10px;font-size:13px;color:var(--mut)}
 .help summary{cursor:pointer;color:var(--orange);font-weight:600;list-style:none;padding:4px 0}
@@ -285,7 +286,8 @@ input:focus{outline:0;border-color:#45454c}
       <p class="err" id="cuperr"></p>
     </details>
     <label for="email">Seu e-mail</label>
-    <input id="email" type="email" autocomplete="email" placeholder="voce@email.com">
+    <input id="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="voce@email.com">
+    <p class="err" id="emailErr"></p>
     <p class="sug hide" id="emailSug">Você quis dizer <b id="emailSugTxt"></b>? <button type="button" id="emailSugOk">Usar</button></p>
     <p class="hint">Exigido pelo Mercado Pago para gerar o Pix. Usamos só para avisar sobre o seu pedido, como a confirmação de entrega.</p>
     <div class="prazo"><b>Entrega automática em até 10 minutos</b> após a confirmação do pagamento, a qualquer hora.</div>
@@ -527,20 +529,32 @@ function emailSug(v){
 }
 function checkEmail(){const s=emailSug($('email').value);$('emailSug').classList.toggle('hide',!s);if(s)$('emailSugTxt').textContent=s;}
 $('email').addEventListener('blur',checkEmail);
-$('email').addEventListener('input',()=>{if(!$('emailSug').classList.contains('hide'))checkEmail();});
+$('email').addEventListener('input',()=>{$('emailErr').textContent='';if(!$('emailSug').classList.contains('hide'))checkEmail();});
+/* e-mail lembrado neste aparelho (só aqui, no navegador do cliente): quem volta não digita de novo */
+const EMAIL_KEY='cf_email',EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+try{const e=localStorage.getItem(EMAIL_KEY);if(e&&!$('email').value)$('email').value=e;}catch{}
+function emailErro(msg){$('emailErr').textContent=msg;$('email').focus();$('email').scrollIntoView({behavior:'smooth',block:'center'});}
 $('emailSugOk').onclick=()=>{$('email').value=$('emailSugTxt').textContent;$('emailSug').classList.add('hide');};
 
 $('pagar').onclick=async()=>{
-  $('err3').textContent='';const b=$('pagar');b.disabled=true;b.innerHTML='<span class="ld"></span>Gerando Pix';
+  $('err3').textContent='';$('emailErr').textContent='';
+  // confere o e-mail antes de enviar: o erro aparece junto do campo, não lá embaixo
+  const em=$('email').value.trim();
+  if(!EMAIL_RE.test(em)||em.length>120){emailErro(em?'Confira o e-mail: está incompleto (ex.: nome@gmail.com).':'Informe seu e-mail para gerar o Pix.');track('err_email');return;}
+  const b=$('pagar');b.disabled=true;b.innerHTML='<span class="ld"></span>Gerando Pix';
   try{
-    const multi=car.length>1,dados={gameId:conta.id,email:$('email').value.trim(),coupon:cupom?cupom.code:undefined};
+    const multi=car.length>1,dados={gameId:conta.id,email:em,coupon:cupom?cupom.code:undefined};
     const o=await api(multi?'/api/carrinho':'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(multi?{itens:car,...dados}:{product:car[0],...dados})});
     const order={token:o.token,id:o.id,expiresAt:o.expiresAt,qr:o.qr,qrBase64:o.qrBase64,
       ...(multi?{car:true,itemTok:o.itens[0].token,ids:o.itens.map(i=>i.id)}:{})};
     saveState({order});
+    try{localStorage.setItem(EMAIL_KEY,em);}catch{}
     showPayment(order);
-  }catch(e){if(e.field==='coupon'){setCupom(null);fillPrice();}$('err3').textContent=e.message;}
+  }catch(e){
+    if(e.field==='email'){emailErro(e.message);track('err_email');}
+    else{if(e.field==='coupon'){setCupom(null);fillPrice();}$('err3').textContent=e.message;$('err3').scrollIntoView({behavior:'smooth',block:'center'});track(e.status>=400&&e.status<500?'err_regra':'err_pix');}
+  }
   finally{b.disabled=false;fillPrice();}
 };
 

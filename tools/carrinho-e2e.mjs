@@ -216,6 +216,31 @@ try {
     ok(ms.length === 1 && /^Pedido #\d+ entregue — 3\.000 Coins$/.test(ms[0].subject), 'e-mail de pedido avulso, como antes');
     await page.browserContext().close();
   }
+  // ---------- 6. e-mail na confirmação: erro junto do campo e e-mail lembrado no aparelho ----------
+  {
+    console.log('\n6. E-mail: vazio/incompleto não envia; e-mail lembrado na próxima compra');
+    H.mock.approve = false;
+    const page = await novaPagina(), id = String(++gid), email = `e2e${gid}@gmail.com`;
+    await montar(page, id, ['c1000']);
+    const nPed = db.prepare('SELECT COUNT(*) n FROM orders').get().n;
+    const nEv = db.prepare("SELECT COUNT(*) n FROM events WHERE ev='err_email'").get().n;
+    await page.$eval('#email', (e) => { e.value = ''; });
+    await clk(page, '#pagar');
+    ok(/Informe seu e-mail/.test(await txt(page, '#emailErr')) && await page.evaluate(() => document.activeElement.id === 'email'), 'vazio: aviso junto do campo e foco no e-mail');
+    await page.$eval('#email', (e) => { e.value = 'joao@gmail'; });
+    await clk(page, '#pagar');
+    ok(/incompleto/.test(await txt(page, '#emailErr')), 'incompleto (sem .com): aviso junto do campo');
+    await page.type('#email', '.com');
+    ok(await txt(page, '#emailErr') === '', 'aviso some ao digitar');
+    await new Promise((r) => setTimeout(r, 300));
+    ok(db.prepare('SELECT COUNT(*) n FROM orders').get().n === nPed, 'nenhum pedido criado com e-mail inválido');
+    ok(db.prepare("SELECT COUNT(*) n FROM events WHERE ev='err_email'").get().n === nEv + 2, 'funil: 2 erros de e-mail registrados');
+    await gerarPix(page, email);
+    await page.evaluate(() => { localStorage.removeItem('cf_pedido'); });
+    await page.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    ok(await page.$eval('#email', (e) => e.value) === email, 'próxima compra no mesmo aparelho: e-mail já preenchido');
+    await page.browserContext().close();
+  }
   ok(!erros.length, 'nenhum erro de JavaScript nas páginas' + (erros.length ? ': ' + erros.join(' | ') : ''));
 } catch (e) {
   falhas++; console.log('✘ ERRO:', e.stack || e);

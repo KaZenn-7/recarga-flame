@@ -58,7 +58,8 @@ Funil dos últimos 7 dias (aparelhos únicos):
 | Pagou | 34 | 79% |
 | Entregue | 34 | 100% |
 
-- ⬜ 🔴 **Maior perda: escolher produto → gerar Pix (47%).** Testar: lembrar o e-mail no aparelho; botão de pagar visível sem rolagem no celular; registrar no funil os erros dessa tela (e-mail recusado, limite atingido).
+- ✅ 🔴 **Maior perda: escolher produto → gerar Pix (47%).** Achado: 26 tentativas recusadas pela loja (400, e-mail vazio/incompleto) contra 80 Pix gerados (06–12/11); o aviso aparecia embaixo dos termos.
+  Feito: e-mail conferido antes de enviar, com aviso junto do campo e foco; e-mail lembrado no aparelho; erros da tela registrados no funil (`err_email`, `err_regra`, `err_pix`) e mostrados no painel. Comparar a passagem select→pix (53% antes) após 1 semana. ⬜ Ainda a testar: botão de pagar visível sem rolagem no celular.
 - ⬜ 🟡 Imagens com `Cache-Control: max-age=0` (express.static sem `maxAge`): toda visita revalida as imagens (uma levou ~270 ms). `maxAge` de 30 dias, ou `immutable` com versão no nome.
 - ⬜ ⚪ 15 `.jpg` antigos em `public/img` sem uso (~1 MB; produtos usam `.webp`). Atenção: `c1000.jpg` é usado pelo fallback `/img/${key}.jpg`.
 - ⬜ ⚪ CSP com `'unsafe-inline'`; falta `Permissions-Policy`; HSTS sem `includeSubDomains`/`preload`.
@@ -92,6 +93,6 @@ Funil dos últimos 7 dias (aparelhos únicos):
 ## Ordem sugerida
 1. ✅ Tempo limite e vigia na fila de pagamento do Telegram.
 2. ✅ Registro de erros não tratados.
-3. ⬜ Investigar a perda entre escolher o produto e gerar o Pix.
+3. ✅ Perda entre escolher o produto e gerar o Pix (e-mail).
 4. ⬜ Dados de pagamento da AQUILA e dos outros parceiros antes de 01/12.
 5. ⬜ `/api/health` completa, cache das imagens, índices + WAL, teste de restauração do backup.

@@ -123,3 +123,15 @@ test('analytics: horários/dias de pico e clientes (novos, voltaram, recompra, i
   assert.ok(c.voltaram >= 1); // 242401 já tinha comprado antes do período
   assert.ok(c.intervaloDias !== null); // mediana entre todos os clientes do período (outros testes compram várias vezes no mesmo minuto)
 });
+
+test('funil: erros na tela de confirmação (e-mail, regra, falha) entram no analytics por aparelho', async () => {
+  const ua = { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) Mobile Safari', Cookie: 'cf_dev=ERROSaaaaaaaaaaaaaaaaa' };
+  const ev = (b) => fetch(base + '/api/ev', { method: 'POST', headers: { 'Content-Type': 'application/json', ...freshIP(), ...ua }, body: JSON.stringify(b) });
+  const antes = (await (await adm('GET', '/api/admin/analytics')).json()).funil.erros;
+  for (const e of ['err_email', 'err_email', 'err_regra', 'err_pix']) assert.equal((await ev({ ev: e })).status, 204);
+  const f = (await (await adm('GET', '/api/admin/analytics')).json()).funil;
+  assert.equal(f.erros.email, antes.email + 1); // mesmo aparelho conta 1
+  assert.equal(f.erros.regra, antes.regra + 1);
+  assert.equal(f.erros.pix, antes.pix + 1);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM events WHERE dev='ERROSaaaaaaaaaaaaaaaaa'").get().n, 4);
+});

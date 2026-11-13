@@ -416,7 +416,9 @@ initCarrinho({ db, app, PRODUCTS, limit, getCoupon, priceWith, validId, getPlaye
 // Etapas: visit → lookup (ID buscado) → select (item escolhido) → pix → paid → delivered.
 // Contamos APARELHOS distintos (cookie aleatório cf_dev; sem cookie, IP embaralhado). Robôs/prévias de link não
 // rodam o JS da página, e agentes conhecidos de robô são ignorados.
-const EV_CLIENT = new Set(['visit', 'lookup', 'select', 'cart']); // cart: pôs o 2º item no pedido
+// cart: pôs o 2º item no pedido. err_*: erro na tela de confirmação ao gerar o Pix (e-mail faltando/recusado,
+// regra da loja como limite/cupom/Pix em aberto, falha ao gerar) — para saber se quem não gera o Pix desistiu ou foi barrado
+const EV_CLIENT = new Set(['visit', 'lookup', 'select', 'cart', 'err_email', 'err_regra', 'err_pix']);
 const SRCS = new Set(['whatsapp', 'youtube', 'instagram', 'tiktok', 'telegram', 'google', 'facebook', 'discord', 'twitter', 'outro', 'direto']);
 const BOT_UA = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|discord|headless|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|monitor|lighthouse/i;
 const devKey = (req) => devOf(req) || 'ip:' + fp('ip:' + req.ip);
@@ -845,7 +847,8 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     return Object.entries(g).map(([k, rs]) => ({ k, visit: uniq(rs, 'visit'), pix: uniq(rs, 'pix'), paid: uniq(rs, 'paid') }))
       .sort((x, y) => y.visit - x.visit || y.paid - x.paid);
   };
-  const funil = { etapas, cupons: grupo('coupon'), origens: grupo('src'), carrinho: uniq(evRows, 'cart') };
+  const funil = { etapas, cupons: grupo('coupon'), origens: grupo('src'), carrinho: uniq(evRows, 'cart'),
+    erros: { email: uniq(evRows, 'err_email'), regra: uniq(evRows, 'err_regra'), pix: uniq(evRows, 'err_pix') } };
   // como foram entregues os pedidos vendidos no período, e por que não foram automáticos
   const entregues = ok.filter((o) => o.delivered_at);
   const tipoDe = (o) => o.entrega_via || (o.autopay === 'sent' ? (o.approved_at ? 'aprovado' : 'auto') : 'manual');

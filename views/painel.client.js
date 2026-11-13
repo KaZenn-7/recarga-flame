@@ -860,6 +860,8 @@ function funnelCard(f){
     box.appendChild(r);
   });
   card.appendChild(box);
+  const er=f.erros||{};
+  if(er.email||er.regra||er.pix)card.appendChild(el('p','sub','⚠️ Erro ao gerar o Pix (aparelhos): '+[er.email&&er.email+' e-mail faltando/recusado',er.regra&&er.regra+' barrados por regra (limite, cupom, Pix em aberto)',er.pix&&er.pix+' falha ao gerar'].filter(Boolean).join(' · ')));
   if(f.carrinho)card.appendChild(el('p','sub','🛒 Montaram carrinho (2 itens ou mais): '+f.carrinho+(base?' · '+Math.round(f.carrinho/base*100)+'% de quem visitou':'')));
   const tab=function(titulo,rows,rot){
     const d=document.createElement('details');d.appendChild(el('summary',null,titulo));
