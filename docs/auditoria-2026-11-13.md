@@ -19,7 +19,7 @@ Status de cada sugestão: **✅ feito** (com o commit) ou **⬜ pendente**.
 **Bem:** um pagamento por vez; trava atômica por pedido; desligamento seguro (espera até 25 s, `kill_timeout` 30 s); "incerto" resolvido sozinho; saldo real lido a cada 5 min.
 - ✅ 🔴 **Tempo limite nas chamadas da conta do Telegram (GramJS).** A fila única não tinha limite: uma chamada travada (ex.: os TIMEOUT de 11/11) parava todas as entregas e deixava o pedido em `paying` para sempre.
   Feito: limite de 3 min por tarefa na fila (`makeSerial` em `tg-user.js`), cobrindo o FLOOD_WAIT de até 2 min. Antes de cobrar → erro "nada cobrado" (a tarefa travada desiste de cobrar quando destrava); depois de enviar a cobrança → "incerto" (recibo conferido sozinho). Vigia a cada 1 min avisa em Alertas quando um pedido está "pagando" há mais de 5 min (`vigiaPagamentos` em `src/autopay.js`).
-- ⬜ 🟡 O `healthcheck.sh` só testa `/api/products`. Não detecta sessão do Telegram caída, leitura dos botões parada ou saldo desatualizado. Sugestão: rota `/api/health` com esses estados, usada pelo monitor.
+- ✅ 🟡 O `healthcheck.sh` só testava `/api/products`. Feito: `/api/health` (só local) + checagem no monitor. Não detecta sessão do Telegram caída, leitura dos botões parada ou saldo desatualizado. Sugestão: rota `/api/health` com esses estados, usada pelo monitor.
 - ⬜ ⚪ Saldo em 3.592★. Conferir se o limite de saldo baixo cobre um dia de pico com o carrinho de 10 itens.
 
 ## 3. Carrinho e regras de produto
@@ -29,7 +29,7 @@ Status de cada sugestão: **✅ feito** (com o commit) ou **⬜ pendente**.
 
 ## 4. Telegram (avisos e botões)
 **Bem:** só o operador usa os botões; mensagens editadas em vez de duplicadas; tópicos; se o grupo falhar, vai no privado.
-- ⬜ 🟡 `tgPoll` falhando tenta de novo a cada 5 s sem limite e sem avisar (um token revogado deixaria os botões mortos em silêncio). Avisar após N falhas seguidas (pode entrar na `/api/health`).
+- ✅ 🟡 (feito: entra na `/api/health`) `tgPoll` falhando tenta de novo a cada 5 s sem limite e sem avisar (um token revogado deixaria os botões mortos em silêncio). Avisar após N falhas seguidas (pode entrar na `/api/health`).
 
 ## 5. Painel e login
 **Bem:** senha + código pelo Telegram; sessão com prazo e renovação; proteção contra força bruta; ações exigem origem própria ou `x-painel`. Cookie `cf_sess` em `Lax` (correção do F5 no iPhone, b84a5e3).
@@ -61,15 +61,15 @@ Funil dos últimos 7 dias (aparelhos únicos):
 
 - ✅ 🔴 **Maior perda: escolher produto → gerar Pix (47%).** Achado: 26 tentativas recusadas pela loja (400, e-mail vazio/incompleto) contra 80 Pix gerados (06–12/11); o aviso aparecia embaixo dos termos.
   Feito: e-mail conferido antes de enviar, com aviso junto do campo e foco; e-mail lembrado no aparelho; erros da tela registrados no funil (`err_email`, `err_regra`, `err_pix`) e mostrados no painel. Comparar a passagem select→pix (53% antes) após 1 semana. ⬜ Ainda a testar: botão de pagar visível sem rolagem no celular.
-- ⬜ 🟡 Imagens com `Cache-Control: max-age=0` (express.static sem `maxAge`): toda visita revalida as imagens (uma levou ~270 ms). `maxAge` de 30 dias, ou `immutable` com versão no nome.
+- ✅ 🟡 Imagens com `Cache-Control: max-age=0` (feito: `/img` com 1 dia) (express.static sem `maxAge`): toda visita revalida as imagens (uma levou ~270 ms). `maxAge` de 30 dias, ou `immutable` com versão no nome.
 - ⬜ ⚪ 15 `.jpg` antigos em `public/img` sem uso (~1 MB; produtos usam `.webp`). Atenção: `c1000.jpg` é usado pelo fallback `/img/${key}.jpg`.
 - ⬜ ⚪ CSP com `'unsafe-inline'`; falta `Permissions-Policy`; HSTS sem `includeSubDomains`/`preload`.
 
 ## 9. Banco de dados e backups
 **Bem:** backup a cada 6 h, consistente, criptografado (gpg), enviado ao tópico Sistema, rotação de 14 dias. `.env`, `.fp_key`, `.tg_user_session` com permissão 600; `.env` fora do git.
-- ⬜ 🟡 `journal_mode=delete`. Com WAL, leituras (painel, análises) não bloqueiam escritas (webhook, pagamento). Precisa de backup antes e restart.
-- ⬜ 🟡 Sem índices em `orders(game_id)`, `orders(status)`, `orders(mp_id)`, `orders(lower(email))`, `events(dev)`. Antifraude, fila e lembretes leem a tabela inteira (rápido hoje, cresce com as vendas).
-- ⬜ 🟡 **Nenhum teste de restauração de backup.** Teste mensal: decifrar o último backup numa pasta temporária e conferir se abre e tem o número certo de pedidos.
+- ✅ 🟡 `journal_mode=delete` (feito: WAL + busy_timeout 5 s). Com WAL, leituras (painel, análises) não bloqueiam escritas (webhook, pagamento). Precisa de backup antes e restart.
+- ✅ 🟡 (feito: migração v5) Sem índices em `orders(game_id)`, `orders(status)`, `orders(mp_id)`, `orders(lower(email))`, `events(dev)`. Antifraude, fila e lembretes leem a tabela inteira (rápido hoje, cresce com as vendas).
+- ✅ 🟡 **Nenhum teste de restauração de backup.** Feito: `tools/verificar-backup.sh` roda a cada backup no arquivo cifrado enviado; resultado na legenda. Teste mensal: decifrar o último backup numa pasta temporária e conferir se abre e tem o número certo de pedidos.
 - ⬜ ⚪ Tabela `events` sem retenção (1.205 linhas).
 
 ## 10. Servidor, deploy e operação
@@ -82,7 +82,7 @@ Funil dos últimos 7 dias (aparelhos únicos):
 - Contexto: VPS no ar há 26 dias, carga 2,4–2,9 (compartilhada), disco 34%, 3,1 GB de RAM livre.
 
 ## 11. Observabilidade
-- ⬜ 🟡 `healthcheck.sh` (a cada 5 min, alerta após 2 falhas) só olha `/api/products` — ver `/api/health` no setor 2.
+- ✅ 🟡 `healthcheck.sh` agora também consulta `/api/health` (botões, sessão/saldo, pagamento preso, banco).
 - ✅ Vigia de pagamento parado e aviso de erro não tratado (setores 2 e 10).
 - ⬜ ⚪ TIMEOUT do GramJS em 11/11: acompanhar se repete (agora com tempo limite e aviso).
 
@@ -96,4 +96,4 @@ Funil dos últimos 7 dias (aparelhos únicos):
 2. ✅ Registro de erros não tratados.
 3. ✅ Perda entre escolher o produto e gerar o Pix (e-mail).
 4. ✅ Lembrete automático de dados de parceiros (⬜ falta a chave Pix da AQUILA).
-5. ⬜ `/api/health` completa, cache das imagens, índices + WAL, teste de restauração do backup.
+5. ✅ `/api/health` completa, cache das imagens, índices + WAL, teste de restauração do backup.

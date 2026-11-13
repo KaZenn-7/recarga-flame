@@ -7,7 +7,7 @@
 *.db-*
 loja.db*
 backups/
-.health_state
+.health_state*
 tg-topicos.json
 tg-topicos.json.tmp
 

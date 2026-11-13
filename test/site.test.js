@@ -126,3 +126,11 @@ test('endereço malformado (robô): 400 com mensagem curta, não 500', async () 
   assert.equal(r.status, 400);
   assert.deepEqual(await r.json(), { error: 'Requisição inválida.' });
 });
+
+test('imagens: navegador guarda por 1 dia; página e API continuam sem cache longo', async () => {
+  const img = await fetch(base + '/img/arsenal.webp', { headers: freshIP() });
+  assert.equal(img.status, 200);
+  assert.match(img.headers.get('cache-control') || '', /max-age=86400/);
+  const pg = await fetch(base + '/', { headers: freshIP() });
+  assert.doesNotMatch(pg.headers.get('cache-control') || '', /max-age=86400/);
+});

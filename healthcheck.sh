@@ -36,3 +36,30 @@ else
   fi
   echo "[$(date -Is)] falha $N: HTTP $CODE"
 fi
+
+# ---- saúde por dentro (só com a loja no ar): botões do Telegram, conta separada/saldo, pagamento preso, banco ----
+# /api/health só responde pela própria máquina. Avisa na mudança de estado (2 checagens seguidas = 10 min).
+[ "$CODE" = "200" ] || exit 0
+HSTATE="$APP_DIR/.health_state_int"   # "ok" ou "bad:<n>"
+PORT=$(envval PORT); PORT=${PORT:-3102}
+HJSON=$(curl -s --max-time 15 "http://127.0.0.1:$PORT/api/health" || true)
+# versão da loja sem a rota (404 em HTML): não há o que conferir
+case "$HJSON" in "<"*) exit 0 ;; esac
+FALHAS=$(printf '%s' "$HJSON" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("rota /api/health não respondeu"); sys.exit()
+print("" if d.get("ok") else "; ".join(d.get("falhas") or ["falha desconhecida"]))' 2>/dev/null)
+HPREV=$(cat "$HSTATE" 2>/dev/null || echo ok)
+if [ -z "$FALHAS" ]; then
+  if [ "${HPREV%%:*}" = "bad" ] && [ "${HPREV#bad:}" -ge 2 ] 2>/dev/null; then
+    send "✅ Problema interno da loja resolvido ($(date '+%d/%m %H:%M'))."
+  fi
+  echo ok > "$HSTATE"
+else
+  N=1; [ "${HPREV%%:*}" = "bad" ] && N=$(( ${HPREV#bad:} + 1 ))
+  echo "bad:$N" > "$HSTATE"
+  if [ "$N" -eq 2 ]; then
+    send "⚠️ Loja no ar, mas com problema ($(date '+%d/%m %H:%M')): $FALHAS. Ver: pm2 logs cf-teste"
+  fi
+  echo "[$(date -Is)] saúde $N: $FALHAS"
+fi

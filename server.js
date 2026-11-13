@@ -12,7 +12,7 @@ import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
 import { homeHtml, pageHtml } from './seo-home.js';
 import { initParceiros } from './src/parceiros.js';
-import { tgApi, tgSend, hhmmSP, initAvisos, orderDest } from './src/telegram.js';
+import { tgApi, tgSend, hhmmSP, initAvisos, orderDest, POLL } from './src/telegram.js';
 import { initMercadoPago } from './src/mercadopago.js';
 import { initAutopay } from './src/autopay.js';
 import { initStars } from './src/stars.js';
@@ -47,6 +47,10 @@ const SEED_PRODUCTS = [
 ];
 
 const db = new Database(env.DB_PATH || 'loja.db');
+// WAL: leituras (painel, análises, sincronizações) não bloqueiam escritas (webhook, pagamento) e vice-versa.
+// Fica gravado no arquivo. O backup usa a API .backup() (consistente com WAL); arquivos loja.db-wal/-shm são normais.
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 // esquema do banco: migrações numeradas em src/db.js (PRAGMA user_version)
 migrate(db, { starCost: Number(env.STAR_COST_BRL || 0.0875) });
 
@@ -344,6 +348,9 @@ app.get(['/', '/index.html'], (req, res) => {
 const PAGES_SEO = Object.fromEntries(['onde-encontrar-id-counterflame', 'comprar-coins-counterflame', 'gold-pass-counterflame', 'colecao-wildfire-counterflame', 'item-nao-chegou-counterflame', 'e-seguro-comprar-coins-counterflame']
   .map((s) => [s, fs.existsSync(path.join('public', s + '.html')) ? fs.readFileSync(path.join('public', s + '.html'), 'utf8') : null]));
 for (const [s, html] of Object.entries(PAGES_SEO)) if (html) app.get(['/' + s, '/' + s + '.html'], (req, res) => res.type('html').set('Cache-Control', 'no-cache').send(pageHtml(html, prodsPublic())));
+// imagens: o navegador guarda por 1 dia sem perguntar de novo (antes revalidava toda visita). Trocar uma imagem
+// mantendo o mesmo nome pode levar até 1 dia para aparecer para quem já visitou — prefira um nome novo.
+app.use('/img', express.static('public/img', { maxAge: '1d' }));
 app.use(express.static('public'));
 // páginas institucionais (também em /como-funciona.html e /perguntas-frequentes.html)
 app.get('/como-funciona', (req, res) => res.sendFile('como-funciona.html', { root: 'public' }));
@@ -948,6 +955,29 @@ async function gracefulStop({ exit = (c) => process.exit(c), maxMs = STOP_MAX_MS
 }
 const _resetStopping = () => { stopping = false; };
 
+// ---------- Saúde (monitor do cron, healthcheck.sh) ----------
+// Só pela própria máquina (127.0.0.1, sem passar pelo nginx): de fora é 404. 200 = tudo ok; 503 = lista do que falhou.
+const BOOT_AT = Date.now(); // antes da 1ª leitura do saldo, conta a partir da subida da loja
+function saude(agora = Date.now()) {
+  const falhas = [];
+  try { db.prepare('SELECT 1').get(); } catch (e) { falhas.push('banco: ' + e.message); }
+  if (POLL.on && agora - POLL.okAt > 3 * 60_000) falhas.push(`botões do Telegram sem resposta há ${Math.round((agora - POLL.okAt) / 60_000)} min`);
+  if (realOn()) {
+    if (sessionDown(REAL.err)) falhas.push('sessão da conta do Telegram caiu (refazer login)');
+    else if (REAL.err) falhas.push('saldo de Stars: ' + String(REAL.err).slice(0, 80));
+    else if (agora - (REAL.at || BOOT_AT) > 20 * 60_000) falhas.push(`saldo de Stars sem atualizar há ${Math.round((agora - (REAL.at || BOOT_AT)) / 60_000)} min`);
+  }
+  const presos = db.prepare("SELECT COUNT(*) n FROM orders WHERE autopay='paying' AND autopay_at < ?").get(agora - 5 * 60_000).n;
+  if (presos) falhas.push(`${presos} pagamento(s) "pagando" há mais de 5 min`);
+  return falhas;
+}
+const local = (req) => !req.get('x-forwarded-for') && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+app.get('/api/health', (req, res, next) => {
+  if (!local(req)) return next();
+  const falhas = saude();
+  res.status(falhas.length ? 503 : 200).json({ ok: !falhas.length, falhas });
+});
+
 // ---------- Erros não tratados ----------
 // Promise rejeitada sem catch: no Node 24 derrubaria o processo (e um pagamento em andamento viraria "incerto").
 // Registra, avisa no tópico Sistema (no máximo 1 aviso a cada 10 min) e segue no ar.
@@ -980,4 +1010,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

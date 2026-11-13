@@ -50,3 +50,14 @@ test('migração base em banco antigo: recargas viram compras, custo e ptoken pr
   const c = db.prepare('SELECT plano, ptoken FROM coupons').get();
   assert.equal(c.plano, 'metas'); assert.match(c.ptoken, /^[A-Za-z0-9_-]{24}$/);
 });
+
+test('migração 5: índices das consultas de pedido/visita (e o antifraude usa o índice)', () => {
+  const db = new Database(':memory:');
+  migrate(db, { starCost: 0.1 });
+  const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map((r) => r.name);
+  for (const i of ['orders_game', 'orders_email', 'orders_status', 'orders_coupon', 'events_dev']) assert.ok(idx.includes(i), i);
+  const plano = (sql) => db.prepare('EXPLAIN QUERY PLAN ' + sql).all().map((r) => r.detail).join(' | ');
+  assert.match(plano("SELECT * FROM orders WHERE game_id='1'"), /orders_game/);
+  assert.match(plano("SELECT * FROM orders WHERE lower(email)='a@b.c'"), /orders_email/);
+  assert.match(plano("SELECT src FROM events WHERE dev='x' AND ev='visit'"), /events_dev/);
+});

@@ -62,7 +62,11 @@ if [ -n "${LATEST:-}" ] && [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ] && [ -
     --symmetric --cipher-algo AES256 -o "$ENC" "$LATEST.gz"
   chmod 600 "$ENC"
   N_PED=$(BH_DB="$APP_DIR/loja.db" node -e 'const D=require("better-sqlite3");const d=new D(process.env.BH_DB,{readonly:true});console.log(d.prepare("SELECT COUNT(*) n FROM orders").get().n)' 2>/dev/null || echo "?")
-  CAPTION="Backup loja.db $(date '+%d/%m %H:%M') · $N_PED pedidos · $(du -h "$ENC" | cut -f1)"
+  # teste de restauração do próprio arquivo cifrado que vai ser enviado (decifra, abre e confere o banco)
+  if VERIF=$("$APP_DIR/tools/verificar-backup.sh" "$ENC"); then RESTORE="restauração testada ✅"
+  else RESTORE="⚠️ TESTE DE RESTAURAÇÃO FALHOU (${VERIF#FALHA: })"; UPLOAD_FAIL=1; fi
+  echo "[$(date -Is)] teste de restauração: $VERIF"
+  CAPTION="Backup loja.db $(date '+%d/%m %H:%M') · $N_PED pedidos · $(du -h "$ENC" | cut -f1) · $RESTORE"
   senddoc() {  # $1 = chat, $2 = tópico (ou vazio)
     printf 'url = "https://api.telegram.org/bot%s/sendDocument"\n' "$TG_BOT_TOKEN" | curl -sS --max-time 60 -K - \
       -F "chat_id=$1" ${2:+-F "message_thread_id=$2"} -F "document=@$ENC" -F "caption=$CAPTION" || true

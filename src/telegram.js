@@ -40,6 +40,8 @@ const isOrderMsg = (o, chatId, msgId) => !!o.tg_msg && o.tg_msg === msgId && Str
 // Chamada genérica à API do bot; devolve o JSON ou null (nunca lança).
 // getUpdates com erro passageiro do Telegram (5xx/rede): só registra se continuar falhando (5 seguidas).
 let getUpdFalhas = 0;
+// leitura dos botões (tgPoll): hora da última resposta ok — /api/health avisa se parar
+const POLL = { on: false, okAt: 0 };
 // Mensagens mais fáceis de ler: linha vazia entre cada parágrafo (pedido do operador). Itens de lista ("• ...")
 // e a linha que os apresenta (termina em ":") ficam juntos. Aplicar de novo não muda nada (edições de mensagem).
 function paragrafos(text) {
@@ -131,7 +133,7 @@ function carTag(db, o) {
 }
 const hhmmSP = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
-export { carTag, paragrafos, tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
+export { POLL, carTag, paragrafos, tgApi, tgSend, tgPedidoMsg, saveOrderMsg, orderDest, isOrderMsg, opChat, dest, loadTopics, doneKeyboard, hhmmSP, TOPICOS };
 
 // ---------- Avisos de pedido no Telegram ----------
 // O corpo fica sem recuo extra de propósito: são as funções originais do server.js, sem mudança.
@@ -299,9 +301,11 @@ async function handleTgUpdate(u) {
 }
 let tgOffset = 0;
 async function tgPoll() {
+  POLL.on = true; POLL.okAt = Date.now();
   for (;;) {
     const j = await tgApi('getUpdates', { offset: tgOffset, timeout: 50, allowed_updates: ['callback_query', 'message'] }, 60000);
     if (!j?.ok) { await new Promise((r) => setTimeout(r, 5000)); continue; }
+    POLL.okAt = Date.now();
     for (const u of j.result || []) {
       tgOffset = u.update_id + 1;
       try { await handleTgUpdate(u); } catch (e) { console.error('callback Telegram', e.message); }

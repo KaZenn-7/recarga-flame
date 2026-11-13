@@ -612,3 +612,31 @@ test('erro não tratado: registra e avisa no Sistema no máximo 1x a cada 10 min
     await ateQue(() => tgSent.some((x) => /Erro não tratado na loja \(unhandledRejection\):\nError: boom\n/.test(x.text)));
   } finally { console.error = orig; }
 });
+
+test('saúde: /api/health só pela própria máquina; aponta pagamento preso e botões parados', async () => {
+  const { saude } = SRV;
+  // pelo nginx (X-Forwarded-For) não existe
+  assert.equal((await fetch(base + '/api/health', { headers: { 'X-Forwarded-For': '8.8.8.8' } })).status, 404);
+  const r = await fetch(base + '/api/health');
+  assert.ok([200, 503].includes(r.status));
+  assert.equal(typeof (await r.json()).ok, 'boolean');
+  mock.approve = true;
+  const { token, id } = await (await postJ('/api/orders', { product: 'c1000', gameId: '333371', email: 'hc@x.com' })).json();
+  await pagar(token);
+  await new Promise((r2) => setTimeout(r2, 20));
+  try {
+    db.prepare("UPDATE orders SET autopay='paying', autopay_at=? WHERE id=?").run(Date.now() - 6 * 60_000, id);
+    assert.ok(saude().some((f) => /pagando" há mais de 5 min/.test(f)));
+    const h = await fetch(base + '/api/health');
+    assert.equal(h.status, 503);
+    assert.ok((await h.json()).falhas.some((f) => /pagando/.test(f)));
+  } finally { db.prepare('UPDATE orders SET autopay=NULL WHERE id=?').run(id); }
+  const { POLL } = await import('../src/telegram.js');
+  const antes = { ...POLL };
+  try {
+    Object.assign(POLL, { on: true, okAt: Date.now() - 10 * 60_000 });
+    assert.ok(saude().some((f) => /botões do Telegram sem resposta há 10 min/.test(f)));
+    POLL.okAt = Date.now();
+    assert.ok(!saude().some((f) => /botões/.test(f)));
+  } finally { Object.assign(POLL, antes); }
+});

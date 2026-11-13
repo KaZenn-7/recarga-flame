@@ -141,6 +141,15 @@ export const MIGRATIONS = [
   } },
   // carrinho: e-mail único de entrega (quando todos os itens terminaram) — marca para nunca mandar 2x
   { v: 4, nome: 'carrinho_email', up(db) { addCols(db, 'carrinhos', ['mail_entregue INTEGER']); } },
+  // índices das consultas de cada pedido/visita (antifraude, Pix em aberto, fila, cupons, origem do funil):
+  // sem eles cada consulta lê a tabela inteira — rápido com 100 pedidos, lento com dezenas de milhares
+  { v: 5, nome: 'indices', up(db) {
+    db.exec(`CREATE INDEX IF NOT EXISTS orders_game ON orders(game_id);
+CREATE INDEX IF NOT EXISTS orders_email ON orders(lower(email));
+CREATE INDEX IF NOT EXISTS orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS orders_coupon ON orders(coupon);
+CREATE INDEX IF NOT EXISTS events_dev ON events(dev, ev)`);
+  } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.
