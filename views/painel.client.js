@@ -767,7 +767,7 @@ async function loadAna(){
   k.appendChild(kpi('Entrega (mediana)',a.entregaMedianaMin==null?'—':fmtMin(a.entregaMedianaMin),
     a.entregaAte1h==null?'nenhuma entrega':(Math.round(a.entregaAte1h*100)+'% em até 1h · '+a.entregas+' entregas')));
   body.appendChild(k);
-  if(a.estornos){const w=el('div','ccard');w.appendChild(el('h4',null,'⚠ '+a.estornos+(a.estornos>1?' estornos':' estorno')+' no período'));
+  if(a.estornos){const w=el('div','ccard wide');w.appendChild(el('h4',null,'⚠ '+a.estornos+(a.estornos>1?' estornos':' estorno')+' no período'));
     w.appendChild(el('p','sub','Pedidos pagos que voltaram (MED/chargeback). Não entram nas vendas acima.'));body.appendChild(w);}
   if(a.funil)body.appendChild(funnelCard(a.funil));
   if(a.entregaTipos)body.appendChild(entregaCard(a));
@@ -779,7 +779,7 @@ async function loadAna(){
 // horários e dias de pico: colunas por hora (vendas) + barras por dia da semana
 function picoCard(a){
   const DIAS=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const card=el('div','ccard');card.style.position='relative';card.appendChild(el('h4',null,'Horários e dias de pico'));
+  const card=el('div','ccard wide');card.style.position='relative';card.appendChild(el('h4',null,'Horários e dias de pico'));
   const tot=a.porHora.reduce(function(s,h){return s+h.n;},0);
   if(!tot){card.appendChild(el('p','sub','Sem vendas no período'));return card;}
   let hMax=a.porHora[0];a.porHora.forEach(function(h){if(h.n>hMax.n)hMax=h;});
@@ -897,7 +897,7 @@ function funnelCard(f){
 function fmtMin(m){return m<60?(m+' min'):(Math.floor(m/60)+'h'+(m%60?String(m%60).padStart(2,'0'):''));}
 function niceMax(v){if(v<=0)return 100;const p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p;}
 function dayChart(a,r){
-  const card=el('div','ccard');card.appendChild(el('h4',null,'Faturamento por dia'));
+  const card=el('div','ccard wide');card.appendChild(el('h4',null,'Faturamento por dia'));
   // série contínua (dias sem venda = 0); período "Tudo": do 1º dia com venda até hoje
   const map={};a.porDia.forEach(function(d){map[d.date]=d;});
   let start=r[0]||(a.porDia[0]&&a.porDia[0].date),end=r[1]||ymd(spNow());

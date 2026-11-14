@@ -188,6 +188,30 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .mbtns .save{background:var(--orange);color:#160a04}.mbtns .cancel{background:var(--panel2);color:var(--mut);border:1px solid var(--line)}
 .merr{color:var(--red);font-size:13px;margin-top:10px;min-height:16px;text-align:center}
 .srow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}.srow small{color:var(--mut);font-size:12px}.srow .esta{color:var(--green);font-size:12px;font-weight:700}
+/* PC (900 px ou mais): conteúdo em até 1200 px, cards em colunas, menu à esquerda, janelas no centro. O celular não muda. */
+@media(min-width:900px){
+  header>div,#sbarBox{max-width:1200px;margin-left:auto;margin-right:auto}
+  .htop{padding:14px 16px 10px}.nav{gap:2px;padding:0 6px}.nav button{flex:0 0 auto;padding:12px 18px}
+  .search{max-width:520px}
+  main,#viewPed{max-width:1200px}
+  #viewPed{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;align-items:start;padding-top:12px}
+  #viewPed .card{margin:0}#viewPed>.empty{grid-column:1/-1}
+  #prodList,#cupList,#repBox{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+  #prodList .prow,#cupList .prow,#repBox .rep{margin:0}#prodList>.empty,#cupList>.empty,#repBox>.empty{grid-column:1/-1}
+  #viewProd .padd>.newbtn,#secCup>.newbtn{max-width:360px}
+  #anaBody{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;grid-auto-flow:dense;align-items:start}
+  #anaBody>.kpis,#anaBody>.wide,#anaBody>.empty{grid-column:1/-1}#anaBody>*{margin:0}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+  .modal{align-items:center;padding:24px}.sheet{border-radius:16px;max-height:88vh}
+  #backbar{left:50%;right:auto;bottom:20px;transform:translateX(-50%);width:560px;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  .card:hover,.prow:hover{border-color:#3a3a40}
+  .sbar{margin:10px 16px 0}
+  .acts a,.acts button{padding:10px 8px;font-size:14px;line-height:1.3}
+  main .padd{padding-left:0;padding-right:0}
+  #cupList .prow.cup{flex-wrap:wrap}#cupList .prow.cup .pi{flex:1 1 100%}#cupList .prow.cup .rt{flex:1;flex-direction:row;align-items:center;justify-content:space-between}
+  #anaBody>.wide .rank{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:32px}
+  .ccard .kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+}
 </style></head><body>
 <header>
   <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" data-act="openStars" title="Saldo de Stars">★ …</button><button class="rf" id="rfBtn" style="margin-left:6px" data-act="refreshView">Atualizar</button><button class="rf" style="margin-left:6px" data-act="openSess" title="Sessões ativas" aria-label="Sessões ativas">🔒</button><button class="rf" style="margin-left:6px" data-act="logout">Sair</button></div>
