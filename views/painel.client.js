@@ -6,6 +6,8 @@ const ORDERS=JSON.parse(document.getElementById('ordersData').textContent);
 const ACTS={
   openStars:()=>openStars(), refreshView:()=>refreshView(),
   logout:()=>fetch('/logout',{method:'POST'}).then(()=>location.href='/login'),
+  openSess:()=>openSess(), closeSess:()=>$$('sessmodal').classList.remove('on'),
+  endSess:t=>endSess({id:t.dataset.id}), endOutras:()=>{if(confirm('Encerrar todas as outras sessões? Os outros aparelhos vão precisar entrar de novo.'))endSess({outras:true});},
   setView:t=>setView(t.dataset.v), closeStars:()=>closeStars(), closeBack:()=>closeBack(), yesBack:()=>yesBack(),
   openCup:()=>openCup(), irParaFaixas:()=>irParaFaixas(), closeCup:()=>closeCup(), saveCup:()=>saveCup(),
   swCup:t=>{t.classList.toggle('on');cupAtivoTxt();}, sw:t=>t.classList.toggle('on'),
@@ -122,6 +124,22 @@ function renderSbar(){
   if(!msg)return;
   const d=el('div','sbar');d.appendChild(el('span',null,msg));
   const bt=el('button',null,STARS.configurado?'Recarregar':'Informar saldo');bt.onclick=openStars;d.appendChild(bt);box.appendChild(d);
+}
+// sessões ativas do painel: aparelho, IP, desde quando; encerrar uma ou todas as outras
+function openSess(){$$('sessmodal').classList.add('on');loadSess();}
+function loadSess(){
+  fetch('/api/admin/sessoes').then(function(r){return r.json();}).then(function(ss){
+    const fd=function(ms){return new Date(ms).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});};
+    const outras=ss.filter(function(s){return !s.atual;}).length;
+    $$('sessBody').innerHTML=ss.map(function(s){
+      return '<div class="srow"><div><b>'+esc(s.aparelho)+'</b>'+(s.atual?' <span class="esta">· esta</span>':'')+'<br><small>IP '+esc(s.ip||'?')+' · desde '+fd(s.desde)+' · vale até '+fd(s.ate)+'</small></div>'
+        +(s.atual?'':'<button class="rf" data-act="endSess" data-id="'+esc(s.id)+'">Encerrar</button>')+'</div>';
+    }).join('')+(outras?'<div class="mbtns"><button class="save" data-act="endOutras">Encerrar as outras '+outras+'</button></div>':'<p class="sub">Só esta sessão está ativa.</p>');
+  }).catch(function(){$$('sessBody').innerHTML='<div class="empty">Não foi possível carregar.</div>';});
+}
+function endSess(b){
+  fetch('/api/admin/sessoes/encerrar',{method:'POST',headers:{'Content-Type':'application/json','x-painel':'1'},body:JSON.stringify(b)})
+    .then(function(r){return r.json();}).then(function(j){if(j.error)alert(j.error);loadSess();});
 }
 function openStars(){$$('smodal').classList.add('on');renderStars();loadStars();}
 function closeStars(){$$('smodal').classList.remove('on');}
@@ -951,5 +969,6 @@ function prodRank(list){
 
 render();
 $$('smodal').onclick=function(e){if(e.target.id==='smodal')closeStars();};
+$$('sessmodal').onclick=function(e){if(e.target.id==='sessmodal')$$('sessmodal').classList.remove('on');};
 loadStars();
 

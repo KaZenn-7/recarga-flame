@@ -144,3 +144,26 @@ test('vitrine: Coins, Coleções, Battle Pass (Gold Pass primeiro, depois nívei
   assert.deepEqual(adminList, loja.map((p) => p.key)); // painel na mesma ordem da loja
   await fetch(base + '/api/admin/products/ap_teste', { method: 'DELETE', headers: H });
 });
+
+test('sessões ativas: lista com aparelho, encerra outra (cookie dela para de valer), não encerra a própria; código mostra o aparelho', async () => {
+  const A = { 'Content-Type': 'application/json', Cookie: COOKIE, 'x-painel': '1', ...freshIP() };
+  const outra = await login();
+  assert.match(tgSent.at(-1).text, /IP: .* · /); // código de login com o aparelho
+  const ss = await (await fetch(base + '/api/admin/sessoes', { headers: A })).json();
+  assert.ok(ss.some((s) => s.atual) && ss.length >= 2);
+  assert.ok(ss.every((s) => /^[0-9a-f]{16}$/.test(s.id) && typeof s.aparelho === 'string'));
+  const minha = ss.find((s) => s.atual);
+  // sem x-painel/origem: recusado
+  assert.equal((await fetch(base + '/api/admin/sessoes/encerrar', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: COOKIE }, body: JSON.stringify({ outras: true }) })).status, 403);
+  assert.equal((await fetch(base + '/api/admin/sessoes/encerrar', { method: 'POST', headers: A, body: JSON.stringify({ id: minha.id }) })).status, 400);
+  // descobre a sessão "outra" pela lista vista por ela mesma
+  const idOutra = (await (await fetch(base + '/api/admin/sessoes', { headers: { Cookie: outra } })).json()).find((s) => s.atual).id;
+  const r = await (await fetch(base + '/api/admin/sessoes/encerrar', { method: 'POST', headers: A, body: JSON.stringify({ id: idOutra }) })).json();
+  assert.equal(r.encerradas, 1);
+  assert.equal((await fetch(base + '/api/admin/sessoes', { headers: { Cookie: outra } })).status, 401);
+  // "encerrar as outras": a atual continua
+  await login();
+  assert.ok((await (await fetch(base + '/api/admin/sessoes/encerrar', { method: 'POST', headers: A, body: JSON.stringify({ outras: true }) })).json()).encerradas >= 1);
+  const fim = await (await fetch(base + '/api/admin/sessoes', { headers: A })).json();
+  assert.equal(fim.length, 1); assert.ok(fim[0].atual);
+});

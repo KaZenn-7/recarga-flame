@@ -191,7 +191,7 @@ app.get('/api/orders/:token', async (req, res) => {
     status: st, entrega, id: o.id, product: o.product, nome: o.prod_nome || PRODUCTS[o.product]?.nome || o.product,
     cents: o.cents, gameId: o.game_id, nick: o.nickname,
     avatar: `/api/player/${encodeURIComponent(o.game_id)}/avatar`,
-    img: PRODUCTS[o.product]?.img || `/img/${o.product}.jpg`,
+    img: PRODUCTS[o.product]?.img || `/img/${o.product}.webp`,
     expiresAt: o.expires_at || null,
     qr: pending ? o.qr || null : null, qrBase64: pending ? o.qr_b64 || null : null,
   });

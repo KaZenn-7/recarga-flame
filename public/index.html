@@ -255,7 +255,7 @@ input:focus{outline:0;border-color:#45454c}
     <h2 id="e2t">Escolha o produto</h2>
     <p class="sub" id="e2s">O item será entregue na conta abaixo.</p>
     <div class="chip">
-      <img id="av2" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2242%22 height=%2242%22><rect width=%2242%22 height=%2242%22 rx=%228%22 fill=%22%23242428%22/><text x=%2221%22 y=%2228%22 font-size=%2220%22 text-anchor=%22middle%22 fill=%22%236c6c74%22>?</text></svg>'">
+      <img id="av2" alt="" data-fb="1">
       <div><div class="nk" id="nick2"></div><div class="id">ID <span class="mono" id="pid2"></span></div></div>
       <button class="edit" id="trocar">Trocar</button>
     </div>
@@ -349,6 +349,11 @@ const carProds=()=>car.map(prodOf).filter(Boolean);
 
 async function api(u,o){const r=await fetch(u,o);let j={};try{j=await r.json();}catch{}if(!r.ok){const e=new Error(j.error||'Algo deu errado. Tente de novo.');e.status=r.status;e.field=j.field;throw e;}return j;}
 function show(n){for(const i of[1,2,3,4])$('e'+i).classList.toggle('hide',i!==n);for(const i of[1,2,3,4])$('d'+i).classList.toggle('on',i<=n);scrollTo({top:0,behavior:'smooth'});}
+
+/* imagem que não carregou: avatar vira "?", foto de produto some (sem handler embutido no HTML: a CSP não permite) */
+const AV_FB='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2242%22 height=%2242%22><rect width=%2242%22 height=%2242%22 rx=%228%22 fill=%22%23242428%22/><text x=%2221%22 y=%2228%22 font-size=%2220%22 text-anchor=%22middle%22 fill=%22%236c6c74%22>?</text></svg>';
+document.addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG')return;
+  if(t.dataset.fb&&t.src!==AV_FB)t.src=AV_FB;else if(t.hasAttribute('data-hide-err'))t.style.display='none';},true);
 
 /* ---- persistência de estado (localStorage) ---- */
 const SAVE_KEY='cf_pedido';
@@ -493,7 +498,7 @@ function render(){
   const bl=(conta&&conta.blocked)||{};
   const noCar=k=>addMode&&car.includes(k);
   $('cat').innerHTML=keys.map(c=>`<div class="cat"><span>${esc(c)}</span><div class="grid">${g[c].map(p=>
-    `<button class="prod${bl[p.key]?' off':noCar(p.key)?' sel':''}" data-k="${esc(p.key)}"><img class="thumb" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.style.display='none'"><span class="txt"><span class="n">${esc(p.nome)}</span><span class="p mono">${priceHtml(p)}</span>${bl[p.key]?'<span class="tag">Indisponível</span>':noCar(p.key)?'<span class="tag in">No pedido</span>':''}</span></button>`
+    `<button class="prod${bl[p.key]?' off':noCar(p.key)?' sel':''}" data-k="${esc(p.key)}"><img class="thumb" src="${esc(p.img)}" alt="" loading="lazy" data-hide-err><span class="txt"><span class="n">${esc(p.nome)}</span><span class="p mono">${priceHtml(p)}</span>${bl[p.key]?'<span class="tag">Indisponível</span>':noCar(p.key)?'<span class="tag in">No pedido</span>':''}</span></button>`
   ).join('')}</div></div>`).join('');
   $('cat').querySelectorAll('.prod').forEach(el=>el.onclick=()=>{
     const why=bl[el.dataset.k];

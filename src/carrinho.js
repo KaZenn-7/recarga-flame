@@ -103,7 +103,7 @@ app.get('/api/carrinho/:token', async (req, res) => {
     expiresAt: car.expires_at || null,
     qr: status === 'pending' ? car.qr || null : null, qrBase64: status === 'pending' ? car.qr_b64 || null : null,
     itens: itens.map((o, i) => ({ id: o.id, token: o.token, product: o.product, nome: o.prod_nome || PRODUCTS[o.product]?.nome || o.product,
-      cents: o.cents, img: PRODUCTS[o.product]?.img || `/img/${o.product}.jpg`, status: sts[i], entrega: entregaState(o) })),
+      cents: o.cents, img: PRODUCTS[o.product]?.img || `/img/${o.product}.webp`, status: sts[i], entrega: entregaState(o) })),
   });
 });
 

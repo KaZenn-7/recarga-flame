@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { tgSend } from './telegram.js';
 import { LOGIN_HTML } from '../views/login.js';
 
-export function initLogin({ env, db, safeEq, limit }) {
+export function initLogin({ env, db, safeEq, limit, guard }) {
 // Anti-brute-force no admin: janela deslizante por IP, conta só FALHAS.
 // Login correto sempre passa (não é bloqueado nem conta), então o operador
 // nunca fica trancado fora mesmo que um atacante martele o mesmo IP.
@@ -42,6 +42,15 @@ const CODE_MAX_TRIES = 5;          // por desafio
 const COOKIE = 'cf_sess';
 const hashHex = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const challenges = new Map(); // id -> { codeHash, exp, tries, ip }
+// aparelho em poucas palavras, a partir do User-Agent (ex.: "iPhone · Chrome")
+function uaCurto(ua) {
+  ua = String(ua || '');
+  const so = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows'
+    : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'aparelho desconhecido';
+  const nav = /EdgA?\/|Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : '';
+  return nav ? `${so} · ${nav}` : so;
+}
 
 function getCookie(req, name) {
   for (const part of (req.get('cookie') || '').split(';')) {
@@ -100,7 +109,7 @@ function admin(req, res, next) {
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const id = crypto.randomBytes(24).toString('base64url');
     challenges.set(id, { codeHash: hashHex(code), exp: Date.now() + CODE_TTL, tries: 0, ip });
-    const sent = await tgSend(`🔐 Código de acesso ao painel: ${code}\nVale 5 minutos. IP: ${ip}\nSe não foi você, troque a senha do admin.`, 'privado'); // nunca no grupo
+    const sent = await tgSend(`🔐 Código de acesso ao painel: ${code}\nVale 5 minutos. IP: ${ip} · ${uaCurto(req.get('user-agent'))}\nSe não foi você, troque a senha do admin.`, 'privado'); // nunca no grupo
     if (!sent) { challenges.delete(id); return res.status(502).json({ error: 'Não foi possível enviar o código pelo Telegram.' }); }
     res.json({ challenge: id });
   });
@@ -136,6 +145,26 @@ function admin(req, res, next) {
     if (tok) db.prepare('DELETE FROM admin_sessions WHERE id_hash=?').run(hashHex(tok));
     res.set('Set-Cookie', `${COOKIE}=; Max-Age=0; ${cookieAttrs()}`);
     res.json({ ok: true });
+  });
+
+  // Sessões ativas (celular perdido, login que não foi você): lista e encerra. O id exposto é o começo do hash do token.
+  const sid = (h) => h.slice(0, 16);
+  app.get('/api/admin/sessoes', admin, (req, res) => {
+    const atual = hashHex(getCookie(req, COOKIE) || '');
+    res.json(db.prepare('SELECT id_hash, created_at, expires_at, ip, ua FROM admin_sessions WHERE expires_at > ? ORDER BY created_at DESC').all(Date.now())
+      .map((s) => ({ id: sid(s.id_hash), desde: s.created_at, ate: s.expires_at, ip: s.ip, aparelho: uaCurto(s.ua), atual: s.id_hash === atual })));
+  });
+  app.post('/api/admin/sessoes/encerrar', admin, (req, res) => {
+    if (!guard(req, res)) return;
+    const atual = hashHex(getCookie(req, COOKIE) || '');
+    const { id, outras } = req.body ?? {};
+    let n = 0;
+    if (outras) n = db.prepare('DELETE FROM admin_sessions WHERE id_hash <> ?').run(atual).changes;
+    else if (typeof id === 'string' && /^[0-9a-f]{16}$/.test(id)) {
+      if (id === sid(atual)) return res.status(400).json({ error: 'Para sair desta sessão, use "Sair".' });
+      n = db.prepare("DELETE FROM admin_sessions WHERE substr(id_hash, 1, 16) = ?").run(id).changes;
+    } else return res.status(400).json({ error: 'Sessão inválida.' });
+    res.json({ ok: true, encerradas: n });
   });
 
   app.get('/login', (req, res) => {

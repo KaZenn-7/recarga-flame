@@ -86,6 +86,10 @@ await page.click('#stBtn'); await wait(800);
 ok(await cls('#smodal', 'on'), 'botão ★ abre o saldo de Stars');
 await page.click('#smodal button[data-act="closeStars"]'); await wait(200);
 ok(!(await cls('#smodal', 'on')), 'Fechar fecha o saldo de Stars');
+await page.click('button[data-act="openSess"]'); await wait(800);
+ok(await cls('#sessmodal', 'on') && await page.$eval('#sessBody', (e) => /· esta/.test(e.textContent)), '🔒 abre as sessões ativas e marca a atual');
+await page.click('#sessmodal button[data-act="closeSess"]'); await wait(200);
+ok(!(await cls('#sessmodal', 'on')), 'Fechar fecha as sessões');
 // pedido pago: abrir Telegram define backFrom; Marcar entregue pede confirmação (confirm → dialog)
 const hasTg = await page.$('a[data-act="backFrom"]');
 if (hasTg) { await page.evaluate(() => { document.querySelector('a[data-act="backFrom"]').removeAttribute('href'); }); await page.click('a[data-act="backFrom"]'); ok(await page.evaluate(() => backFrom === 1), 'Abrir no Telegram marca o pedido para "já entregou?"'); }

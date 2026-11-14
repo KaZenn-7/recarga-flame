@@ -22,7 +22,7 @@ const starsOf = (o) => o.prod_stars || PRODUCTS[o.product]?.stars || 0;
 // exigiria sessão do Telegram no servidor — recusado no contexto.md). Então: entrega desconta sozinha,
 // "confere o saldo" (ou a leitura real da conta faz isso sozinha). Compras de Stars NÃO entram aqui: ficam em
 // stars_purchases, só para o custo — nunca alteram o saldo.
-const STARS_LOW = Number(env.STARS_LOW ?? 500); // abaixo disso: aviso de saldo baixo
+const STARS_LOW = Number(env.STARS_LOW ?? 1500); // abaixo disso: aviso de saldo baixo (pico de 11/11/2026: 2.946★ num dia; 1.500 ≈ meio dia de pico)
 // Custo atual = custo exato das Stars que estão na conta agora: média ponderada das compras mais recentes,
 // contando só a parte de cada uma que ainda compõe o saldo. Sem compra registrada: STAR_COST_BRL.
 function calcStarCost(saldo) {

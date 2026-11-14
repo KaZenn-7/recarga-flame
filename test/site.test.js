@@ -165,3 +165,20 @@ test('vitrine: mesma conta em 30 s usa a consulta guardada; pedido consulta o jo
     assert.equal(cfCalls.length - n, 2);
   } finally { _setPlayerTtl(0); }
 });
+
+test('CSP da loja: script só pelos hashes dos blocos fixos (sem unsafe-inline); Permissions-Policy e HSTS com subdomínios', async () => {
+  const crypto = await import('node:crypto');
+  const r = await fetch(base + '/', { headers: freshIP() });
+  const csp = r.headers.get('content-security-policy'), html = await r.text();
+  const script = /script-src ([^;]+)/.exec(csp)[1];
+  assert.doesNotMatch(script, /unsafe-inline/);
+  for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+    assert.ok(script.includes(`'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`), 'hash do script da página');
+  }
+  assert.doesNotMatch(html, / on(error|click|load)="/); // nada de handler embutido
+  const login = await (await fetch(base + '/login', { headers: freshIP() })).text();
+  const h = /<script>([\s\S]*?)<\/script>/.exec(login)[1];
+  assert.ok(csp.includes(crypto.createHash('sha256').update(h).digest('base64')), 'login liberado');
+  assert.match(r.headers.get('permissions-policy') || '', /camera=\(\)/);
+  assert.match(r.headers.get('strict-transport-security') || '', /includeSubDomains/);
+});

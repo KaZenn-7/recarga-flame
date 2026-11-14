@@ -11,6 +11,7 @@ import { invoicePaid } from './tg-user.js';
 import { initLogin } from './src/login.js';
 import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
+import { LOGIN_HTML } from './views/login.js';
 import { homeHtml, pageHtml } from './seo-home.js';
 import { initParceiros } from './src/parceiros.js';
 import { tgApi, tgSend, hhmmSP, initAvisos, orderDest, POLL } from './src/telegram.js';
@@ -68,7 +69,7 @@ function loadProducts() {
     PRODUCTS[r.key] = {
       nome: r.nome, cents: r.cents, stars: r.stars, code: r.code,
       tipo: r.tipo || '', niveis: r.niveis || 0,
-      img: r.img || `/img/${r.key}.jpg`, ativo: !!r.ativo, sort: r.sort,
+      img: r.img || `/img/${r.key}.webp`, ativo: !!r.ativo, sort: r.sort,
     };
   }
 }
@@ -294,7 +295,7 @@ function entregaState(o) {
 }
 
 // ---- Login do painel (senha + código pelo Telegram, sessão, anti-brute-force, middleware admin): src/login.js ----
-const { admin, getCookie, adminFails, challenges, rotasLogin } = initLogin({ env, db, safeEq, limit });
+const { admin, getCookie, adminFails, challenges, rotasLogin } = initLogin({ env, db, safeEq, limit, guard });
 
 // ---- E-mail ao cliente (Resend; e-mail de pedido entregue): src/email.js ----
 const { sendMail, deliveredEmail, carrinhoEntregueEmail } = initEmail({ env, PRODUCTS, esc });
@@ -315,14 +316,26 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by'); // não anuncia que é Express
 
 // Headers de segurança (hardening Fase 0)
+// CSP: script embutido só os blocos <script> fixos das páginas da loja (liberados pelo hash, calculado ao subir).
+// Um script injetado (XSS) ou onclick="…" no HTML não roda. Mudou o <script> de uma página? O hash muda sozinho no
+// restart. Página nova com <script> embutido: incluir em CSP_PAGINAS. (style continua com 'unsafe-inline': estilos
+// inline são muitos e não executam código.)
+const CSP_PAGINAS = [...fs.readdirSync('public').filter((f) => f.endsWith('.html')).map((f) => path.join('public', f))];
+function scriptHashes(html) {
+  return [...String(html).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
+}
+let CSP_HASHES = [...new Set(CSP_PAGINAS.flatMap((f) => scriptHashes(fs.readFileSync(f, 'utf8'))))];
+const addCspHtml = (html) => { CSP_HASHES = [...new Set([...CSP_HASHES, ...scriptHashes(html)])]; };
+addCspHtml(LOGIN_HTML); // página de login (views/login.js)
+const cspLoja = () => `default-src 'self'; script-src 'self' ${CSP_HASHES.join(' ')}; style-src 'self' 'unsafe-inline'; `
+  + "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 app.use((req, res, next) => {
-  res.set('Strict-Transport-Security', 'max-age=31536000'); // HSTS: navegador só usa HTTPS por 1 ano
+  res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); // HSTS: só HTTPS por 1 ano (www também)
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('X-Frame-Options', 'DENY');
   res.set('Referrer-Policy', 'no-referrer');
-  res.set('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
-    + "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  res.set('Content-Security-Policy', cspLoja());
   next();
 });
 
@@ -345,7 +358,7 @@ const ogCupom = (c) => {
   return /^og-cupom\/[a-z0-9_-]+\.jpg$/.test(f) && fs.existsSync(path.join('public', 'img', f)) ? `${SITE_URL}/img/${f}` : null;
 };
 const prodsPublic = () => Object.entries(PRODUCTS).filter(([, p]) => p.ativo).sort(([, a], [, b]) => ordemVitrine(a, b))
-  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.jpg`, rep: repetivel(p), nv: ehNivel(p) ? p.niveis : 0 }));
+  .map(([key, p]) => ({ key, nome: p.nome, cents: p.cents, stars: p.stars, cat: categoria(p), img: p.img || `/img/${key}.webp`, rep: repetivel(p), nv: ehNivel(p) ? p.niveis : 0 }));
 app.get(['/', '/index.html'], (req, res) => {
   const home = homeHtml(INDEX_HTML, prodsPublic());
   const c = req.query.cupom ? getCoupon(req.query.cupom) : null;
@@ -758,9 +771,9 @@ function parseProduct(b) {
   if (!code || code.length > 40) return { err: 'Código do link obrigatório (até 40 caracteres).' };
   if (!Number.isFinite(cents) || cents < 1 || cents > 10_000_00) return { err: 'Preço inválido.' };
   if (niveis < 0 || niveis > 999) return { err: 'Níveis inválidos.' };
-  // img: aceita vazio (usa /img/<key>.jpg por padrão), caminho local /img/... ou URL https.
+  // img: aceita vazio (usa /img/<key>.webp por padrão), caminho local /img/... ou URL https.
   if (img && !/^\/img\/[\w.-]+$/.test(img) && !/^https:\/\/[\w.-]+\/[\w./-]*$/.test(img)) {
-    return { err: 'Imagem inválida: use /img/arquivo.jpg ou uma URL https.' };
+    return { err: 'Imagem inválida: use /img/arquivo.webp ou uma URL https.' };
   }
   return { key, nome, code, cents, stars, niveis, tipo, img, ativo };
 }
@@ -769,7 +782,7 @@ app.get('/api/admin/products', admin, (req, res) => {
   const list = db.prepare('SELECT * FROM products ORDER BY sort, rowid').all()
     .map((r) => {
       const l = profitCents(r.cents, r.stars || 0); // com o custo ATUAL da Star
-      return { ...r, cat: categoria(r), ativo: !!r.ativo, img: r.img || `/img/${r.key}.jpg`, lucro: Math.round(l), margem: r.cents ? l / r.cents : 0 };
+      return { ...r, cat: categoria(r), ativo: !!r.ativo, img: r.img || `/img/${r.key}.webp`, lucro: Math.round(l), margem: r.cents ? l / r.cents : 0 };
     }).sort(ordemVitrine); // mesma ordem da loja
   res.json(list);
 });

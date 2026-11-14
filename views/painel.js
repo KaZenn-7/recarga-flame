@@ -187,9 +187,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .mbtns button{flex:1;padding:13px;border:0;border-radius:9px;font:inherit;font-weight:700;cursor:pointer}
 .mbtns .save{background:var(--orange);color:#160a04}.mbtns .cancel{background:var(--panel2);color:var(--mut);border:1px solid var(--line)}
 .merr{color:var(--red);font-size:13px;margin-top:10px;min-height:16px;text-align:center}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}.srow small{color:var(--mut);font-size:12px}.srow .esta{color:var(--green);font-size:12px;font-weight:700}
 </style></head><body>
 <header>
-  <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" data-act="openStars" title="Saldo de Stars">★ …</button><button class="rf" id="rfBtn" style="margin-left:6px" data-act="refreshView">Atualizar</button><button class="rf" style="margin-left:6px" data-act="logout">Sair</button></div>
+  <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" data-act="openStars" title="Saldo de Stars">★ …</button><button class="rf" id="rfBtn" style="margin-left:6px" data-act="refreshView">Atualizar</button><button class="rf" style="margin-left:6px" data-act="openSess" title="Sessões ativas" aria-label="Sessões ativas">🔒</button><button class="rf" style="margin-left:6px" data-act="logout">Sair</button></div>
   <div class="nav">
     <button id="navPed" class="on" data-act="setView" data-v="pedidos">Pedidos</button>
     <button id="navProd" data-act="setView" data-v="produtos">Produtos</button>
@@ -210,6 +211,13 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
     <h3>Saldo de Stars</h3>
     <div id="sBody"><div class="empty">Carregando…</div></div>
     <div class="mbtns"><button class="cancel" data-act="closeStars">Fechar</button></div>
+  </div>
+</div>
+<div class="modal" id="sessmodal">
+  <div class="sheet">
+    <h3>Sessões ativas</h3>
+    <div id="sessBody"><div class="empty">Carregando…</div></div>
+    <div class="mbtns"><button class="cancel" data-act="closeSess">Fechar</button></div>
   </div>
 </div>
 <div id="backbar" role="dialog" aria-live="polite"><p id="bbtxt"></p><div class="bb"><button class="n" data-act="closeBack">Ainda não</button><button class="y" data-act="yesBack">✅ Sim, marcar entregue</button></div></div>
@@ -283,7 +291,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
       </select></div>
       <div class="fg"><label>Níveis de passe</label><input id="f_niveis" inputmode="numeric" placeholder="0" autocomplete="off"><div class="hint">0 se não for nível.</div></div>
     </div>
-    <div class="fg"><label>Imagem (URL/caminho)</label><input id="f_img" placeholder="/img/c1000.jpg" autocomplete="off"></div>
+    <div class="fg"><label>Imagem (URL/caminho)</label><input id="f_img" placeholder="/img/c1000.webp" autocomplete="off"></div>
     <label class="fchk"><button type="button" class="sw" id="f_ativo" data-act="sw"></button><span>Ativo (aparece na loja)</span></label>
     <p class="merr" id="merr"></p>
     <div class="mbtns"><button class="cancel" data-act="closeForm">Cancelar</button><button class="save" id="msave" data-act="saveForm">Salvar</button></div>

@@ -16,6 +16,7 @@ process.env.ADMIN_USER = 'admin_test';
 process.env.ADMIN_PASS = 'senha_test_longa';
 process.env.PUBLIC_URL = 'http://localhost:0';
 process.env.CF_BASE = 'https://counterflame.test';
+process.env.STARS_LOW = '500'; // os testes de saldo baixo usam o limite antigo
 process.env.TG_BOT_TOKEN = 'tg-fake';
 process.env.TG_CHAT_ID = '42';
 process.env.RESEND_API_KEY = 're_fake';
