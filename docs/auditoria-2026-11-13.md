@@ -77,7 +77,8 @@ Funil dos últimos 7 dias (aparelhos únicos):
 - ✅ 🔴 **Erros não tratados.** Não havia `unhandledRejection`/`uncaughtException`; no Node 24 uma promise rejeitada sem `catch` derruba o processo (pagamento em andamento viraria "incerto").
   Feito: `unhandledRejection` registra, avisa no tópico Sistema (no máximo 1 aviso a cada 10 min) e a loja segue no ar; `uncaughtException` registra, avisa e sai pelo desligamento seguro (espera o pagamento em andamento) e o PM2 sobe de novo (`erroNaoTratado` em `server.js`).
 - ✅ 🟡 (feito: `registrarDeploy` — ao subir, avisa no tópico Sistema o commit publicado, os commits novos desde o último deploy e alterações não commitadas) Várias sessões fazendo commits na mesma pasta: um restart publica tudo o que estiver no código (já aconteceu com a9b5720). Antes de cada restart, conferir `git log` desde o último deploy e registrar o hash publicado.
-- ⬜ 🟡 Decisões do operador (pendentes da auditoria anterior): reboot da VPS (67 atualizações), SSH só por chave (`PasswordAuthentication`), `X11Forwarding`, portas em todas as interfaces (bloqueadas pelo UFW).
+- ✅ Reboot da VPS com atualizações (15/11 03:00, `~/bin/manutencao-reboot.sh`): kernel 7.0.0-43, 63 pacotes aplicados (restam 4 retidos: snapd, distro-info, python3-distro-info, gtk-update-icon-cache). Serviços, PM2, Docker e as screens `esdeath`/`nakatin` (via `@reboot`) voltaram sozinhos.
+- ⬜ 🟡 Decisões do operador: SSH só por chave (efetivo hoje: `passwordauthentication yes`), `X11Forwarding yes`, portas em todas as interfaces (bloqueadas pelo UFW).
 - ✅ ⚪ Sem `max_memory_restart` no PM2 (feito: 400M; usa ~115 MB; reinício passa pelo desligamento seguro). Rate limit/cache no nginx para `/img`: não precisa (o Node já manda cache de 1 dia; mexer no nginx afeta outros sites).
 - Contexto: VPS no ar há 26 dias, carga 2,4–2,9 (compartilhada), disco 34%, 3,1 GB de RAM livre.
 
