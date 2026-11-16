@@ -353,7 +353,7 @@ async function verifyPay(id,btn){
     const r=await api('/api/admin/orders/'+id+'/verify',{method:'POST'});
     const resolve=function(acao){return api('/api/admin/orders/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:acao})});};
     if(r.cobrado===true){
-      const pq=r.prova==='saldo'?'o saldo de Stars caiu exatamente '+r.stars+'★ depois da tentativa':'a fatura deste pedido no bot do CounterFlame (mensagem '+r.fatura+') tem recibo de pagamento de '+r.stars+'★';
+      const pq=r.prova==='recibo'?'a fatura deste pedido no bot do CounterFlame (mensagem '+r.fatura+') tem recibo de pagamento de '+r.stars+'★':r.motivo+' depois da tentativa';
       if(confirm('FOI COBRADO: '+pq+'.\n\nNÃO pague de novo. Confira se o item chegou na conta do cliente. Marcar o pedido #'+id+' como entregue (o cliente recebe o e-mail)?'))
         await resolve('entregue');
     }else if(r.cobrado===false){

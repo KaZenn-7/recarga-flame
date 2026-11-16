@@ -165,7 +165,8 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
     let saldoAntes = null;
     try { saldoAntes = await balanceOf(c); } catch { /* sem prova pelo saldo; segue pelo recibo */ }
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
-    if (onInvoice) await onInvoice(inv.msgId, saldoAntes);
+    const envioEm = Math.floor(Date.now() / 1000) - 2; // folga de relógio: cobranças deste envio têm date ≥ envioEm
+    if (onInvoice) await onInvoice(inv.msgId, saldoAntes, envioEm);
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
     ctx.sent = true; // daqui em diante, tempo esgotado = incerto
     let r;
@@ -173,18 +174,23 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       r = await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice })); // ← COBRA
     } catch (e) {
       // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
-      // FORM_SUBMIT_DUPLICATE mesmo tendo cobrado o 1º — pedidos #17, #116, #128, #181). Provas: o recibo da fatura
-      // ou a queda EXATA do saldo (o saldo cai em segundos; o recibo nunca foi achado nesses casos). Por ~12 s.
-      let paid = null, saldoDepois = null, prova = null;
+      // FORM_SUBMIT_DUPLICATE mesmo tendo cobrado o 1º — pedidos #17, #116, #128, #181). Provas: a cobrança no
+      // histórico de Stars (para o bot do CF, valor exato, depois do envio — dentro da fila nenhum outro pagamento
+      // acontece no meio), o recibo da fatura ou a queda EXATA do saldo. Por ~12 s.
+      let paid = null, saldoDepois = null, prova = null, txId = null;
       for (let i = 0; i < 6 && prova == null; i++) {
         await sleep(2000);
-        try { const rc = await receiptOf(c, inv.msgId); if (rc.paid) prova = 'recibo'; else paid = false; } catch { /* tenta de novo */ }
+        try {
+          const [t] = cobrancasCF(await lerHistorico(c, { desde: envioEm, paginas: 1 }), expectStars, envioEm);
+          if (t) { prova = 'historico'; txId = t.id; }
+        } catch { /* segue pelas outras provas */ }
+        if (prova == null) try { const rc = await receiptOf(c, inv.msgId); if (rc.paid) prova = 'recibo'; else paid = false; } catch { /* tenta de novo */ }
         if (prova == null && saldoAntes != null) {
           try { saldoDepois = await balanceOf(c); if (provaPeloSaldo(saldoAntes, saldoDepois, expectStars) === true) prova = 'saldo'; } catch { /* tenta de novo */ }
         }
       }
       const d = decideAfterSendError(e, prova ? true : paid, provaPeloSaldo(saldoAntes, saldoDepois, expectStars));
-      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', prova: prova || 'recibo', recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
+      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', prova: prova || 'recibo', ...(txId ? { txId } : {}), recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
       if (d === 'safe') throw safe(`Telegram recusou: ${e.errorMessage}`);
       throw Object.assign(e, { saldoAntes, saldoDepois });
     }
@@ -203,28 +209,31 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
 // ---- Histórico de Stars (só leitura) ----
 // Saídas da conta, mais recentes primeiro, entre desde..ate (unix s). Serve para achar o ID de uma transação (disputa
 // no @BotFather) e casar com a fatura: msgId é a mensagem da fatura paga no chat com o bot. Até 10 páginas de 50.
-export function starsTransactions({ desde = 0, ate = 0, limite = 200 } = {}, env = process.env) {
-  return serial(async () => {
-    const { Api } = await import('telegram');
-    const c = await getClient(env);
-    const out = []; let offset = '';
-    for (let page = 0; page < 10; page++) {
-      const r = await c.invoke(new Api.payments.GetStarsTransactions({ outbound: true, peer: new Api.InputPeerSelf(), offset, limit: 50 }));
-      const nomes = new Map((r.users || []).map((u) => [String(u.id), u.username || null]));
-      for (const t of r.history || []) {
-        if (ate && t.date > ate) continue;
-        if (desde && t.date < desde) return out;
-        const uid = t.peer?.peer?.userId;
-        out.push({ id: t.id, stars: starsToInt(t.stars), date: t.date, bot: uid != null ? nomes.get(String(uid)) || String(uid) : null,
-          msgId: t.msgId ?? null, title: t.title || null, refund: !!t.refund, pending: !!t.pending, failed: !!t.failed });
-        if (out.length >= limite) return out;
-      }
-      if (!r.nextOffset) break;
-      offset = r.nextOffset;
-    }
-    return out;
-  });
+export function starsTransactions(q = {}, env = process.env) {
+  return serial(async () => lerHistorico(await getClient(env), q));
 }
+async function lerHistorico(c, { desde = 0, ate = 0, limite = 200, paginas = 10 } = {}) {
+  const { Api } = await import('telegram');
+  const out = []; let offset = '';
+  for (let page = 0; page < paginas; page++) {
+    const r = await c.invoke(new Api.payments.GetStarsTransactions({ outbound: true, peer: new Api.InputPeerSelf(), offset, limit: 50 }));
+    const nomes = new Map((r.users || []).map((u) => [String(u.id), u.username || null]));
+    for (const t of r.history || []) {
+      if (ate && t.date > ate) continue;
+      if (desde && t.date < desde) return out;
+      const uid = t.peer?.peer?.userId;
+      out.push({ id: t.id, stars: starsToInt(t.stars), date: t.date, bot: uid != null ? nomes.get(String(uid)) || String(uid) : null,
+        msgId: t.msgId ?? null, title: t.title || null, refund: !!t.refund, pending: !!t.pending, failed: !!t.failed });
+      if (out.length >= limite) return out;
+    }
+    if (!r.nextOffset) break;
+    offset = r.nextOffset;
+  }
+  return out;
+}
+// Cobranças do bot do CF de exatamente `stars`, concluídas (não falha/estorno/pendente), com data em desde..ate
+export const cobrancasCF = (tx, stars, desde, ate) => tx.filter((t) => t.bot === CF_BOT && t.stars === -stars
+  && !t.failed && !t.refund && !t.pending && t.date >= desde && (!ate || t.date <= ate));
 
 // ---- Verificação de cobrança (resolver "incerto") ----
 // Cada pedido gera uma fatura nova (mensagem única no chat com o bot). Quando ela é paga, o Telegram liga o

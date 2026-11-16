@@ -252,10 +252,12 @@ const donateLink = (o) => {
 // ---------- Pagamento automático (conferência, 1 toque, entrega automática): src/autopay.js ----------
 let receiptChecker = invoicePaid;            // trocável nos testes
 const _setReceiptChecker = (fn) => { receiptChecker = fn || invoicePaid; };
+let starsTxReader = starsTransactions;           // trocável nos testes
+const _setStarsTxReader = (fn) => { starsTxReader = fn || starsTransactions; };
 // (paidKeyboard/tgFalha/paidText/tgIncerto/setMotivo/stopping são declarados mais abaixo: vão como funções que repassam)
-const { vigiaPagamentos, resolverIncerto, provaSaldo, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
+const { vigiaPagamentos, resolverIncerto, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
   sessionDown, markDelivered, paidKeyboard: (o) => paidKeyboard(o), tgFalha: (...a) => tgFalha(...a), paidText: (o) => paidText(o),
-  tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping, getPlayer, ticketNum, BP_NIVEIS, receiptOf: (m, e) => receiptChecker(m, e) });
+  tgIncerto: (...a) => tgIncerto(...a), setMotivo: (...a) => setMotivo(...a), stopping: () => stopping, getPlayer, ticketNum, BP_NIVEIS, receiptOf: (m, e) => receiptChecker(m, e), starsTx: (q, e) => starsTxReader(q, e) });
 // ---- Avisos de pedido no Telegram (mensagem, botões, edições, toques): src/telegram.js ----
 const { refundKb, tgDesbloqueado, paidKeyboard, handleTgUpdate, tgPoll, paidText, tgEntregue, tgAviso, notifyPaid, tgIncerto, tgFalha } = initAvisos({ db, riskOf, podeReembolsar, reembolsar, bloqAuto, brlTxt, donateLink, starsOf, starsShortMsg, markDelivered, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine });
 // por que este pedido não foi entregue sozinho (guarda o 1º motivo; vira categoria no Analytics)
@@ -659,7 +661,7 @@ function summaryTick() {
 }
 
 // Resolver pagamento incerto/falho: olha a fatura EXATA que a loja tentou pagar (nº gravado antes de cobrar)
-// e vê se ela tem recibo; sem recibo, compara o saldo de Stars com o de logo antes da tentativa (ver provaSaldo).
+// e vê se ela tem recibo; sem recibo, procura a cobrança no histórico de Stars e compara o saldo (ver provaCobranca).
 // cobrado: true (recibo ou queda exata) | false (sem fatura, ou saldo não mudou) | null (sem prova). Só leitura.
 app.post('/api/admin/orders/:id/verify', admin, async (req, res) => {
   if (!guard(req, res)) return;
@@ -674,8 +676,8 @@ app.post('/api/admin/orders/:id/verify', admin, async (req, res) => {
   let r = null, erroRecibo = null;
   try { r = await receiptChecker(inv, env); } catch (e) { erroRecibo = String(e?.message || e).slice(0, 100); }
   if (r?.paid) return res.json({ cobrado: true, prova: 'recibo', recibo: r.receiptMsgId || null, fatura: inv, stars: starsOf(o) });
-  const s = await provaSaldo(o);
-  res.json({ cobrado: s.cobrado, prova: s.cobrado === true ? 'saldo' : null, motivo: s.motivo, erroRecibo, fatura: inv, stars: starsOf(o) });
+  const s = await provaCobranca(o);
+  res.json({ cobrado: s.cobrado, prova: s.cobrado === true ? s.prova : null, motivo: s.motivo, txId: s.txId || null, erroRecibo, fatura: inv, stars: starsOf(o) });
 });
 // acao 'entregue': foi cobrado (ou entregue na mão) → marca entregue. acao 'liberar': não foi cobrado → volta a permitir pagar.
 app.post('/api/admin/orders/:id/resolve', admin, (req, res) => {
@@ -1016,8 +1018,6 @@ app.get('/api/health', (req, res, next) => {
 });
 // Histórico de Stars da conta separada (só leitura, só da própria VPS, como /api/health): IDs das transações para
 // disputa no @BotFather. ?desde=&ate= em unix s (padrão: últimas 72 h). Cada saída vem com o pedido da fatura (msgId).
-let starsTxReader = starsTransactions;           // trocável nos testes
-const _setStarsTxReader = (fn) => { starsTxReader = fn || starsTransactions; };
 app.get('/api/local/stars-transacoes', async (req, res, next) => {
   if (!local(req)) return next();
   if (!chkOn()) return res.status(400).json({ error: 'Conta de usuário não configurada.' });
@@ -1087,4 +1087,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, provaSaldo, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

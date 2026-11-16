@@ -2,11 +2,11 @@
 // REVISAR), pagamento com 1 toque/automático e entrega automática. Separado do server.js: o server chama
 // initAutopay no mesmo ponto em que este trecho ficava. Única mudança no código: `stopping` virou função
 // (o desligamento seguro muda esse valor no server.js e aqui ele é lido na hora).
-import { userConfig, checkInvoice, payInvoice, provaPeloSaldo } from '../tg-user.js';
+import { userConfig, checkInvoice, payInvoice, provaPeloSaldo, cobrancasCF } from '../tg-user.js';
 import { tgApi, orderDest, tgSend } from './telegram.js';
 
 // O corpo fica sem recuo extra de propósito: é o trecho original do server.js.
-export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping, getPlayer, ticketNum, BP_NIVEIS, receiptOf }) {
+export function initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal, sessionDown, markDelivered, paidKeyboard, tgFalha, paidText, tgIncerto, setMotivo, stopping, getPlayer, ticketNum, BP_NIVEIS, receiptOf, starsTx }) {
 // ---------- Conferência da fatura no bot do CounterFlame (conta separada; NÃO paga) ----------
 // Compara com o pedido: valor em Stars (XTR) e nick da conta do ID. Nome do produto é só informativo
 // (o bot escreve "1 000 coins", a loja "1.000 Coins").
@@ -102,12 +102,12 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
   const code = o.prod_code || PRODUCTS[o.product]?.code;
   try {
     const r = await invoicePayer({ startParam: `s_${code}_${o.game_id}`, expectStars: starsOf(o), expectAccount: o.nickname,
-      onInvoice: (m, saldoAntes) => {
-        tent = { invMsgId: m, ...(saldoAntes != null ? { saldoAntes, ledgerAntes } : {}) };
+      onInvoice: (m, saldoAntes, envioEm) => {
+        tent = { invMsgId: m, ...(envioEm ? { envioEm } : {}), ...(saldoAntes != null ? { saldoAntes, ledgerAntes } : {}) };
         db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ ...extra, ...tent }), id);
       } }, env);
     save('sent', r);
-    const provaTxt = r.prova === 'saldo' ? 'o saldo de Stars caiu exatamente o valor' : 'a fatura tem recibo';
+    const provaTxt = { saldo: 'o saldo de Stars caiu exatamente o valor', historico: 'o histórico de Stars mostra 1 cobrança' }[r.prova] || 'a fatura tem recibo';
     markDelivered(id, via, [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas ${provaTxt}: cobrado 1 vez)`, nota]);
     syncStarsReal(true);
     return { ok: true, ...r };
@@ -152,6 +152,33 @@ async function provaSaldo(o, info = infoOf(o)) {
   if (p === false) return { cobrado: false, queda: 0, motivo: 'o saldo não mudou' };
   return { cobrado: null, queda, motivo: `o saldo mudou ${queda > 0 ? '−' : '+'}${Math.abs(queda)}★ (o pedido é ${starsOf(o)}★)` };
 }
+// Histórico de Stars: cobranças do bot do CF de exatamente este valor entre o envio e +60 s, menos as de OUTROS
+// pedidos de mesmo valor pagos nessa janela. 1 → cobrado (true); 0 → não cobrou (false, só depois de 60 s); outro → null.
+const JANELA_S = 60;
+async function provaHistorico(o, info = infoOf(o)) {
+  if (!info.envioEm) return { cobrado: null, motivo: 'sem a hora do envio' };
+  const stars = starsOf(o), ate = info.envioEm + JANELA_S;
+  let tx;
+  try { tx = await starsTx({ desde: info.envioEm, ate }, env); } catch (e) { return { cobrado: null, motivo: 'histórico não lido (' + String(e?.message || e).slice(0, 60) + ')' }; }
+  const achadas = cobrancasCF(tx, stars, info.envioEm, ate);
+  if (tx.some((t) => t.pending && t.stars === -stars && t.date >= info.envioEm && t.date <= ate)) return { cobrado: null, pendente: true, motivo: 'cobrança pendente no histórico' };
+  const outros = db.prepare("SELECT * FROM orders WHERE id<>? AND autopay='sent' AND autopay_at BETWEEN ? AND ?")
+    .all(o.id, info.envioEm * 1000, (ate + 30) * 1000).filter((x) => starsOf(x) === stars).length;
+  const deste = achadas.length - outros;
+  if (deste === 1) return { cobrado: true, motivo: 'o histórico de Stars mostra 1 cobrança de ' + stars + '★', txId: achadas[0].id };
+  if (deste === 0 && !achadas.length && Date.now() / 1000 > ate) return { cobrado: false, motivo: 'o histórico de Stars não mostra cobrança' };
+  return { cobrado: null, motivo: `o histórico mostra ${achadas.length} cobrança(s) de ${stars}★ na janela e ${outros} de outro(s) pedido(s)` };
+}
+// Junta as provas: histórico decide; se não decidir, vale o saldo. Histórico "não cobrou" × saldo "cobrou" = sem prova.
+async function provaCobranca(o, info = infoOf(o)) {
+  const h = await provaHistorico(o, info);
+  if (h.pendente) return { cobrado: null, motivo: h.motivo };   // ainda pode virar cobrança: nunca "não cobrou"
+  const s = await provaSaldo(o, info);
+  if (h.cobrado === true) return { ...h, prova: 'historico' };
+  if (h.cobrado === false) return s.cobrado === true ? { cobrado: null, motivo: `${h.motivo}, mas ${s.motivo}` } : { ...h, prova: 'historico' };
+  if (s.cobrado != null) return { ...s, prova: 'saldo', motivo: `${s.motivo} (${h.motivo})` };
+  return { cobrado: null, motivo: `${h.motivo}; ${s.motivo}` };
+}
 async function resolverIncerto(id) {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o || o.status !== 'paid' || o.autopay !== 'incerto') return; // já resolvido (painel, entrega manual…)
@@ -161,22 +188,23 @@ async function resolverIncerto(id) {
   if (info.invMsgId) { try { r = await receiptOf(info.invMsgId, env); } catch (e) { erroRecibo = String(e?.message || e).slice(0, 80); } }
   let cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
+  let s = null;
   const entregar = (resolvido, linha) => {
     db.prepare("UPDATE orders SET autopay='sent', autopay_info=? WHERE id=? AND autopay='incerto'")
-      .run(JSON.stringify({ ...info, stars: starsOf(o), resolvido, ...(r?.receiptMsgId ? { recibo: r.receiptMsgId } : {}), em: Date.now() }), id);
+      .run(JSON.stringify({ ...info, stars: starsOf(o), resolvido, ...(r?.receiptMsgId ? { recibo: r.receiptMsgId } : {}), ...(s?.txId ? { txId: s.txId } : {}), em: Date.now() }), id);
     markDelivered(id, 'auto', [linha]);
     syncStarsReal(true);
   };
   if (r?.paid) return entregar('recibo', `🔍 Recibo conferido sozinho: a fatura foi cobrada 1 vez (o Telegram tinha respondido "${info.erro}").`);
-  const s = await provaSaldo(o, info);
+  s = await provaCobranca(o, info);
   cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
-  if (s.cobrado === true) return entregar('saldo', `🔍 Conferido sozinho: ${s.motivo} depois da tentativa (o Telegram tinha respondido "${info.erro}") — cobrado 1 vez.`);
+  if (s.cobrado === true) return entregar(s.prova, `🔍 Conferido sozinho: ${s.motivo} depois da tentativa (o Telegram tinha respondido "${info.erro}") — cobrado 1 vez.`);
   if (s.cobrado === false) {
     db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=? AND autopay='incerto'")
       .run(JSON.stringify({ ...info, erro: `conferido: ${s.motivo}, sem recibo (${info.erro})` }), id);
-    setMotivo(id, 'pagamento incerto: o saldo não mudou');
-    await tgFalha(id, `🔍 Conferido às ${hhmm()}: o saldo de Stars não mudou e a fatura não tem recibo (${info.erro}) — provavelmente NÃO cobrou. A loja não paga de novo sozinha: confira e pague ou entregue manualmente.`,
+    setMotivo(id, 'pagamento incerto: sem cobrança');
+    await tgFalha(id, `🔍 Conferido às ${hhmm()}: ${s.motivo} e a fatura não tem recibo (${info.erro}) — provavelmente NÃO cobrou. A loja não paga de novo sozinha: confira e pague ou entregue manualmente.`,
       `🖐 Entrega MANUAL necessária ${head}: a tentativa provavelmente não cobrou — detalhes no aviso original.`);
     return;
   }
@@ -326,5 +354,5 @@ async function entregaAuto(id, attempt = 1) {
   }
 }
 
-return { vigiaPagamentos, resolverIncerto, provaSaldo, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
+return { vigiaPagamentos, resolverIncerto, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
 }
