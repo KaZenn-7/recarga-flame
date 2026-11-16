@@ -698,3 +698,21 @@ test('registro de deploy: avisa no Sistema os commits novos e alterações não 
   await ateQue(() => tgSent.some((x) => /Loja publicada: ccc333/.test(x.text)));
   db.prepare("DELETE FROM settings WHERE k='deploy_hash'").run();
 });
+
+test('histórico de Stars: só pela própria máquina; casa cada saída com o pedido da fatura', async () => {
+  const id = db.prepare("SELECT id FROM orders ORDER BY id DESC LIMIT 1").get().id;
+  db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ invMsgId: 77002, anterior: 77001 }), id);
+  _setInvoiceChecker(async () => ({}));                       // conta de usuário "configurada"
+  let pedido;
+  SRV._setStarsTxReader(async (q) => { pedido = q; return [
+    { id: 'tx-b', stars: -26, date: 1794857930, bot: 'CounterFlameDonate_bot', msgId: 77002, title: 'x', refund: false, pending: false, failed: false },
+    { id: 'tx-a', stars: -26, date: 1794857800, bot: 'CounterFlameDonate_bot', msgId: 77001, title: 'x', refund: false, pending: false, failed: false },
+    { id: 'tx-c', stars: -40, date: 1794857700, bot: 'outro', msgId: 5, title: null, refund: false, pending: false, failed: false }] });
+  try {
+    assert.equal((await fetch(base + '/api/local/stars-transacoes', { headers: { 'X-Forwarded-For': '8.8.8.8' } })).status, 404);
+    const r = await (await fetch(base + '/api/local/stars-transacoes?desde=1794850000&ate=1794860000')).json();
+    assert.deepEqual(pedido, { desde: 1794850000, ate: 1794860000 });
+    assert.deepEqual(r.map((t) => [t.id, t.pedido]), [['tx-b', id], ['tx-a', id], ['tx-c', null]]);
+    assert.equal(r[0].quando, new Date(1794857930 * 1000).toISOString());
+  } finally { SRV._setStarsTxReader(null); _setInvoiceChecker(null); }
+});

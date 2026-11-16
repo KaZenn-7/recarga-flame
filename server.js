@@ -7,7 +7,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import Database from 'better-sqlite3';
 import { migrate } from './src/db.js';
-import { invoicePaid } from './tg-user.js';
+import { invoicePaid, starsTransactions } from './tg-user.js';
 import { initLogin } from './src/login.js';
 import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
@@ -1014,6 +1014,24 @@ app.get('/api/health', (req, res, next) => {
   const falhas = saude();
   res.status(falhas.length ? 503 : 200).json({ ok: !falhas.length, falhas });
 });
+// Histórico de Stars da conta separada (só leitura, só da própria VPS, como /api/health): IDs das transações para
+// disputa no @BotFather. ?desde=&ate= em unix s (padrão: últimas 72 h). Cada saída vem com o pedido da fatura (msgId).
+let starsTxReader = starsTransactions;           // trocável nos testes
+const _setStarsTxReader = (fn) => { starsTxReader = fn || starsTransactions; };
+app.get('/api/local/stars-transacoes', async (req, res, next) => {
+  if (!local(req)) return next();
+  if (!chkOn()) return res.status(400).json({ error: 'Conta de usuário não configurada.' });
+  const agora = Math.floor(Date.now() / 1000);
+  const ate = Number(req.query.ate) || agora, desde = Number(req.query.desde) || ate - 72 * 3600;
+  try {
+    const tx = await starsTxReader({ desde, ate }, env);
+    const porFatura = new Map(db.prepare("SELECT id, autopay_info FROM orders WHERE autopay_info LIKE '%invMsgId%'").all()
+      .flatMap((o) => { try { const i = JSON.parse(o.autopay_info); return [[i.invMsgId, o.id], ...(i.anterior ? [[i.anterior, o.id]] : [])]; } catch { return []; } }));
+    res.json(tx.map((t) => ({ ...t, quando: new Date(t.date * 1000).toISOString(), pedido: porFatura.get(t.msgId) || null })));
+  } catch (e) {
+    res.status(502).json({ error: String(e?.message || e).slice(0, 120) });
+  }
+});
 
 // ---------- Registro do que foi publicado ----------
 // Várias sessões fazem commits nesta pasta e um restart publica tudo o que está no código. Ao subir, compara o commit
@@ -1069,4 +1087,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, provaSaldo, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, provaSaldo, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

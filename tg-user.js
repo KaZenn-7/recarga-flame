@@ -200,6 +200,32 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
   });
 }
 
+// ---- Histórico de Stars (só leitura) ----
+// Saídas da conta, mais recentes primeiro, entre desde..ate (unix s). Serve para achar o ID de uma transação (disputa
+// no @BotFather) e casar com a fatura: msgId é a mensagem da fatura paga no chat com o bot. Até 10 páginas de 50.
+export function starsTransactions({ desde = 0, ate = 0, limite = 200 } = {}, env = process.env) {
+  return serial(async () => {
+    const { Api } = await import('telegram');
+    const c = await getClient(env);
+    const out = []; let offset = '';
+    for (let page = 0; page < 10; page++) {
+      const r = await c.invoke(new Api.payments.GetStarsTransactions({ outbound: true, peer: new Api.InputPeerSelf(), offset, limit: 50 }));
+      const nomes = new Map((r.users || []).map((u) => [String(u.id), u.username || null]));
+      for (const t of r.history || []) {
+        if (ate && t.date > ate) continue;
+        if (desde && t.date < desde) return out;
+        const uid = t.peer?.peer?.userId;
+        out.push({ id: t.id, stars: starsToInt(t.stars), date: t.date, bot: uid != null ? nomes.get(String(uid)) || String(uid) : null,
+          msgId: t.msgId ?? null, title: t.title || null, refund: !!t.refund, pending: !!t.pending, failed: !!t.failed });
+        if (out.length >= limite) return out;
+      }
+      if (!r.nextOffset) break;
+      offset = r.nextOffset;
+    }
+    return out;
+  });
+}
+
 // ---- Verificação de cobrança (resolver "incerto") ----
 // Cada pedido gera uma fatura nova (mensagem única no chat com o bot). Quando ela é paga, o Telegram liga o
 // recibo a ELA: media.receiptMsgId na fatura e um MessageActionPaymentSent respondendo à fatura.
