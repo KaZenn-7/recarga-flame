@@ -176,6 +176,10 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 .modal.on{display:flex}
 .sheet{background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:92vh;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
 .sheet h3{margin:0 0 16px;font-size:17px}
+/* cabeçalho que fica no topo enquanto a janela rola (✕ sempre à mão) */
+.shead{position:sticky;top:-20px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-20px -18px 14px;padding:16px 18px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.shead h3{margin:0}
+.xclose{flex-shrink:0;width:36px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font:inherit;font-size:16px;cursor:pointer}
 .fg{margin-bottom:13px}.fg label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:5px}
 .fg input,.fg select{width:100%;padding:11px 12px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:8px;font:inherit}
 .fg input:focus,.fg select:focus{outline:0;border-color:#45454c}
@@ -232,7 +236,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 <main id="viewPed"></main>
 <div class="modal" id="smodal">
   <div class="sheet">
-    <h3>Saldo de Stars</h3>
+    <div class="shead"><h3>Saldo de Stars</h3><button class="xclose" data-act="closeStars" aria-label="Fechar">✕</button></div>
     <div id="sBody"><div class="empty">Carregando…</div></div>
     <div class="mbtns"><button class="cancel" data-act="closeStars">Fechar</button></div>
   </div>

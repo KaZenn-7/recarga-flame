@@ -973,6 +973,8 @@ function prodRank(list){
 
 render();
 $$('smodal').onclick=function(e){if(e.target.id==='smodal')closeStars();};
+// Esc fecha a janela aberta (PC)
+document.addEventListener('keydown',function(e){if(e.key!=='Escape')return;const m=document.querySelector('.modal.on');if(m)m.classList.remove('on');});
 $$('sessmodal').onclick=function(e){if(e.target.id==='sessmodal')$$('sessmodal').classList.remove('on');};
 loadStars();
 
