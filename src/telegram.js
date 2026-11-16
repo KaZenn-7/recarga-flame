@@ -357,18 +357,16 @@ async function notifyPaid(o) {
 }
 // Pagamento incerto: edita o aviso do pedido com os detalhes + alerta curto respondendo a ele (a edição não
 // notifica). Sem aviso salvo: o fallback do tgAviso manda a mensagem completa (que já notifica).
-// auto: 'tenta' (1ª vez: em 2 min confere o recibo e, sem cobrança, paga 1x com fatura nova) | 'confere' (2ª: só confere)
-function tgIncerto(id, motivo, auto = 'tenta') {
+// Em 2 min resolverIncerto confere recibo e saldo (src/autopay.js). A loja nunca paga o mesmo pedido de novo sozinha.
+function tgIncerto(id, motivo) {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o) return;
-  const plano = auto === 'tenta'
-    ? 'Em 2 min a loja confere sozinha o recibo desta fatura: se cobrou, marca entregue; se não cobrou, paga 1 vez de novo com fatura nova. Não precisa fazer nada.'
-    : 'Era a 2ª tentativa: em 2 min a loja confere sozinha o recibo; se não cobrou, libera o pedido para você pagar/entregar (não tenta de novo).';
+  const plano = 'NÃO pague de novo ainda. Em 2 min a loja confere sozinha o recibo e o saldo de Stars: se cobrou, marca entregue; se não der para confirmar, avisa você aqui.';
   tgAviso(id, { icone: '🚨', titulo: `pagamento INCERTO (${starsOf(o)}★)`, botao: '🚨 Pagamento incerto — conferindo',
     extras: [`Erro: ${motivo}`, plano, 'Se não resolver, use "🔍 verificar cobrança" no painel.'] });
   if (o.tg_msg) tgApi('sendMessage', { ...orderDest(o), disable_web_page_preview: true,
     reply_parameters: { message_id: o.tg_msg, allow_sending_without_reply: true },
-    text: `🚨 Pagamento INCERTO no pedido #${o.id} (${starsOf(o)}★ · ${o.nickname}) — a loja confere o recibo em 2 min; detalhes no aviso original.` });
+    text: `🚨 Pagamento INCERTO no pedido #${o.id} (${starsOf(o)}★ · ${o.nickname}) — não pague de novo; a loja confere recibo e saldo em 2 min. Detalhes no aviso original.` });
 }
 // Entrega automática não feita/falhou: edita o aviso do pedido (mantém os botões de entregar) com o motivo e,
 // se houver `alerta`, manda um alerta curto respondendo a ele (a edição não notifica). Sem aviso salvo ou se a

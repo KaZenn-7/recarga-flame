@@ -351,12 +351,16 @@ async function verifyPay(id,btn){
   btn.disabled=true;btn.textContent='verificando…';
   try{
     const r=await api('/api/admin/orders/'+id+'/verify',{method:'POST'});
-    if(r.cobrado){
-      if(confirm('FOI COBRADO: a fatura deste pedido no bot do CounterFlame (mensagem '+r.fatura+') tem recibo de pagamento de '+r.stars+'★.\n\nConfira se o item chegou na conta do cliente. Marcar o pedido #'+id+' como entregue (o cliente recebe o e-mail)?'))
-        await api('/api/admin/orders/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:'entregue'})});
+    const resolve=function(acao){return api('/api/admin/orders/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:acao})});};
+    if(r.cobrado===true){
+      const pq=r.prova==='saldo'?'o saldo de Stars caiu exatamente '+r.stars+'★ depois da tentativa':'a fatura deste pedido no bot do CounterFlame (mensagem '+r.fatura+') tem recibo de pagamento de '+r.stars+'★';
+      if(confirm('FOI COBRADO: '+pq+'.\n\nNÃO pague de novo. Confira se o item chegou na conta do cliente. Marcar o pedido #'+id+' como entregue (o cliente recebe o e-mail)?'))
+        await resolve('entregue');
+    }else if(r.cobrado===false){
+      if(confirm('Provavelmente NÃO foi cobrado: '+(r.semFatura?'a tentativa falhou antes de chegar à fatura':r.motivo+' e a fatura (mensagem '+r.fatura+') não tem recibo')+'.\n\nLiberar uma nova tentativa (o botão Pagar volta)? Se preferir, entregue na mão e toque em Marcar entregue.'))
+        await resolve('liberar');
     }else{
-      if(confirm('NÃO foi cobrado: '+(r.semFatura?'a tentativa falhou antes de chegar à fatura':'a fatura deste pedido (mensagem '+r.fatura+') não tem recibo de pagamento')+'.\n\nLiberar uma nova tentativa (o botão Pagar volta)? Se preferir, entregue na mão e toque em Marcar entregue.'))
-        await api('/api/admin/orders/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:'liberar'})});
+      alert('NÃO DEU PARA CONFIRMAR se foi cobrado: '+(r.motivo||'sem prova')+(r.erroRecibo?' · recibo: '+r.erroRecibo:'')+'.\n\nConfira o histórico de Stars da conta no Telegram antes de pagar de novo. O pedido continua incerto.');
     }
   }catch(e){alert(e.message);}
   refreshOrders(false);loadStars();

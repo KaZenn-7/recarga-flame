@@ -56,12 +56,24 @@ export const starsToInt = (b) => (b && typeof b === 'object' && 'amount' in b ? 
 
 // saldo de Stars da conta logada (inteiro)
 export async function readStarsBalance(env = process.env) {
+  return balanceOf(await getClient(env));
+}
+async function balanceOf(c) {
   const { Api } = await import('telegram');
-  const c = await getClient(env);
   const r = await c.invoke(new Api.payments.GetStarsStatus({ peer: new Api.InputPeerSelf() }));
   const n = starsToInt(r.balance);
   if (!Number.isFinite(n)) throw new Error('resposta inesperada do Telegram');
   return n;
+}
+// Prova pelo saldo (incidentes #116, #128 e #181, 15–16/11/2026): nos 5 FORM_SUBMIT_DUPLICATE registrados o saldo
+// caiu EXATAMENTE o valor da fatura logo depois, mas o recibo nunca foi achado (receiptOf). Queda igual ao valor
+// = cobrado (true); saldo igual = não cobrou, até agora (false); outra diferença (compra, outro gasto) = 'outro';
+// sem as duas leituras = null. Só true é prova de cobrança; só false permite dizer "nada cobrado".
+export function provaPeloSaldo(antes, depois, stars) {
+  if (antes == null || depois == null || !Number.isFinite(antes) || !Number.isFinite(depois)) return null;
+  if (antes - depois === stars) return true;
+  if (antes === depois) return false;
+  return 'outro';
 }
 
 // ---- Conferência da fatura e pagamento (1 por vez, para não misturar respostas) ----
@@ -150,8 +162,10 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       throw safe(String(e?.errorMessage || e?.message || e)); // nada foi enviado ainda
     }
     const before = inv.msgId;
+    let saldoAntes = null;
+    try { saldoAntes = await balanceOf(c); } catch { /* sem prova pelo saldo; segue pelo recibo */ }
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
-    if (onInvoice) await onInvoice(inv.msgId);
+    if (onInvoice) await onInvoice(inv.msgId, saldoAntes);
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
     ctx.sent = true; // daqui em diante, tempo esgotado = incerto
     let r;
@@ -159,17 +173,20 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       r = await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice })); // ← COBRA
     } catch (e) {
       // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
-      // FORM_SUBMIT_DUPLICATE mesmo tendo cobrado o 1º — incidente do pedido #17, 10/11/2026). A única prova é o
-      // recibo da fatura: com recibo = pago; sem recibo + recusa explícita = nada cobrado; resto = incerto.
-      let paid = null;
-      for (let i = 0; i < 3 && paid == null; i++) {
+      // FORM_SUBMIT_DUPLICATE mesmo tendo cobrado o 1º — pedidos #17, #116, #128, #181). Provas: o recibo da fatura
+      // ou a queda EXATA do saldo (o saldo cai em segundos; o recibo nunca foi achado nesses casos). Por ~12 s.
+      let paid = null, saldoDepois = null, prova = null;
+      for (let i = 0; i < 6 && prova == null; i++) {
         await sleep(2000);
-        try { paid = (await receiptOf(c, inv.msgId)).paid; } catch { /* tenta de novo */ }
+        try { const rc = await receiptOf(c, inv.msgId); if (rc.paid) prova = 'recibo'; else paid = false; } catch { /* tenta de novo */ }
+        if (prova == null && saldoAntes != null) {
+          try { saldoDepois = await balanceOf(c); if (provaPeloSaldo(saldoAntes, saldoDepois, expectStars) === true) prova = 'saldo'; } catch { /* tenta de novo */ }
+        }
       }
-      const d = decideAfterSendError(e, paid);
-      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
+      const d = decideAfterSendError(e, prova ? true : paid, provaPeloSaldo(saldoAntes, saldoDepois, expectStars));
+      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', prova: prova || 'recibo', recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
       if (d === 'safe') throw safe(`Telegram recusou: ${e.errorMessage}`);
-      throw e;
+      throw Object.assign(e, { saldoAntes, saldoDepois });
     }
     if (r.className !== 'payments.PaymentResult') throw new Error(`resposta inesperada ao pagar (${r.className})`);
     // resposta do bot depois do pagamento (só informativo)
@@ -199,11 +216,13 @@ async function receiptOf(c, msgId) {
   const rc = recent.find((m) => m.action?.className === 'MessageActionPaymentSent' && m.replyTo?.replyToMsgId === msgId);
   return rc ? { paid: true, receiptMsgId: rc.id, date: rc.date } : { paid: false };
 }
-// Erro ao enviar o pagamento: 'paid' (fatura tem recibo), 'safe' (sem recibo e recusa explícita 4xx que não é
-// de duplicidade = nada cobrado, pode tentar de novo) ou 'incerto' (resolver por "verificar cobrança").
-export function decideAfterSendError(e, paid) {
-  if (paid === true) return 'paid';
+// Erro ao enviar o pagamento: 'paid' (recibo ou queda exata do saldo), 'safe' (sem recibo, recusa explícita 4xx que
+// não é de duplicidade e o saldo não mudou — ou não deu para ler — = nada cobrado, pode tentar de novo) ou 'incerto'.
+// saldo: resultado de provaPeloSaldo (true = caiu o valor, false = não mudou, 'outro' = mudou outro valor, null = sem leitura)
+export function decideAfterSendError(e, paid, saldo = null) {
+  if (paid === true || saldo === true) return 'paid';
   const msg = String(e?.errorMessage || '');
+  if (saldo === 'outro') return 'incerto';
   if (paid === false && msg && e.code >= 400 && e.code < 500 && !/DUPLICATE/i.test(msg)) return 'safe';
   return 'incerto';
 }
