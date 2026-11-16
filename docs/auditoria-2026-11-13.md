@@ -39,7 +39,7 @@ Status de cada sugestão: **✅ feito**, **⬜ pendente** ou **➖ decidido não
 ## 6. Parcerias, cupons e comissões
 **Bem:** histórico de alterações, extrato mensal, fechamento automático no 1º dia útil.
 - ✅ 🟡 Dados pendentes dos parceiros. Situação em 13/11: AQUILA (cupom que mais vende) tem nome e e-mail, **falta só a chave Pix**; IANSO2 sem dados e sem vendas; NEXUS e RAMOS5 não existem mais.
-  Feito: lembrete no dia 25 às 9h (1x/mês, tópico Parcerias) com quem tem comissão e está sem Pix/e-mail; fechamento marca "⚠️ sem chave Pix/e-mail" (`lembreteDadosTick` em `src/parceiros.js`). ⬜ Cadastrar a chave Pix da AQUILA antes de 01/12.
+  Feito: lembrete no dia 25 às 9h (1x/mês, tópico Parcerias) com quem tem comissão e está sem Pix/e-mail; fechamento marca "⚠️ sem chave Pix/e-mail" (`lembreteDadosTick` em `src/parceiros.js`). ➖ (operador decidiu ignorar, 16/11) Cadastrar a chave Pix da AQUILA antes de 01/12.
 - ✅ ⚪ (`orders.coupon` entrou na migração v5; `events.coupon` não precisa: a consulta usa `events_ts`) Sem índice em `orders.coupon` / `events.coupon`. Irrelevante hoje (76 pedidos, 1.205 eventos).
 
 ## 7. E-mail
@@ -78,7 +78,7 @@ Funil dos últimos 7 dias (aparelhos únicos):
   Feito: `unhandledRejection` registra, avisa no tópico Sistema (no máximo 1 aviso a cada 10 min) e a loja segue no ar; `uncaughtException` registra, avisa e sai pelo desligamento seguro (espera o pagamento em andamento) e o PM2 sobe de novo (`erroNaoTratado` em `server.js`).
 - ✅ 🟡 (feito: `registrarDeploy` — ao subir, avisa no tópico Sistema o commit publicado, os commits novos desde o último deploy e alterações não commitadas) Várias sessões fazendo commits na mesma pasta: um restart publica tudo o que estiver no código (já aconteceu com a9b5720). Antes de cada restart, conferir `git log` desde o último deploy e registrar o hash publicado.
 - ✅ Reboot da VPS com atualizações (15/11 03:00, `~/bin/manutencao-reboot.sh`): kernel 7.0.0-43, 63 pacotes aplicados (restam 4 retidos: snapd, distro-info, python3-distro-info, gtk-update-icon-cache). Serviços, PM2, Docker e as screens `esdeath`/`nakatin` (via `@reboot`) voltaram sozinhos.
-- ⬜ 🟡 Decisões do operador: SSH só por chave (efetivo hoje: `passwordauthentication yes`), `X11Forwarding yes`, portas em todas as interfaces (bloqueadas pelo UFW).
+- ➖ 🟡 (operador decidiu ignorar, 16/11) Decisões do operador: SSH só por chave (efetivo hoje: `passwordauthentication yes`), `X11Forwarding yes`, portas em todas as interfaces (bloqueadas pelo UFW).
 - ✅ ⚪ Sem `max_memory_restart` no PM2 (feito: 400M; usa ~115 MB; reinício passa pelo desligamento seguro). Rate limit/cache no nginx para `/img`: não precisa (o Node já manda cache de 1 dia; mexer no nginx afeta outros sites).
 - Contexto: VPS no ar há 26 dias, carga 2,4–2,9 (compartilhada), disco 34%, 3,1 GB de RAM livre.
 
@@ -96,5 +96,5 @@ Funil dos últimos 7 dias (aparelhos únicos):
 1. ✅ Tempo limite e vigia na fila de pagamento do Telegram.
 2. ✅ Registro de erros não tratados.
 3. ✅ Perda entre escolher o produto e gerar o Pix (e-mail).
-4. ✅ Lembrete automático de dados de parceiros (⬜ falta a chave Pix da AQUILA).
+4. ✅ Lembrete automático de dados de parceiros (➖ chave Pix da AQUILA: operador decidiu ignorar, 16/11).
 5. ✅ `/api/health` completa, cache das imagens, índices + WAL, teste de restauração do backup.
