@@ -174,10 +174,13 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:50}
 .modal.on{display:flex}
-.sheet{background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:92vh;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:92vh;max-height:92dvh;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
 .sheet h3{margin:0 0 16px;font-size:17px}
 /* cabeçalho que fica no topo enquanto a janela rola (✕ sempre à mão) */
-.shead{position:sticky;top:-20px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-20px -18px 14px;padding:16px 18px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+/* janela em 2 partes: cabeçalho fixo (fora da rolagem, nada o cobre) + corpo que rola sozinho */
+.sheet.split{display:flex;flex-direction:column;overflow:hidden;padding:0}
+.sheet.split .sbody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:14px 18px calc(20px + env(safe-area-inset-bottom))}
+.shead{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px 12px;background:var(--panel);border-bottom:1px solid var(--line);border-radius:16px 16px 0 0}
 .shead h3{margin:0}
 .xclose{flex-shrink:0;width:36px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font:inherit;font-size:16px;cursor:pointer}
 .fg{margin-bottom:13px}.fg label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:5px}
@@ -206,7 +209,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
   #anaBody{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;grid-auto-flow:dense;align-items:start}
   #anaBody>.kpis,#anaBody>.wide,#anaBody>.empty{grid-column:1/-1}#anaBody>*{margin:0}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-  .modal{align-items:center;padding:24px}.sheet{border-radius:16px;max-height:88vh}
+  .modal{align-items:center;padding:24px}.sheet{border-radius:16px;max-height:88vh;max-height:88dvh}
   #backbar{left:50%;right:auto;bottom:20px;transform:translateX(-50%);width:560px;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
   .card:hover,.prow:hover{border-color:#3a3a40}
   .sbar{margin:10px 16px 0}
@@ -235,10 +238,12 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 <div id="sbarBox"></div>
 <main id="viewPed"></main>
 <div class="modal" id="smodal">
-  <div class="sheet">
+  <div class="sheet split">
     <div class="shead"><h3>Saldo de Stars</h3><button class="xclose" data-act="closeStars" aria-label="Fechar">✕</button></div>
-    <div id="sBody"><div class="empty">Carregando…</div></div>
-    <div class="mbtns"><button class="cancel" data-act="closeStars">Fechar</button></div>
+    <div class="sbody">
+      <div id="sBody"><div class="empty">Carregando…</div></div>
+      <div class="mbtns"><button class="cancel" data-act="closeStars">Fechar</button></div>
+    </div>
   </div>
 </div>
 <div class="modal" id="sessmodal">
