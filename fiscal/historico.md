@@ -68,3 +68,14 @@
 - Os CSVs e relatórios gerados ficam fora do git (têm ID de jogo de clientes).
 - Correção do dono: o USDT é sempre comprado em P2P (Wallet do Telegram ou Binance) e gasto no fragment.com para comprar as Stars. Ele não transfere para o Telegram. O painel passou a pedir o hash da compra no Fragment como comprovante.
 - Painel: o registro passou a ter 2 passos: (1) "Comprei USDT", pago em R$, com o vendedor P2P e o número da ordem; (2) "Comprei Stars", pago em USDT, com o custo pelo custo médio e o hash do Fragment. Migração 7: `usdt_compras.vendedor`. A compra de Stars só em R$ saiu do painel (a API continua aceitando).
+- DeCripto acima de R$ 35 mil/mês, explicado ao dono:
+  - declaração do mês no e-CAC até o último dia útil do mês seguinte, com multa se atrasar ou errar;
+  - imposto ≈ R$ 0, porque o ganho é quase nulo ou negativo;
+  - pontos de dúvida foram para as pendências do contador (`perfil.md`).
+- **Decisão:** guardar o nome do vendedor P2P e o número da ordem em cada compra de USDT, caso a DeCripto exija identificar a contraparte (commit 8b9cc63).
+- Skill `contador-loja` commitada no repositório (c0979c4), porque o relatório mensal usa o simulador dela. Todos os commits da sessão foram enviados ao GitHub.
+- Próximos passos do dono:
+  1. lançar os comprovantes de USDT desde 07/11;
+  2. ler os termos do MP;
+  3. contratar o contador;
+  4. conferir o relatório de novembro em 01/12.
