@@ -216,6 +216,10 @@ async function resolverIncerto(id) {
   const novoInfo = { ...info, erro: `sem recibo: ${perda.slice(0, 200)}`, ...(s.cobrado === true ? { perdida: { stars: starsOf(o), tx, em: Date.now() } } : {}) };
   db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=? AND autopay='incerto'").run(JSON.stringify(novoInfo), id);
   if (s.cobrado === true) {
+    // registro da perda (painel → Analytics; marcar estornada quando o reembolso voltar)
+    const quando = info.envioEm ? new Date(info.envioEm * 1000) : new Date();
+    db.prepare(`INSERT OR IGNORE INTO stars_perdidas (order_id, stars, cents, tx, cobrado_em, motivo) VALUES (?,?,?,?,?,?)`)
+      .run(id, starsOf(o), Math.round(starsOf(o) * (o.star_cost ?? 0.0875) * 100), tx, quando.toISOString().slice(0, 19).replace('T', ' '), String(info.erro || '').slice(0, 120));
     tgSend(`💸 Cobrança SEM entrega no pedido ${head}: o Telegram cobrou ${starsOf(o)}★ mas o CounterFlame não registrou (fatura sem recibo, "${info.erro}").`
       + (tx ? `\nTransação para disputa no @BotFather: ${tx}` : ''), 'alertas');
   }

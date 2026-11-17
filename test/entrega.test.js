@@ -684,6 +684,8 @@ test('incerto conferido sozinho (17/11): recibo → entregue; sem recibo → avi
     assert.equal(row(a).status, 'delivered'); assert.equal(row(a).autopay, 'sent');
     assert.equal(i.retry, 1); assert.equal(i.anterior, 9501); assert.equal(i.invMsgId, 9502); assert.equal(i.perdida.stars, 26);
     assert.equal(i.tentativa1.envioMs, 1234); assert.equal(i.tentativa1.codigo, 500); assert.equal(i.tentativa1.fatura, 9501); // 1ª preservada
+    const perda = db.prepare('SELECT * FROM stars_perdidas WHERE order_id=?').get(a);
+    assert.equal(perda.stars, 26); assert.ok(perda.cents > 0); assert.equal(perda.estornada_em, null);   // registrada para o painel
     assert.deepEqual(pagas, [9502]);
     assert.ok(tgSent.slice(t0).some((m) => new RegExp('Cobrança SEM entrega no pedido #' + a).test(m.text)));
     assert.ok(tgCalls.some((c) => /1ª tentativa sem recibo .*cobrou 26★ SEM entrega/.test(c.body?.text || '')));
@@ -827,4 +829,26 @@ test('intervalo mínimo entre cobranças: espera só o que falta para 10 s', asy
   assert.equal(esperaEnvio(1_000_000, 1_004_000, 10_000), 6_000);     // pagou há 4 s → espera 6 s
   assert.equal(esperaEnvio(1_000_000, 1_010_000, 10_000), 0);         // já passou o intervalo
   assert.equal(esperaEnvio(1_000_000, 1_030_000, 10_000), 0);
+});
+
+test('painel: Stars perdidas descontam do lucro do Analytics; "estornada" tira do prejuízo', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const q = '?from=' + hoje + '&to=' + hoje;
+  db.prepare('DELETE FROM stars_perdidas').run();
+  const a0 = await (await adm('GET', '/api/admin/analytics' + q)).json();
+  assert.equal(a0.perdas.n, 0); assert.equal(a0.lucro, a0.lucroAntesPerdas);
+  const agora = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const id = db.prepare("INSERT INTO stars_perdidas (order_id, stars, cents, tx, cobrado_em) VALUES (NULL, 499, 4361, 'stx-teste', ?)").run(agora).lastInsertRowid;
+  const a1 = await (await adm('GET', '/api/admin/analytics' + q)).json();
+  assert.equal(a1.perdas.n, 1); assert.equal(a1.perdas.stars, 499); assert.equal(a1.perdas.cents, 4361);
+  assert.equal(a1.lucro, a1.lucroAntesPerdas - 4361); assert.equal(a1.perdas.itens[0].tx, 'stx-teste');
+  assert.equal((await adm('POST', '/api/admin/perdas/' + id, { estornada: true })).status, 200);
+  const a2 = await (await adm('GET', '/api/admin/analytics' + q)).json();
+  assert.equal(a2.perdas.n, 0); assert.equal(a2.perdas.estornadas, 1); assert.equal(a2.lucro, a2.lucroAntesPerdas);
+  assert.ok(a2.perdas.itens[0].estornada);
+  assert.equal((await adm('POST', '/api/admin/perdas/' + id, { estornada: false })).status, 200);   // desfazer
+  assert.equal((await (await adm('GET', '/api/admin/analytics' + q)).json()).perdas.n, 1);
+  assert.equal((await adm('POST', '/api/admin/perdas/999999', { estornada: true })).status, 404);
+  assert.equal((await fetch(base + '/api/admin/perdas/' + id, { method: 'POST' })).status, 401);
+  db.prepare('DELETE FROM stars_perdidas').run();
 });

@@ -161,6 +161,15 @@ CREATE INDEX IF NOT EXISTS events_dev ON events(dev, ev)`);
   } },
   // fiscal: nome do vendedor de cada compra P2P de USDT (a DeCripto pode pedir a identificação da contraparte)
   { v: 7, nome: 'usdt_vendedor', up(db) { addCols(db, 'usdt_compras', ['vendedor TEXT']); } },
+  // Stars cobradas SEM entrega (falha do Telegram/bot do CF ao pagar, 13–17/11/2026): uma linha por cobrança perdida,
+  // com o custo congelado e o ID da transação (para a disputa); estornada_em preenchido quando o reembolso voltar
+  { v: 8, nome: 'stars_perdidas', up(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS stars_perdidas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, stars INTEGER NOT NULL, cents INTEGER NOT NULL, tx TEXT UNIQUE,
+  cobrado_em TEXT NOT NULL, motivo TEXT DEFAULT '', estornada_em TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+    db.exec('CREATE INDEX IF NOT EXISTS stars_perdidas_em ON stars_perdidas(cobrado_em)');
+  } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

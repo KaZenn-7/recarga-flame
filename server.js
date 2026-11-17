@@ -849,6 +849,14 @@ const { lembreteDadosMsg, lembreteDadosTick, makePartnerCtx, freezeClosedMonths,
 // ---- Analytics (painel) ----
 // Datas no fuso local (America/Sao_Paulo = UTC-3). Vendas = pagos/entregues/estornados pela data do pagamento;
 // conversão = dos Pix gerados no período (com mp_id), quantos foram pagos.
+// Cobrança perdida estornada (o reembolso voltou) ou desfazer: { estornada: true|false }
+app.post('/api/admin/perdas/:id', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const r = db.prepare('UPDATE stars_perdidas SET estornada_em=? WHERE id=?')
+    .run(req.body?.estornada === false ? null : new Date().toISOString().slice(0, 19).replace('T', ' '), Number(req.params.id));
+  if (!r.changes) return res.status(404).json({ error: 'Registro não encontrado.' });
+  res.json({ ok: true });
+});
 app.get('/api/admin/analytics', admin, (req, res) => {
   const re = /^\d{4}-\d{2}-\d{2}$/;
   const from = re.test(req.query.from || '') ? req.query.from : '0000-01-01';
@@ -939,10 +947,18 @@ app.get('/api/admin/analytics', admin, (req, res) => {
     top: ids.map((id) => ({ ...noPer[id], nick: hist[id].at(-1).nick, comprasTotal: hist[id].length, ultima: dayOf(hist[id].at(-1).t) }))
       .sort((x, y) => y.total - x.total || y.compras - x.compras).slice(0, 10),
   };
+  // Stars cobradas sem entrega no período (não estornadas descontam do lucro)
+  const perdItens = db.prepare(`SELECT p.*, o.nickname, o.prod_nome FROM stars_perdidas p LEFT JOIN orders o ON o.id = p.order_id
+    WHERE ${local('p.cobrado_em')} BETWEEN ? AND ? ORDER BY p.cobrado_em DESC`).all(from, to);
+  const abertas = perdItens.filter((x) => !x.estornada_em);
+  const perdas = { n: abertas.length, stars: abertas.reduce((a, x) => a + x.stars, 0), cents: abertas.reduce((a, x) => a + x.cents, 0),
+    estornadas: perdItens.length - abertas.length,
+    itens: perdItens.map((x) => ({ id: x.id, pedido: x.order_id, stars: x.stars, cents: x.cents, tx: x.tx, em: x.cobrado_em,
+      conta: x.nickname || null, produto: x.prod_nome || null, estornada: x.estornada_em || null })) };
   res.json({
-    from, to, funil, entregaTipos, motivos, porHora, porSemana, clientes,
+    from, to, funil, entregaTipos, motivos, porHora, porSemana, clientes, perdas,
     vendas: ok.length, faturado, ticket: ok.length ? Math.round(faturado / ok.length) : 0,
-    lucro: Math.round(lucro - comissao), comissao: Math.round(comissao), stars, comCupom,
+    lucro: Math.round(lucro - comissao - perdas.cents), lucroAntesPerdas: Math.round(lucro - comissao), comissao: Math.round(comissao), stars, comCupom,
     estornos: sold.length - ok.length,
     pixGerados: gen.n || 0, pixPagos: gen.pagos || 0, carrinhos,
     entregas: mins.length, entregaMedianaMin: mediana == null ? null : Math.round(mediana),

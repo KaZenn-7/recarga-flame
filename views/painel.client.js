@@ -6,6 +6,9 @@ const ORDERS=JSON.parse(document.getElementById('ordersData').textContent);
 const ACTS={
   openStars:()=>openStars(), refreshView:()=>refreshView(),
   logout:()=>fetch('/logout',{method:'POST'}).then(()=>location.href='/login'),
+  perdaEst:t=>{const v=t.dataset.v==='1';if(v&&!confirm('O reembolso dessas Stars voltou para a conta? Marcar como estornada (sai do prejuízo).'))return;
+    api('/api/admin/perdas/'+t.dataset.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({estornada:v})}).then(loadAna).catch(function(e){alert(e.message);});},
+  perdaTx:t=>{navigator.clipboard.writeText(t.dataset.tx).then(function(){t.textContent='copiado ✓';},function(){prompt('ID da transação:',t.dataset.tx);});},
   openSess:()=>openSess(), closeSess:()=>$$('sessmodal').classList.remove('on'),
   endSess:t=>endSess({id:t.dataset.id}), endOutras:()=>{if(confirm('Encerrar todas as outras sessões? Os outros aparelhos vão precisar entrar de novo.'))endSess({outras:true});},
   setView:t=>setView(t.dataset.v), closeStars:()=>closeStars(), closeBack:()=>closeBack(), yesBack:()=>yesBack(),
@@ -824,7 +827,9 @@ async function loadAna(){
   k.appendChild(kpi('Vendas',String(a.vendas),[a.carrinhos&&a.carrinhos.n?a.carrinhos.compras+' compras':null,a.comCupom?(a.comCupom+' com cupom'):null].filter(Boolean).join(' · ')||null));
   k.appendChild(kpi('Faturado',brlC(a.faturado)));
   k.appendChild(kpi('Ticket médio',a.vendas?brlC(a.ticket):'—'));
-  k.appendChild(kpi('Lucro estimado',brlC(a.lucro),a.comissao?('após '+brlC(a.comissao)+' de comissão'):'Stars + taxa MP descontadas'));
+  const pd=a.perdas&&a.perdas.cents?a.perdas:null;
+  k.appendChild(kpi('Lucro estimado',brlC(a.lucro),[a.comissao?('após '+brlC(a.comissao)+' de comissão'):'Stars + taxa MP descontadas',pd?(brlC(pd.cents)+' de Stars perdidas'):null].filter(Boolean).join(' e ')));
+  if(pd)k.appendChild(kpi('Stars perdidas',brlC(pd.cents),pd.n+(pd.n>1?' cobranças':' cobrança')+' sem entrega · '+pd.stars+'★'));
   if(a.carrinhos&&a.carrinhos.n)k.appendChild(kpi('Carrinhos',String(a.carrinhos.n),(a.carrinhos.itens/a.carrinhos.n).toFixed(1).replace('.',',')+' itens em média · '+brlC(Math.round(a.carrinhos.cents/a.carrinhos.n))+' cada'));
   k.appendChild(kpi('Conversão do Pix',conv,a.pixGerados?(a.pixPagos+' pagos de '+a.pixGerados+' gerados'):'nenhum Pix gerado'));
   k.appendChild(kpi('Entrega (mediana)',a.entregaMedianaMin==null?'—':fmtMin(a.entregaMedianaMin),
@@ -832,12 +837,26 @@ async function loadAna(){
   body.appendChild(k);
   if(a.estornos){const w=el('div','ccard wide');w.appendChild(el('h4',null,'⚠ '+a.estornos+(a.estornos>1?' estornos':' estorno')+' no período'));
     w.appendChild(el('p','sub','Pedidos pagos que voltaram (MED/chargeback). Não entram nas vendas acima.'));body.appendChild(w);}
+  if(a.perdas&&a.perdas.itens.length)body.appendChild(perdasCard(a.perdas));
   if(a.funil)body.appendChild(funnelCard(a.funil));
   if(a.entregaTipos)body.appendChild(entregaCard(a));
   if(a.porHora)body.appendChild(picoCard(a));
   if(a.clientes)body.appendChild(clientesCard(a.clientes));
   body.appendChild(dayChart(a,r));
   body.appendChild(prodRank(a.produtos));
+}
+// Stars cobradas sem entrega (falha do Telegram/bot do CF): lista com o ID para a disputa; "estornada" quando o reembolso voltar
+function perdasCard(p){
+  const card=el('div','ccard wide');card.appendChild(el('h4',null,'💸 Stars cobradas sem entrega'));
+  card.appendChild(el('p','sub',(p.n?p.n+' em aberto ('+p.stars+'★, '+brlC(p.cents)+', já descontado do lucro)':'nenhuma em aberto')+(p.estornadas?' · '+p.estornadas+' estornada(s)':'')+' · o Telegram cobrou mas o CounterFlame não registrou'));
+  const t=el('table','ttab');t.innerHTML='<tr><th>Quando</th><th>Pedido</th><th>Stars</th><th>Custo</th><th></th></tr>';
+  p.itens.forEach(function(x){const tr=document.createElement('tr');
+    const d=new Date(x.em.replace(' ','T')+'Z').toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    tr.innerHTML='<td>'+esc(d)+'</td><td>'+(x.pedido?'#'+x.pedido:'—')+(x.conta?' <span class="hint">'+esc(x.conta)+'</span>':'')+'</td><td>'+x.stars+'★</td><td>'+esc(brlC(x.cents))+'</td>'
+      +'<td>'+(x.estornada?'<span class="hint">estornada</span> <button class="rechk" data-act="perdaEst" data-id="'+x.id+'" data-v="0">desfazer</button>'
+        :'<button class="rechk" data-act="perdaEst" data-id="'+x.id+'" data-v="1">estornada</button>')+(x.tx?' <button class="rechk" data-act="perdaTx" data-tx="'+esc(x.tx)+'">copiar ID</button>':'')+'</td>';
+    t.appendChild(tr);});
+  card.appendChild(t);return card;
 }
 // horários e dias de pico: colunas por hora (vendas) + barras por dia da semana
 function picoCard(a){
