@@ -147,6 +147,12 @@ export async function semRepetir(c, fn) {
   try { return await fn(); } finally { c._requestRetries = antes; }
 }
 
+// Intervalo mínimo entre duas cobranças (17/11/2026): 3 dos 7 FORM_SUBMIT_DUPLICATE vieram < 10 s depois da cobrança
+// anterior (~8% de erro nesse caso × ~3% com 10 s ou mais). Medir por ~1 semana; ver docs/auditoria.
+export const INTERVALO_MS = process.env.NODE_ENV === 'test' ? 0 : 10_000;
+let ultimoEnvio = 0;
+export const esperaEnvio = (ultimo, agora = Date.now(), min = INTERVALO_MS) => Math.max(0, ultimo + min - agora);
+
 // Pagamento: confere a fatura de novo e paga SÓ se valor/moeda/conta baterem.
 // Erros antes do envio têm e.safe = true (nada foi cobrado). Depois do envio, qualquer falha é "incerta".
 // onInvoice(msgId) é chamado ANTES de cobrar: o servidor grava o nº da mensagem da fatura no pedido,
@@ -172,6 +178,8 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       throw safe(String(e?.errorMessage || e?.message || e)); // nada foi enviado ainda
     }
     const before = inv.msgId;
+    const espera = esperaEnvio(ultimoEnvio);
+    if (espera) await sleep(espera);               // dentro da fila: nenhuma outra cobrança passa na frente
     let saldoAntes = null;
     try { saldoAntes = await balanceOf(c); } catch { /* sem prova pelo saldo; segue pelo recibo */ }
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
@@ -180,9 +188,15 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
     ctx.sent = true; // daqui em diante, tempo esgotado = incerto
     let r;
+    const t0 = Date.now();                          // diagnóstico: quanto o Telegram leva para responder a cobrança
+    let envioMs = 0;
     try {
       r = await semRepetir(c, () => c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice }))); // ← COBRA (1 envio só)
+      ultimoEnvio = Date.now();
+      envioMs = ultimoEnvio - t0;
     } catch (e) {
+      ultimoEnvio = Date.now();
+      Object.assign(e, { envioMs: Date.now() - t0, esperaMs: espera });
       // com 1 tentativa só, erro interno do Telegram (ServerError/RPC_CALL_FAIL) chega como "Request was unsuccessful"
       if (/Request was unsuccessful/.test(String(e?.message))) e.errorMessage = 'TELEGRAM_INTERNO (erro interno do Telegram; envio não repetido)';
       // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
@@ -213,7 +227,7 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       const msgs = (await c.getMessages(CF_BOT, { limit: 6 })).filter((m) => m.id > before && !m.out && m.message);
       botReply = msgs.at(0)?.message?.slice(0, 200) || '';
     }
-    return { stars: expectStars, account: inv.account, produto: inv.produto, botReply };
+    return { stars: expectStars, account: inv.account, produto: inv.produto, botReply, envioMs, esperaMs: espera };
   });
 }
 

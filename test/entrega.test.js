@@ -819,3 +819,11 @@ test('conta separada: ID só pela própria máquina', async () => {
     assert.deepEqual(await (await fetch(base + '/api/local/conta')).json(), { id: '123456789', username: 'conta_loja' });
   } finally { SRV._setContaReader(null); _setInvoiceChecker(null); }
 });
+
+test('intervalo mínimo entre cobranças: espera só o que falta para 10 s', async () => {
+  const { esperaEnvio } = await import('../tg-user.js');
+  assert.equal(esperaEnvio(0, 1_000_000, 10_000), 0);                 // nunca pagou
+  assert.equal(esperaEnvio(1_000_000, 1_004_000, 10_000), 6_000);     // pagou há 4 s → espera 6 s
+  assert.equal(esperaEnvio(1_000_000, 1_010_000, 10_000), 0);         // já passou o intervalo
+  assert.equal(esperaEnvio(1_000_000, 1_030_000, 10_000), 0);
+});

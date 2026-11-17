@@ -114,7 +114,10 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
   } catch (e) {
     const msg = String(e?.errorMessage || e?.message || e).slice(0, 160);
     if (e?.safe) { save('erro', { erro: msg }); return { ok: false, why: 'não pagou: ' + msg }; }
-    save('incerto', { erro: msg, ...(e?.saldoDepois != null ? { saldoDepois: e.saldoDepois } : {}), ...(e?.txPerdida ? { txPerdida: e.txPerdida } : {}) });
+    // diagnóstico da falha: tempo de resposta do envio, espera do intervalo, classe/código do erro
+    const diag = { ...(e?.envioMs != null ? { envioMs: e.envioMs } : {}), ...(e?.esperaMs != null ? { esperaMs: e.esperaMs } : {}),
+      ...(e?.code != null ? { codigo: e.code } : {}), classe: e?.constructor?.name || null };
+    save('incerto', { erro: msg, ...diag, ...(e?.saldoDepois != null ? { saldoDepois: e.saldoDepois } : {}), ...(e?.txPerdida ? { txPerdida: e.txPerdida } : {}) });
     tgIncerto(id, msg);
     agendar(() => resolverIncerto(id), INCERTO_MS);
     return { ok: false, why: 'pagamento incerto: ' + msg, incerto: true };
