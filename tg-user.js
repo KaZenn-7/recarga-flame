@@ -132,6 +132,21 @@ async function fetchInvoice(c, startParam) {
   throw new Error(lastText ? `o bot respondeu sem fatura: "${lastText.slice(0, 100)}"` : 'o bot não respondeu em 15 s');
 }
 
+// Fatura já aberta no chat (a da conferência): mesma forma que fetchInvoice, ou null se não serve (não é fatura, já tem
+// recibo, ou falta a mensagem "Account:" logo antes). Evita abrir uma 2ª fatura igual para o mesmo pedido (17/11/2026).
+async function invoiceById(c, msgId) {
+  const [inv] = await c.getMessages(CF_BOT, { ids: [msgId] });
+  if (!inv || inv.out || inv.media?.className !== 'MessageMediaInvoice' || inv.media.receiptMsgId) return null;
+  const [txt] = await c.getMessages(CF_BOT, { ids: [msgId - 1] });
+  const info = String(txt?.message || '');
+  if (!/Account:/i.test(info)) return null;
+  return {
+    msgId: inv.id, currency: inv.media.currency, stars: Number(inv.media.totalAmount?.toString()),
+    desc: String(inv.media.description || '').slice(0, 120), produto: info.split('\n')[0].trim().slice(0, 120),
+    account: (/Account:\s*(.+)/i.exec(info)?.[1] || '').trim().slice(0, 64), reusada: true,
+  };
+}
+
 // Conferência: NÃO paga.
 export function checkInvoice(startParam, env = process.env) {
   return serial(async () => fetchInvoice(await getClient(env), startParam));
@@ -157,14 +172,15 @@ export const esperaEnvio = (ultimo, agora = Date.now(), min = INTERVALO_MS) => M
 // Erros antes do envio têm e.safe = true (nada foi cobrado). Depois do envio, qualquer falha é "incerta".
 // onInvoice(msgId) é chamado ANTES de cobrar: o servidor grava o nº da mensagem da fatura no pedido,
 // que identifica este pagamento de forma única (ver invoicePaid).
-export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }, env = process.env) {
+export function payInvoice({ startParam, expectStars, expectAccount, onInvoice, reuseMsgId = null }, env = process.env) {
   return serial(async (ctx) => {
     const { Api } = await import('telegram');
     const safe = (msg) => Object.assign(new Error(msg), { safe: true });
     let c, inv, form, invoice;
     try {
       c = await getClient(env);
-      inv = await fetchInvoice(c, startParam);
+      // a fatura da conferência (se ainda serve) em vez de abrir outra igual; senão, fatura nova como antes
+      inv = (reuseMsgId ? await invoiceById(c, reuseMsgId).catch(() => null) : null) || await fetchInvoice(c, startParam);
       if (inv.currency !== 'XTR') throw safe(`moeda ${inv.currency}`);
       if (inv.stars !== expectStars) throw safe(`fatura de ${inv.stars}★, esperado ${expectStars}★`);
       if (String(inv.account).trim().toLowerCase() !== String(expectAccount).trim().toLowerCase()) throw safe(`conta "${inv.account}" ≠ "${expectAccount}"`);

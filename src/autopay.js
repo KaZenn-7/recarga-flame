@@ -17,6 +17,8 @@ const _setInvoiceChecker = (fn) => { invoiceChecker = fn || checkInvoice; };
 // Só paga com toque + confirmação do operador. Travas: chave geral (desligada por padrão), conferência ✅,
 // pedido sem REVISAR, teto por pedido e por 24h, saldo suficiente. Estados em orders.autopay:
 // null → paying → sent | erro (falha ANTES de cobrar: pode tentar de novo) | incerto (falha depois: nunca repete).
+// fatura da conferência reaproveitada no pagamento se tiver menos que isto (senão abre outra)
+const REUSO_MS = 30 * 60_000;
 // tetos do pagamento automático: editáveis no painel (settings); o .env é só o padrão inicial
 const AUTOPAY_MAX_DEF = Number(env.AUTOPAY_MAX_STARS ?? 1000);   // ★ por pedido
 const AUTOPAY_DAY_DEF = Number(env.AUTOPAY_DAY_STARS ?? 4000);   // ★ em 24h
@@ -101,7 +103,9 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
     .run(st, JSON.stringify({ ...extra, ...info, ...tent }), Date.now(), id);
   const code = o.prod_code || PRODUCTS[o.product]?.code;
   try {
-    const r = await invoicePayer({ startParam: `s_${code}_${o.game_id}`, expectStars: starsOf(o), expectAccount: o.nickname,
+    const ck = chkOf(o);
+    const reuseMsgId = !extra.retry && ck?.status === 'ok' && ck.msgId && Date.now() - (ck.at || 0) < REUSO_MS ? ck.msgId : null;
+    const r = await invoicePayer({ startParam: `s_${code}_${o.game_id}`, expectStars: starsOf(o), expectAccount: o.nickname, reuseMsgId,
       onInvoice: (m, saldoAntes, envioEm) => {
         tent = { invMsgId: m, ...(envioEm ? { envioEm } : {}), ...(saldoAntes != null ? { saldoAntes, ledgerAntes } : {}) };
         db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ ...extra, ...tent }), id);
@@ -184,6 +188,21 @@ async function provaCobranca(o, info = infoOf(o)) {
   if (s.cobrado != null) return { ...s, prova: 'saldo', motivo: `${s.motivo} (${h.motivo})` };
   return { cobrado: null, motivo: `${h.motivo}; ${s.motivo}` };
 }
+// ---- Pausa automática (17/11/2026): 2 cobranças sem entrega em 6 h → o modo automático vira "1 toque" (o operador
+// decide cada pagamento) e a loja não faz mais a 2ª tentativa sozinha. Volta pelo painel (★ → Entrega com Stars).
+const PAUSA_N = 2, PAUSA_JANELA_H = 6;
+// pausado = a pausa automática disparou e o operador ainda não mexeu no modo (o painel limpa autopay_pausa)
+const pausado = () => !!getSetting('autopay_pausa', '') && !autoMode();
+function pausaSeSeguidas() {
+  const n = db.prepare("SELECT COUNT(*) n FROM stars_perdidas WHERE estornada_em IS NULL AND cobrado_em >= datetime('now', ?)").get(`-${PAUSA_JANELA_H} hours`).n;
+  if (n < PAUSA_N || !autoMode()) return false;
+  setSetting('autopay', '1');
+  setSetting('autopay_pausa', JSON.stringify({ de: '2', em: Date.now(), perdas: n }));
+  tgSend(`⏸️ Pagamento AUTOMÁTICO PAUSADO: ${n} cobranças sem entrega nas últimas ${PAUSA_JANELA_H} h (falha do Telegram/bot do CounterFlame).\n`
+    + 'A loja passou para "1 toque": cada pagamento espera o seu toque no aviso do pedido, e não paga mais de novo sozinha.\n'
+    + 'Quando quiser voltar: painel → ★ → Entrega com Stars → Automático.', 'alertas');
+  return true;
+}
 async function resolverIncerto(id) {
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (!o || o.status !== 'paid' || o.autopay !== 'incerto') return; // já resolvido (painel, entrega manual…)
@@ -220,8 +239,15 @@ async function resolverIncerto(id) {
     const quando = info.envioEm ? new Date(info.envioEm * 1000) : new Date();
     db.prepare(`INSERT OR IGNORE INTO stars_perdidas (order_id, stars, cents, tx, cobrado_em, motivo) VALUES (?,?,?,?,?,?)`)
       .run(id, starsOf(o), Math.round(starsOf(o) * (o.star_cost ?? 0.0875) * 100), tx, quando.toISOString().slice(0, 19).replace('T', ' '), String(info.erro || '').slice(0, 120));
+    pausaSeSeguidas();
     tgSend(`💸 Cobrança SEM entrega no pedido ${head}: o Telegram cobrou ${starsOf(o)}★ mas o CounterFlame não registrou (fatura sem recibo, "${info.erro}").`
       + (tx ? `\nTransação para disputa no @BotFather: ${tx}` : ''), 'alertas');
+  }
+  if (pausado()) {   // pausa automática: a 2ª tentativa fica com o operador
+    setMotivo(id, 'sem recibo — pagar de novo manualmente');
+    await tgFalha(id, `🔍 Conferido às ${hhmm()}: a fatura ficou sem recibo — ${perda}. O pagamento automático está pausado: toque em pagar de novo (fatura nova) ou entregue manualmente.`,
+      `🖐 Pagamento manual necessário ${head}: tentativa sem recibo — detalhes no aviso original.`);
+    return;
   }
   if (info.retry) {
     setMotivo(id, 'sem recibo 2x — entrega manual');
@@ -322,7 +348,7 @@ async function conferir(id, fromPaid = false, attempt = 1) {
       else if (n !== ap.tickets + 1) erros.push(`conta tem ${ap.tickets} ticket(s): o próximo é o ${ap.tickets + 1}, pedido é o ${n ?? '?'}`);
     }
     ck = { status: erros.length ? 'diverge' : 'ok', motivo: erros.join('; '), stars: r.stars, account: r.account,
-      produto: r.produto || r.desc, at: Date.now() };
+      produto: r.produto || r.desc, at: Date.now(), ...(r.msgId ? { msgId: r.msgId } : {}) };
   } catch (e) {
     ck = { status: 'erro', motivo: String(e?.errorMessage || e?.message || e).slice(0, 140), at: Date.now() };
   }
@@ -391,5 +417,5 @@ async function entregaAuto(id, attempt = 1) {
   }
 }
 
-return { vigiaPagamentos, resolverIncerto, conferirAtraso, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
+return { pausado, vigiaPagamentos, resolverIncerto, conferirAtraso, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
 }

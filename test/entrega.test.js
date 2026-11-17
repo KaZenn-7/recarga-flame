@@ -149,7 +149,7 @@ test('pagamento 1 toque: desligado por padrão; ligado paga 1 vez, entrega e res
     await Promise.all([cb('P:' + a, msgId), cb('P:' + a, msgId)]);
     assert.equal(pays.length, 1);
     const { onInvoice, ...p0 } = pays[0];
-    assert.deepEqual(p0, { startParam: 's_c_1000_131311', expectStars: 26, expectAccount: 'jogador_teste' });
+    assert.deepEqual(p0, { startParam: 's_c_1000_131311', expectStars: 26, expectAccount: 'jogador_teste', reuseMsgId: 1 }); // fatura da conferência
     assert.equal(typeof onInvoice, 'function'); // grava a fatura antes de cobrar
     const row = db.prepare('SELECT status, autopay FROM orders WHERE id=?').get(a);
     assert.equal(row.status, 'delivered'); assert.equal(row.autopay, 'sent');
@@ -851,4 +851,62 @@ test('painel: Stars perdidas descontam do lucro do Analytics; "estornada" tira d
   assert.equal((await adm('POST', '/api/admin/perdas/999999', { estornada: true })).status, 404);
   assert.equal((await fetch(base + '/api/admin/perdas/' + id, { method: 'POST' })).status, 401);
   db.prepare('DELETE FROM stars_perdidas').run();
+});
+
+test('pausa automática: 2 cobranças sem entrega em 6 h → sai do automático e não paga de novo sozinha', async () => {
+  const cfg = (k) => db.prepare('SELECT v FROM settings WHERE k=?').get(k)?.v;
+  db.prepare('DELETE FROM stars_perdidas').run();
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }));
+  let fatura = 9900, saldo = 9000, falhar = 0; const pagas = [];
+  _setInvoicePayer(async (q) => {
+    await q.onInvoice(++fatura, saldo, Math.floor(Date.now() / 1000) - 120);
+    if (falhar > 0) { falhar--; saldo -= q.expectStars; throw Object.assign(new Error('x'), { errorMessage: 'TELEGRAM_INTERNO' }); }
+    pagas.push(fatura); saldo -= q.expectStars;
+    return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
+  });
+  _setStarsReader(async () => saldo);
+  _setReceiptChecker(async () => ({ paid: false }));
+  const row = (id) => db.prepare('SELECT status, autopay FROM orders WHERE id=?').get(id);
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 2 });
+    const novo = async (gid) => { const j = await (await postJ('/api/orders', { product: 'c1000', gameId: gid, email: gid + '@pa.com' })).json(); await pagar(j.token); await new Promise((r) => setTimeout(r, 40)); return j.id; };
+    // 1ª perda: continua no automático e paga de novo
+    falhar = 1; const a = await novo('181811');          // automático: paga ao confirmar o Pix e cai no erro
+    assert.equal(row(a).autopay, 'incerto');
+    await SRV.resolverIncerto(a);
+    assert.equal(row(a).status, 'delivered'); assert.equal(cfg('autopay'), '2');
+    // 2ª perda em 6 h: pausa (1 toque), avisa e NÃO paga de novo sozinha
+    falhar = 1; const b = await novo('181812');
+    assert.equal(row(b).autopay, 'incerto');
+    const n = pagas.length, t0 = tgSent.length;
+    await SRV.resolverIncerto(b);
+    assert.equal(cfg('autopay'), '1');
+    assert.ok(tgSent.slice(t0).some((m) => /Pagamento AUTOMÁTICO PAUSADO: 2 cobranças/.test(m.text)));
+    assert.equal(row(b).status, 'paid'); assert.equal(row(b).autopay, 'erro'); assert.equal(pagas.length, n);
+    assert.match(lastCall('editMessageText').body.text, /pagamento automático está pausado/);
+    assert.equal(JSON.parse(cfg('autopay_pausa')).de, '2');
+    // o operador volta ao automático pelo painel → a pausa acaba
+    await adm('POST', '/api/admin/autopay', { mode: 2 });
+    assert.equal(cfg('autopay_pausa'), ''); assert.equal(SRV.pausado(), false);
+  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); _setStarsReader(null); db.prepare('DELETE FROM stars_perdidas').run(); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+});
+
+test('pagamento usa a fatura da conferência (1ª tentativa); a 2ª tentativa abre fatura nova', async () => {
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 7777 }));
+  const pedidos = []; let falhar = 1, fatura = 9950;
+  _setInvoicePayer(async (q) => {
+    pedidos.push(q.reuseMsgId); await q.onInvoice(q.reuseMsgId || ++fatura, 5000, Math.floor(Date.now() / 1000) - 120);
+    if (falhar > 0) { falhar--; throw Object.assign(new Error('x'), { errorMessage: 'TELEGRAM_INTERNO' }); }
+    return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
+  });
+  _setReceiptChecker(async () => ({ paid: false }));
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 2 });
+    const j = await (await postJ('/api/orders', { product: 'c1000', gameId: '191911', email: 'r@re.com' })).json();
+    await pagar(j.token); await new Promise((r) => setTimeout(r, 60));
+    assert.equal(JSON.parse(db.prepare('SELECT chk FROM orders WHERE id=?').get(j.id).chk).msgId, 7777);   // conferência guardou a fatura
+    if (db.prepare('SELECT autopay FROM orders WHERE id=?').get(j.id).autopay !== 'incerto') await adm('POST', '/api/admin/orders/' + j.id + '/autopay');
+    await SRV.resolverIncerto(j.id);
+    assert.deepEqual(pedidos, [7777, null]);          // 1ª: fatura da conferência; 2ª: fatura nova
+  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); db.prepare('DELETE FROM stars_perdidas').run(); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
