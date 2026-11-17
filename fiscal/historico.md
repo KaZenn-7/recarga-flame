@@ -66,3 +66,4 @@
   - `tools/relatorio-fiscal.mjs`.
 - O custo da Star nos pedidos continua por **PEPS** (camadas das compras mais recentes que formam o saldo), não por custo médio. Levar ao contador.
 - Os CSVs e relatórios gerados ficam fora do git (têm ID de jogo de clientes).
+- Correção do dono: o USDT é sempre comprado em P2P (Wallet do Telegram ou Binance) e gasto no fragment.com para comprar as Stars. Ele não transfere para o Telegram. O painel passou a pedir o hash da compra no Fragment como comprovante.

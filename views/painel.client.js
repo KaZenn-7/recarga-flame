@@ -254,8 +254,9 @@ async function addRecarga(){
     if(!(cents>0)){alert('Informe o valor pago.');return;}
   }
   if(!(usdt>0)){postStars({kind:'compra',stars:st,cents:cents,nota:''});return;}
+  const cp=prompt('Comprovante da compra no Fragment (hash da transação ou link; opcional)','');if(cp==null)return;
   try{
-    const r=await api('/api/admin/fiscal/compra-stars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars:st,usdt:usdt,cents:cents||undefined})});
+    const r=await api('/api/admin/fiscal/compra-stars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars:st,usdt:usdt,cents:cents||undefined,nota:'Fragment',comprovante:cp})});
     if(temSaldo)alert('Registrado: '+fmtN(st)+'★ por '+brlFromCents(r.cents)+' (custo médio do seu USDT).');
     await loadStars();
   }catch(e){alert(e.message);}
@@ -263,7 +264,7 @@ async function addRecarga(){
 async function usdtDaCompra(p){
   const u=prompt('Quantos USDT você gastou na compra de '+fmtN(p.stars)+'★ ('+p.data+')?','');if(u==null)return;
   const usdt=numBR(u);if(!(usdt>0)){alert('USDT inválido.');return;}
-  const cp=prompt('Comprovante (ID da transação ou link; opcional)','');if(cp==null)return;
+  const cp=prompt('Comprovante da compra no Fragment (hash da transação ou link; opcional)','');if(cp==null)return;
   try{await api('/api/admin/stars/compras/'+p.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({usdt:usdt,comprovante:cp})});await loadStars();}catch(e){alert(e.message);}
 }
 // ---- USDT (registro fiscal): saldo, custo médio, volume do mês x limite da DeCripto ----
@@ -294,7 +295,7 @@ async function addUsdt(){
   const usdt=numBR(u);if(!(usdt>0)){alert('USDT inválido.');return;}
   const c=prompt('Quanto pagou em R$ (com taxas)?','');if(c==null)return;
   const cents=Math.round(numBR(c)*100);if(!(cents>0)){alert('Valor inválido.');return;}
-  const pl=prompt('Onde comprou? 1 = Wallet do Telegram (P2P) · 2 = Binance P2P · ou escreva o nome','1');if(pl==null)return;
+  const pl=prompt('Onde comprou (P2P)? 1 = Wallet do Telegram · 2 = Binance · ou escreva o nome','1');if(pl==null)return;
   const plataforma=pl.trim()==='1'?'Wallet do Telegram P2P':pl.trim()==='2'?'Binance P2P':pl.trim();
   let tipo='p2p';
   if(pl.trim()!=='1'&&pl.trim()!=='2'){

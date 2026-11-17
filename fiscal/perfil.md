@@ -40,7 +40,7 @@
 
 ## Pagamentos e cripto
 - Gateway: Mercado Pago (conta PF; migrar para PJ após o CNPJ).
-- USDT comprado em **P2P na Wallet do Telegram ou na Binance**. Tratar como **sem exchange brasileira**: a DeCripto é obrigatória se o volume do mês (compras + usos, a confirmar) passar de R$ 35 mil. Diz que consegue os comprovantes das compras anteriores.
+- USDT comprado **sempre em P2P**, às vezes na Wallet do Telegram, às vezes na Binance. É gasto direto no **fragment.com** para comprar as Stars, sem passar pelo saldo do Telegram. A compra no Fragment é a alienação do USDT; o hash da transação serve de comprovante. Tratar como **sem exchange brasileira**: a DeCripto é obrigatória se o volume do mês (compras + usos, a confirmar) passar de R$ 35 mil. Diz que consegue os comprovantes das compras anteriores.
 - Em novembro/2026 o volume fica ≈ R$ 6,6 mil (R$ 3,3 mil comprados + R$ 3,3 mil usados). Se o ritmo de 15–16/11 se mantiver, **dezembro pode passar de R$ 35 mil**.
 - O dono compra o USDT e o usa na mesma hora. A "perda" que aparece no relatório é praticamente o ágio do P2P sobre a cotação de mercado.
 - Registros (Fase 1, no ar desde 16/11/2026): painel de Stars → seção USDT. O relatório mensal sai sozinho no dia 1º (Telegram, tópico resumo), ou sob demanda com `node tools/relatorio-fiscal.mjs AAAA-MM`.
