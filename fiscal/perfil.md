@@ -1,6 +1,6 @@
 # Perfil fiscal da loja
 
-> Mantido pelo Claude. Atualize sempre que algo mudar. Última atualização: 2026-11-16
+> Mantido pelo Claude. Atualize sempre que algo mudar. Última atualização: 2026-11-17
 
 ## Situação jurídica
 - Hoje vende como **pessoa física, sem CNPJ**. Pendência nº 1: formalizar.
@@ -23,15 +23,16 @@
 
 ## Números
 - Loja no ar desde ~08/11/2026.
-- **Dados reais do banco da loja (`loja.db`), de 08/11 a 16/11/2026 (20h20 BRT):**
-  - 157 pedidos entregues (134 Pix). 45 cancelados, nenhum deles pago. Nenhum reembolso.
-  - Total recebido dos clientes: **R$ 4.159,43** (preço de tabela R$ 4.291,80 − R$ 132,37 de desconto de cupom).
-  - Custo dos pacotes (33.898★ × custo da Star congelado em cada pedido): **R$ 2.964,67** (71,3% do recebido).
-  - Taxa do Pix no MP (0,99%): R$ 41,18.
-  - Comissões de parceiros (devidas, nenhuma paga ainda): ≈ R$ 286,68.
-  - Lucro: **≈ R$ 866,90** (20,8%). Descontando as cobranças em dobro do bot (#116, #128, #181: 1.620★ ≈ R$ 141,67, em disputa), fica **≈ R$ 725**, ou 17,4%.
-  - Receita pelos dois modelos: **revenda R$ 4.159,43**; intermediação ≈ R$ 1.194,76 (recebido − custo dos pacotes).
-  - O ritmo acelerou: 08–14/11 ≈ R$ 247/dia; 15–16/11 ≈ R$ 1.215/dia.
+- **Dados reais do banco da loja (`loja.db`), de 08/11 a 17/11/2026 (20h30 BRT):**
+  - 214 pedidos entregues. 54 cancelados, nenhum deles pago. Nenhum reembolso. Ticket médio ≈ R$ 27,14.
+  - Total recebido dos clientes (já sem os cupons): **R$ 5.807,30**.
+  - Custo dos pacotes (47.293★ × custo da Star congelado em cada pedido): **R$ 4.131,31** (71,1% do recebido).
+  - Taxa do Pix no MP (0,99%): R$ 57,49.
+  - Comissões de parceiros (devidas, nenhuma paga ainda): ≈ R$ 442,17.
+  - Lucro: **≈ R$ 1.176,33** (20,3%). Descontando as cobranças em dobro do bot (#116, #128, #181: 1.620★ ≈ R$ 141,67, em disputa), fica **≈ R$ 1.035**, ou 17,8%.
+  - Receita pelos dois modelos: **revenda R$ 5.807,30**; intermediação ≈ R$ 1.675,99 (recebido − custo dos pacotes).
+  - Vendas por dia: ≈ R$ 247/dia de 08 a 14/11; R$ 1.018 (15/11), R$ 1.500 (16/11), R$ 1.559 (17/11 até 20h30).
+  - Compras de USDT já lançadas no painel: 3 (R$ 1.100,00 por 189,57 USDT).
 - Projeção: ainda não dá para projetar. Com 9 dias de dados e uma alta de 5× nos últimos 2, qualquer número é chute. **Recalcular no fim de dezembro de 2026.**
 - Pendência de conciliação (o dono diz que todas as compras recentes de Stars foram registradas; conferir pelo histórico de transações do Telegram na Fase 1): o saldo de Stars no Telegram (5.254★) está ~2.700★ acima do que as compras registradas explicam (38.035 compradas − 33.898 entregues − 1.620 em dobro = 2.517). Pode haver compra não registrada no painel, bônus ou reembolso de Stars.
 - Simulação (Simples, Anexo III, 6% na 1ª faixa):
