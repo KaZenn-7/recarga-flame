@@ -660,7 +660,7 @@ test('incerto conferido sozinho (17/11): recibo → entregue; sem recibo → avi
   const pagas = [];
   _setInvoicePayer(async (q) => {
     await q.onInvoice(++fatura, saldo, Math.floor(Date.now() / 1000) - 120);
-    if (falhar > 0) { falhar--; saldo -= q.expectStars; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); } // cobra sem recibo
+    if (falhar > 0) { falhar--; saldo -= q.expectStars; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE', envioMs: 1234, esperaMs: 0, code: 500 }); } // cobra sem recibo
     pagas.push(fatura); saldo -= q.expectStars;
     return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
   });
@@ -683,6 +683,7 @@ test('incerto conferido sozinho (17/11): recibo → entregue; sem recibo → avi
     let i = info(a);
     assert.equal(row(a).status, 'delivered'); assert.equal(row(a).autopay, 'sent');
     assert.equal(i.retry, 1); assert.equal(i.anterior, 9501); assert.equal(i.invMsgId, 9502); assert.equal(i.perdida.stars, 26);
+    assert.equal(i.tentativa1.envioMs, 1234); assert.equal(i.tentativa1.codigo, 500); assert.equal(i.tentativa1.fatura, 9501); // 1ª preservada
     assert.deepEqual(pagas, [9502]);
     assert.ok(tgSent.slice(t0).some((m) => new RegExp('Cobrança SEM entrega no pedido #' + a).test(m.text)));
     assert.ok(tgCalls.some((c) => /1ª tentativa sem recibo .*cobrou 26★ SEM entrega/.test(c.body?.text || '')));

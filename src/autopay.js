@@ -225,7 +225,10 @@ async function resolverIncerto(id) {
       `🖐 Entrega MANUAL necessária ${head}: 2 tentativas sem recibo — detalhes no aviso original.`);
     return;
   }
-  const r2 = await autopay(id, { via: 'auto', extra: { retry: 1, anterior: info.invMsgId, erro1: info.erro, ...(novoInfo.perdida ? { perdida: novoInfo.perdida } : {}) },
+  // diagnóstico da 1ª tentativa (a 2ª grava os dela por cima): tempo de resposta, espera, classe/código do erro
+  const tentativa1 = Object.fromEntries(Object.entries({ fatura: info.invMsgId, erro: info.erro, envioEm: info.envioEm, envioMs: info.envioMs,
+    esperaMs: info.esperaMs, classe: info.classe, codigo: info.codigo }).filter(([, v]) => v != null));
+  const r2 = await autopay(id, { via: 'auto', extra: { retry: 1, anterior: info.invMsgId, erro1: info.erro, tentativa1, ...(novoInfo.perdida ? { perdida: novoInfo.perdida } : {}) },
     nota: `🔁 1ª tentativa sem recibo ("${info.erro}"): ${perda}. Pago de novo com fatura nova.` });
   if (!r2.ok && !r2.incerto) {
     setMotivo(id, 'sem recibo; 2ª tentativa: ' + r2.why);
