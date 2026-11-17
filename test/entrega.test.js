@@ -271,20 +271,20 @@ test('resolver incerto pelo painel: verifica cobrança no histórico → entregu
     db.prepare('UPDATE orders SET autopay_at=? WHERE id=?').run(Date.now() - 120_000, a);
     // sem recibo e o saldo não mudou → provavelmente não cobrou → liberar → volta a poder pagar
     let v = await (await adm('POST', '/api/admin/orders/' + a + '/verify')).json();
-    assert.equal(v.cobrado, false); assert.match(v.motivo, /não mudou/);
+    assert.equal(v.entregue, false); assert.equal(v.cobrado, false); assert.match(v.motivo, /não mudou/);
     assert.equal((await adm('POST', '/api/admin/orders/' + a + '/resolve', { acao: 'liberar' })).status, 200);
     const el = lastCall('editMessageText').body;
     assert.equal(el.message_id, aMsg); assert.match(el.text, /💰 Pedido pago/); assert.match(el.text, /nada foi cobrado/);
     assert.ok(el.reply_markup.inline_keyboard.flat().some((x) => x.callback_data === 'd:' + a));
     let o = (await (await adm('GET', '/api/admin/orders')).json()).find((x) => x.id === a);
     assert.equal(o.ap, 'erro'); assert.equal(o.canPay.ok, true);
-    // sem recibo, mas o saldo caiu exatamente o valor (26★) → cobrado, prova pelo saldo
+    // sem recibo, mas o saldo caiu exatamente o valor (26★) → cobrado SEM entrega (o CF não registrou)
     const s1 = await novo('151513');
     await adm('POST', '/api/admin/orders/' + s1 + '/autopay');
     db.prepare('UPDATE orders SET autopay_at=? WHERE id=?').run(Date.now() - 120_000, s1);
     saldo -= 26;
     v = await (await adm('POST', '/api/admin/orders/' + s1 + '/verify')).json();
-    assert.equal(v.cobrado, true); assert.equal(v.prova, 'saldo');
+    assert.equal(v.entregue, false); assert.equal(v.cobrado, true); assert.match(v.motivo, /caiu exatamente 26★/);
     // saldo mudou outro valor (compra de Stars no meio) → sem prova: não libera nem marca entregue
     const s2 = await novo('151514');
     await adm('POST', '/api/admin/orders/' + s2 + '/autopay');
@@ -306,7 +306,7 @@ test('resolver incerto pelo painel: verifica cobrança no histórico → entregu
     db.prepare('UPDATE orders SET autopay_at=? WHERE id=?').run(Date.now() - 120_000, b);
     found = true;
     v = await (await adm('POST', '/api/admin/orders/' + b + '/verify')).json();
-    assert.equal(v.cobrado, true);
+    assert.equal(v.entregue, true);
     // consultou a fatura EXATA de cada pedido (não valor/horário)
     assert.deepEqual(consultadas, [9001, 9002, 9003, 9004, 9005]); assert.equal(v.fatura, 9005);
     const mails = mailSent.length;
@@ -471,10 +471,11 @@ test('erro depois de enviar o pagamento: só "nada cobrado" se a fatura não tem
   assert.equal(decideAfterSendError(rpc('BALANCE_TOO_LOW'), null), 'incerto');      // não deu para conferir
   assert.equal(decideAfterSendError(new Error('timeout'), false), 'incerto');       // rede: nunca "seguro"
   assert.equal(decideAfterSendError({ errorMessage: 'INTERNAL', code: 500 }, false), 'incerto');
-  // prova pelo saldo (#116/#128/#181): queda exata = pago mesmo sem recibo; saldo mudou outro valor = nunca "seguro"
-  assert.equal(decideAfterSendError(rpc('FORM_SUBMIT_DUPLICATE'), false, true), 'paid');
+  // 17/11: cobrança no histórico/saldo SEM recibo não é entrega (o CounterFlame não registrou) → incerto, nunca "paid"
+  assert.equal(decideAfterSendError(rpc('FORM_SUBMIT_DUPLICATE'), false, true), 'incerto');
   assert.equal(decideAfterSendError(rpc('FORM_SUBMIT_DUPLICATE'), false, false), 'incerto');
   assert.equal(decideAfterSendError(rpc('BALANCE_TOO_LOW'), false, false), 'safe');
+  assert.equal(decideAfterSendError(rpc('BALANCE_TOO_LOW'), false, true), 'incerto');   // cobrou: não é "nada cobrado"
   assert.equal(decideAfterSendError(rpc('BALANCE_TOO_LOW'), false, 'outro'), 'incerto');
 });
 
@@ -517,94 +518,6 @@ test('desligamento seguro: recusa pagamento novo, espera o pagamento em andament
   } finally { db.prepare("UPDATE orders SET autopay='sent' WHERE id=?").run(id); _resetStopping(); }
 });
 
-test('incerto conferido sozinho: recibo ou queda exata do saldo → entregue; saldo igual → operador; sem prova → incerto; NUNCA paga de novo', async () => {
-  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }));
-  let fatura = 9500, saldo = 5000, comSaldo = true;
-  const pagas = []; let falhar = 0; // quantos envios ainda falham com FORM_SUBMIT_DUPLICATE
-  _setInvoicePayer(async (q) => {
-    await q.onInvoice(++fatura, comSaldo ? saldo : null);
-    if (falhar > 0) { falhar--; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); }
-    pagas.push(fatura); saldo -= q.expectStars;
-    return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
-  });
-  _setStarsReader(async () => saldo);
-  const recibos = new Set(); const consultadas = [];
-  _setReceiptChecker(async (m) => { consultadas.push(m); return recibos.has(m) ? { paid: true, receiptMsgId: m + 1 } : { paid: false }; });
-  const row = (id) => db.prepare('SELECT status, autopay, autopay_info FROM orders WHERE id=?').get(id);
-  const info = (id) => JSON.parse(row(id).autopay_info);
-  try {
-    await adm('POST', '/api/admin/autopay', { mode: 1 });
-    const novo = async (gid) => { const j = await (await postJ('/api/orders', { product: 'c1000', gameId: gid, email: gid + '@ri.com' })).json(); await pagar(j.token); await new Promise((r) => setTimeout(r, 40)); return j.id; };
-    const tentar = async (id) => { falhar = 1; await adm('POST', '/api/admin/orders/' + id + '/autopay'); assert.equal(row(id).autopay, 'incerto'); };
-
-    // 1) #181: DUPLICATE, sem recibo, saldo caiu exatamente 26★ → cobrado 1 vez → entregue, sem pagar de novo
-    const a = await novo('161611');
-    await tentar(a);
-    assert.equal(info(a).saldoAntes, 5000);
-    assert.match(lastCall('editMessageText').body.text, /NÃO pague de novo ainda/);
-    saldo -= 26;                                                     // a 1ª tentativa cobrou
-    await SRV.resolverIncerto(a);
-    assert.equal(row(a).status, 'delivered'); assert.equal(row(a).autopay, 'sent'); assert.equal(info(a).resolvido, 'saldo');
-    assert.ok(tgCalls.some((c) => /saldo caiu exatamente 26★/.test(c.body?.text || '')));
-    assert.deepEqual(pagas, []);
-
-    // 2) com recibo → cobrado 1 vez → entregue
-    const b = await novo('161612');
-    await tentar(b);
-    recibos.add(fatura); saldo -= 26;
-    await SRV.resolverIncerto(b);
-    assert.equal(row(b).status, 'delivered'); assert.equal(info(b).resolvido, 'recibo');
-
-    // 3) outras entregas no meio: o saldo caiu 26★ deste + 26★ de outro pedido entregue depois → ainda é prova
-    const c = await novo('161613');
-    await tentar(c);
-    const outro = await novo('161619');
-    await adm('POST', '/api/admin/orders/' + outro + '/autopay');     // paga normal (−26★, lançado no livro-caixa)
-    assert.equal(row(outro).status, 'delivered');
-    saldo -= 26;                                                     // a tentativa de c também cobrou
-    await SRV.resolverIncerto(c);
-    assert.equal(row(c).status, 'delivered'); assert.equal(info(c).resolvido, 'saldo');
-    assert.deepEqual(pagas, [fatura]);                               // só o pedido "outro" foi pago de verdade
-
-    // 4) saldo não mudou e sem recibo → libera para o OPERADOR (não paga de novo sozinha)
-    const d = await novo('161614');
-    await tentar(d);
-    await SRV.resolverIncerto(d);
-    assert.equal(row(d).status, 'paid'); assert.equal(row(d).autopay, 'erro');
-    assert.match(lastCall('editMessageText').body.text, /provavelmente NÃO cobrou/);
-    assert.match(tgSent.at(-1).text, new RegExp('Entrega MANUAL necessária #' + d));
-    assert.equal(pagas.length, 1);
-
-    // 5) saldo mudou outro valor (compra de Stars) → sem prova: continua incerto e avisa
-    const e = await novo('161615');
-    await tentar(e);
-    saldo += 3300;
-    await SRV.resolverIncerto(e);
-    assert.equal(row(e).autopay, 'incerto');
-    assert.match(lastCall('editMessageText').body.text, /Não deu para confirmar sozinho/);
-    assert.match(tgSent.at(-1).text, new RegExp('Pagamento incerto #' + e));
-
-    // 6) recibo não lido e sem o saldo de antes → continua incerto
-    comSaldo = false;
-    const f = await novo('161616');
-    await tentar(f);
-    _setReceiptChecker(async () => { throw new Error('TIMEOUT'); });
-    await SRV.resolverIncerto(f);
-    assert.equal(row(f).autopay, 'incerto');
-    assert.match(lastCall('editMessageText').body.text, /recibo não lido \(TIMEOUT\);.*sem o saldo de antes/);
-    comSaldo = true;
-
-    // 7) já resolvido pelo painel: a conferência automática não mexe
-    _setReceiptChecker(async (m) => { consultadas.push(m); return { paid: false }; });
-    const g = await novo('161617');
-    await tentar(g);
-    db.prepare("UPDATE orders SET status='delivered' WHERE id=?").run(g);
-    const antes = consultadas.length;
-    await SRV.resolverIncerto(g);
-    assert.equal(consultadas.length, antes);
-    assert.equal(pagas.length, 1);                                   // nunca pagou de novo nenhum incerto
-  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); _setStarsReader(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
-});
 
 test('fila da conta do Telegram: chamada travada esgota o tempo, a fila segue e o pagamento não cobra depois', async () => {
   const { makeSerial } = await import('../tg-user.js');
@@ -717,66 +630,6 @@ test('histórico de Stars: só pela própria máquina; casa cada saída com o pe
   } finally { SRV._setStarsTxReader(null); _setInvoiceChecker(null); }
 });
 
-test('incerto conferido pelo histórico de Stars: 1 cobrança do valor → entregue; nenhuma → operador; conflito com o saldo → incerto', async () => {
-  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }));
-  let fatura = 9700, saldo = 8000, envio = 0;
-  _setInvoicePayer(async (q) => { await q.onInvoice(++fatura, saldo, envio); throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); });
-  _setStarsReader(async () => saldo);
-  _setReceiptChecker(async () => ({ paid: false }));
-  let tx = [];
-  SRV._setStarsTxReader(async ({ desde, ate }) => tx.filter((t) => t.date >= desde && t.date <= ate));
-  const cf = (date, stars = -26, extra = {}) => ({ id: 'tx' + date + stars, stars, date, bot: 'CounterFlameDonate_bot', msgId: null, refund: false, pending: false, failed: false, ...extra });
-  const row = (id) => db.prepare('SELECT status, autopay, autopay_info FROM orders WHERE id=?').get(id);
-  try {
-    await adm('POST', '/api/admin/autopay', { mode: 1 });
-    const novo = async (gid) => { const j = await (await postJ('/api/orders', { product: 'c1000', gameId: gid, email: gid + '@hi.com' })).json(); await pagar(j.token); await new Promise((r) => setTimeout(r, 40)); return j.id; };
-    const agora = () => Math.floor(Date.now() / 1000);
-
-    // 1) histórico mostra a cobrança (mesmo com o saldo mudando por uma compra no meio) → entregue, com o ID
-    envio = agora() - 120;
-    const a = await novo('171711');
-    await adm('POST', '/api/admin/orders/' + a + '/autopay');
-    assert.equal(JSON.parse(row(a).autopay_info).envioEm, envio);
-    tx = [cf(envio + 5), cf(envio + 3, -40), cf(envio - 30)];          // outro valor e fora da janela não contam
-    saldo += 3300;
-    await SRV.resolverIncerto(a);
-    let i = JSON.parse(row(a).autopay_info);
-    assert.equal(row(a).status, 'delivered'); assert.equal(i.resolvido, 'historico'); assert.equal(i.txId, 'tx' + (envio + 5) + '-26');
-    assert.ok(tgCalls.some((c) => /histórico de Stars mostra 1 cobrança de 26★/.test(c.body?.text || '')));
-
-    // 2) nenhuma cobrança no histórico (janela já passou) e saldo igual → operador decide
-    envio = agora() - 120; tx = [];
-    const b = await novo('171712');
-    await adm('POST', '/api/admin/orders/' + b + '/autopay');
-    await SRV.resolverIncerto(b);
-    assert.equal(row(b).autopay, 'erro'); assert.match(lastCall('editMessageText').body.text, /histórico de Stars não mostra cobrança/);
-
-    // 3) histórico sem cobrança, mas o saldo caiu exatamente o valor → conflito: continua incerto
-    const c = await novo('171713');
-    await adm('POST', '/api/admin/orders/' + c + '/autopay');
-    saldo -= 26;
-    await SRV.resolverIncerto(c);
-    assert.equal(row(c).autopay, 'incerto'); assert.match(lastCall('editMessageText').body.text, /Não deu para confirmar sozinho/);
-
-    // 4) 2 cobranças de 26★ na janela, 1 delas de outro pedido pago nesse meio tempo → a outra é deste
-    envio = agora() - 120;
-    const d = await novo('171714');
-    await adm('POST', '/api/admin/orders/' + d + '/autopay');
-    const outro = await novo('171719');
-    db.prepare("UPDATE orders SET status='delivered', autopay='sent', autopay_at=? WHERE id=?").run((envio + 20) * 1000, outro);
-    tx = [cf(envio + 4), cf(envio + 20)];
-    await SRV.resolverIncerto(d);
-    assert.equal(row(d).status, 'delivered'); assert.equal(JSON.parse(row(d).autopay_info).resolvido, 'historico');
-
-    // 5) cobrança pendente → sem prova
-    envio = agora() - 120; tx = [];
-    const e = await novo('171715');
-    await adm('POST', '/api/admin/orders/' + e + '/autopay');
-    tx = [cf(envio + 4, -26, { pending: true })];
-    const v = await SRV.provaCobranca(db.prepare('SELECT * FROM orders WHERE id=?').get(e));
-    assert.equal(v.cobrado, null); assert.match(v.motivo, /pendente/);
-  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); _setStarsReader(null); SRV._setStarsTxReader(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
-});
 
 test('cobrancasCF: só cobranças concluídas do bot do CF, valor exato, na janela', async () => {
   const { cobrancasCF } = await import('../tg-user.js');
@@ -799,4 +652,151 @@ test('mensagens do bot: só pela própria máquina; fatura casa com o pedido', a
     assert.deepEqual(q, { desde: 1794893700, ate: 1794893800 });
     assert.deepEqual(r.map((m) => [m.id, m.pedido]), [[88001, id], [88002, null]]);
   } finally { SRV._setBotMsgReader(null); _setInvoiceChecker(null); }
+});
+
+test('incerto conferido sozinho (17/11): recibo → entregue; sem recibo → avisa cobrança perdida e paga 1x de novo; 2ª sem recibo → operador', async () => {
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }));
+  let fatura = 9500, saldo = 5000, falhar = 0;
+  const pagas = [];
+  _setInvoicePayer(async (q) => {
+    await q.onInvoice(++fatura, saldo, Math.floor(Date.now() / 1000) - 120);
+    if (falhar > 0) { falhar--; saldo -= q.expectStars; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); } // cobra sem recibo
+    pagas.push(fatura); saldo -= q.expectStars;
+    return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
+  });
+  _setStarsReader(async () => saldo);
+  const recibos = new Set(); const consultadas = [];
+  _setReceiptChecker(async (m) => { consultadas.push(m); return recibos.has(m) ? { paid: true, receiptMsgId: m + 1 } : { paid: false }; });
+  const row = (id) => db.prepare('SELECT status, autopay, autopay_info FROM orders WHERE id=?').get(id);
+  const info = (id) => JSON.parse(row(id).autopay_info);
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 1 });
+    const novo = async (gid) => { const j = await (await postJ('/api/orders', { product: 'c1000', gameId: gid, email: gid + '@ri.com' })).json(); await pagar(j.token); await new Promise((r) => setTimeout(r, 40)); return j.id; };
+    const tentar = async (id, n = 1) => { falhar = n; await adm('POST', '/api/admin/orders/' + id + '/autopay'); assert.equal(row(id).autopay, 'incerto'); };
+
+    // 1) #214/#217: cobrou sem recibo → NÃO marca entregue por isso; avisa a cobrança perdida e paga de novo → entregue
+    const a = await novo('161611');
+    await tentar(a);
+    assert.match(lastCall('editMessageText').body.text, /sem recibo \(o CounterFlame não registrou\)/);
+    const t0 = tgSent.length;
+    await SRV.resolverIncerto(a);
+    let i = info(a);
+    assert.equal(row(a).status, 'delivered'); assert.equal(row(a).autopay, 'sent');
+    assert.equal(i.retry, 1); assert.equal(i.anterior, 9501); assert.equal(i.invMsgId, 9502); assert.equal(i.perdida.stars, 26);
+    assert.deepEqual(pagas, [9502]);
+    assert.ok(tgSent.slice(t0).some((m) => new RegExp('Cobrança SEM entrega no pedido #' + a).test(m.text)));
+    assert.ok(tgCalls.some((c) => /1ª tentativa sem recibo .*cobrou 26★ SEM entrega/.test(c.body?.text || '')));
+    // 10 min depois: a fatura antiga sem recibo → nada; com recibo atrasado → alerta de entrega dupla
+    const n0 = tgSent.length;
+    await SRV.conferirAtraso(a, 9501);
+    assert.equal(tgSent.length, n0);
+    recibos.add(9501);
+    await SRV.conferirAtraso(a, 9501);
+    assert.match(tgSent.at(-1).text, new RegExp('Entrega DUPLA possível no pedido #' + a));
+
+    // 2) com recibo → o CF registrou → entregue, sem pagar de novo
+    const b = await novo('161612');
+    await tentar(b);
+    recibos.add(fatura);
+    await SRV.resolverIncerto(b);
+    assert.equal(row(b).status, 'delivered'); assert.equal(info(b).resolvido, 'recibo');
+    assert.deepEqual(pagas, [9502]);
+
+    // 3) não cobrou (saldo igual) e sem recibo → paga de novo, sem aviso de cobrança perdida
+    const c = await novo('161613');
+    falhar = 1; const saldoOrig = saldo;
+    _setInvoicePayer(async (q) => {
+      await q.onInvoice(++fatura, saldo, Math.floor(Date.now() / 1000) - 120);
+      if (falhar > 0) { falhar--; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); } // NÃO cobra
+      pagas.push(fatura); saldo -= q.expectStars;
+      return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
+    });
+    await adm('POST', '/api/admin/orders/' + c + '/autopay');
+    assert.equal(saldo, saldoOrig);
+    const t1 = tgSent.length;
+    await SRV.resolverIncerto(c);
+    assert.equal(row(c).status, 'delivered'); assert.equal(pagas.length, 2);
+    assert.ok(!tgSent.slice(t1).some((m) => /Cobrança SEM entrega/.test(m.text)));
+
+    // 4) 1ª e 2ª sem recibo → libera para o operador (não tenta a 3ª)
+    _setInvoicePayer(async (q) => {
+      await q.onInvoice(++fatura, saldo, Math.floor(Date.now() / 1000) - 120);
+      if (falhar > 0) { falhar--; saldo -= q.expectStars; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); }
+      pagas.push(fatura); saldo -= q.expectStars;
+      return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
+    });
+    const d = await novo('161614');
+    await tentar(d, 2);
+    await SRV.resolverIncerto(d);
+    assert.equal(row(d).autopay, 'incerto'); assert.equal(info(d).retry, 1);
+    await SRV.resolverIncerto(d);
+    assert.equal(row(d).status, 'paid'); assert.equal(row(d).autopay, 'erro');
+    assert.match(lastCall('editMessageText').body.text, /2ª tentativa também ficou sem recibo/);
+    assert.match(tgSent.at(-1).text, new RegExp('Entrega MANUAL necessária #' + d));
+    assert.equal(pagas.length, 2);                                     // nenhuma 3ª tentativa
+
+    // 5) não conseguiu ler o recibo → continua incerto (não sabe se entregou) e não paga
+    const e = await novo('161615');
+    await tentar(e);
+    _setReceiptChecker(async () => { throw new Error('TIMEOUT'); });
+    await SRV.resolverIncerto(e);
+    assert.equal(row(e).autopay, 'incerto');
+    assert.match(lastCall('editMessageText').body.text, /Não consegui ler o recibo \(TIMEOUT\)/);
+    assert.equal(pagas.length, 2);
+
+    // 6) já resolvido pelo painel: a conferência automática não mexe
+    _setReceiptChecker(async (m) => { consultadas.push(m); return { paid: false }; });
+    const g = await novo('161617');
+    await tentar(g);
+    db.prepare("UPDATE orders SET status='delivered' WHERE id=?").run(g);
+    const antes = consultadas.length;
+    await SRV.resolverIncerto(g);
+    assert.equal(consultadas.length, antes);
+  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); _setStarsReader(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
+});
+
+test('cobrança perdida pelo histórico: ID da transação no aviso; outro pedido de mesmo valor na janela; pendente = sem prova', async () => {
+  _setInvoiceChecker(async () => ({ currency: 'XTR', stars: 26, account: 'jogador_teste', produto: '1 000 coins', msgId: 1 }));
+  let fatura = 9700, envio = 0, falhar = 1;
+  _setInvoicePayer(async (q) => {
+    await q.onInvoice(++fatura, null, envio);
+    if (falhar > 0) { falhar--; throw Object.assign(new Error('FORM_SUBMIT_DUPLICATE'), { errorMessage: 'FORM_SUBMIT_DUPLICATE' }); }
+    return { stars: 26, account: 'jogador_teste', produto: '1 000 coins', botReply: 'Done' };
+  });
+  _setReceiptChecker(async () => ({ paid: false }));
+  let tx = [];
+  SRV._setStarsTxReader(async ({ desde, ate }) => tx.filter((t) => t.date >= desde && t.date <= ate));
+  const cf = (date, stars = -26, extra = {}) => ({ id: 'tx' + date + stars, stars, date, bot: 'CounterFlameDonate_bot', msgId: null, refund: false, pending: false, failed: false, ...extra });
+  const row = (id) => db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  try {
+    await adm('POST', '/api/admin/autopay', { mode: 1 });
+    const novo = async (gid) => { const j = await (await postJ('/api/orders', { product: 'c1000', gameId: gid, email: gid + '@hi.com' })).json(); await pagar(j.token); await new Promise((r) => setTimeout(r, 40)); return j.id; };
+    const agora = () => Math.floor(Date.now() / 1000);
+
+    // 1) histórico mostra a cobrança da 1ª tentativa → aviso com o ID para disputa; paga de novo
+    envio = agora() - 120;
+    const a = await novo('171711');
+    await adm('POST', '/api/admin/orders/' + a + '/autopay');
+    tx = [cf(envio + 5), cf(envio + 3, -40), cf(envio - 30)];
+    const t0 = tgSent.length;
+    await SRV.resolverIncerto(a);
+    const i = JSON.parse(row(a).autopay_info);
+    assert.equal(row(a).status, 'delivered'); assert.equal(i.perdida.tx, 'tx' + (envio + 5) + '-26');
+    assert.ok(tgSent.slice(t0).some((m) => m.text.includes('Transação para disputa no @BotFather: tx' + (envio + 5) + '-26')));
+
+    // 2) 2 cobranças de 26★ na janela, 1 de outro pedido pago nesse meio tempo → a outra é deste
+    envio = agora() - 120; falhar = 1;
+    const d = await novo('171714');
+    await adm('POST', '/api/admin/orders/' + d + '/autopay');
+    const outro = await novo('171719');
+    db.prepare("UPDATE orders SET status='delivered', autopay='sent', autopay_at=? WHERE id=?").run((envio + 20) * 1000, outro);
+    tx = [cf(envio + 4), cf(envio + 20)];
+    const p = await SRV.provaCobranca(row(d));
+    assert.equal(p.cobrado, true); assert.equal(p.txId, 'tx' + (envio + 4) + '-26');
+
+    // 3) cobrança pendente → sem prova
+    tx = [cf(envio + 4, -26, { pending: true })];
+    const v = await SRV.provaCobranca(row(d));
+    assert.equal(v.cobrado, null); assert.match(v.motivo, /pendente/);
+  } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); SRV._setStarsTxReader(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });

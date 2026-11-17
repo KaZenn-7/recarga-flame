@@ -174,25 +174,24 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
       r = await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice })); // ← COBRA
     } catch (e) {
       // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
-      // FORM_SUBMIT_DUPLICATE mesmo tendo cobrado o 1º — pedidos #17, #116, #128, #181). Provas: a cobrança no
-      // histórico de Stars (para o bot do CF, valor exato, depois do envio — dentro da fila nenhum outro pagamento
-      // acontece no meio), o recibo da fatura ou a queda EXATA do saldo. Por ~12 s.
-      let paid = null, saldoDepois = null, prova = null, txId = null;
-      for (let i = 0; i < 6 && prova == null; i++) {
+      // FORM_SUBMIT_DUPLICATE). ENTREGA só se prova pelo recibo da fatura (o bot do CF responde "Done…" a ele).
+      // 17/11/2026: nos 7 FORM_SUBMIT_DUPLICATE (#74…#217) o Telegram COBROU (histórico de Stars) mas a fatura ficou
+      // sem recibo e o CounterFlame NÃO entregou nem registrou. Histórico/saldo só dizem se houve cobrança perdida.
+      let paid = null;
+      for (let i = 0; i < 6 && paid !== true; i++) {
         await sleep(2000);
-        try {
-          const [t] = cobrancasCF(await lerHistorico(c, { desde: envioEm, paginas: 1 }), expectStars, envioEm);
-          if (t) { prova = 'historico'; txId = t.id; }
-        } catch { /* segue pelas outras provas */ }
-        if (prova == null) try { const rc = await receiptOf(c, inv.msgId); if (rc.paid) prova = 'recibo'; else paid = false; } catch { /* tenta de novo */ }
-        if (prova == null && saldoAntes != null) {
-          try { saldoDepois = await balanceOf(c); if (provaPeloSaldo(saldoAntes, saldoDepois, expectStars) === true) prova = 'saldo'; } catch { /* tenta de novo */ }
-        }
+        try { paid = (await receiptOf(c, inv.msgId)).paid; } catch { /* tenta de novo */ }
       }
-      const d = decideAfterSendError(e, prova ? true : paid, provaPeloSaldo(saldoAntes, saldoDepois, expectStars));
-      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', prova: prova || 'recibo', ...(txId ? { txId } : {}), recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
+      let saldoDepois = null, txId = null, cobrado = null;
+      if (paid !== true) {
+        try { const [t] = cobrancasCF(await lerHistorico(c, { desde: envioEm, paginas: 1 }), expectStars, envioEm); cobrado = !!t; txId = t?.id || null; } catch { /* sem histórico */ }
+        if (saldoAntes != null) try { saldoDepois = await balanceOf(c); } catch { /* sem saldo */ }
+      }
+      const saldo = provaPeloSaldo(saldoAntes, saldoDepois, expectStars);
+      const d = decideAfterSendError(e, paid, cobrado === true ? true : saldo);
+      if (d === 'paid') return { stars: expectStars, account: inv.account, produto: inv.produto, botReply: '', recuperado: String(e?.errorMessage || e?.message || e).slice(0, 80) };
       if (d === 'safe') throw safe(`Telegram recusou: ${e.errorMessage}`);
-      throw Object.assign(e, { saldoAntes, saldoDepois });
+      throw Object.assign(e, { saldoAntes, saldoDepois, txPerdida: txId });
     }
     if (r.className !== 'payments.PaymentResult') throw new Error(`resposta inesperada ao pagar (${r.className})`);
     // resposta do bot depois do pagamento (só informativo)
@@ -275,13 +274,14 @@ async function receiptOf(c, msgId) {
   const rc = recent.find((m) => m.action?.className === 'MessageActionPaymentSent' && m.replyTo?.replyToMsgId === msgId);
   return rc ? { paid: true, receiptMsgId: rc.id, date: rc.date } : { paid: false };
 }
-// Erro ao enviar o pagamento: 'paid' (recibo ou queda exata do saldo), 'safe' (sem recibo, recusa explícita 4xx que
-// não é de duplicidade e o saldo não mudou — ou não deu para ler — = nada cobrado, pode tentar de novo) ou 'incerto'.
-// saldo: resultado de provaPeloSaldo (true = caiu o valor, false = não mudou, 'outro' = mudou outro valor, null = sem leitura)
-export function decideAfterSendError(e, paid, saldo = null) {
-  if (paid === true || saldo === true) return 'paid';
+// Erro ao enviar o pagamento: 'paid' (a fatura tem recibo = o CounterFlame registrou e entrega), 'safe' (sem recibo,
+// recusa explícita 4xx que não é de duplicidade e nada indica cobrança = pode tentar de novo) ou 'incerto' (a
+// conferência de 2 min decide). cobranca: true (histórico/saldo mostram cobrança), false, 'outro' ou null (sem leitura).
+// Cobrança SEM recibo não é entrega (FORM_SUBMIT_DUPLICATE, 17/11/2026): fica 'incerto'.
+export function decideAfterSendError(e, paid, cobranca = null) {
+  if (paid === true) return 'paid';
   const msg = String(e?.errorMessage || '');
-  if (saldo === 'outro') return 'incerto';
+  if (cobranca === true || cobranca === 'outro') return 'incerto';
   if (paid === false && msg && e.code >= 400 && e.code < 500 && !/DUPLICATE/i.test(msg)) return 'safe';
   return 'incerto';
 }

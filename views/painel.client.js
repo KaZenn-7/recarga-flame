@@ -413,15 +413,13 @@ async function verifyPay(id,btn){
   try{
     const r=await api('/api/admin/orders/'+id+'/verify',{method:'POST'});
     const resolve=function(acao){return api('/api/admin/orders/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:acao})});};
-    if(r.cobrado===true){
-      const pq=r.prova==='recibo'?'a fatura deste pedido no bot do CounterFlame (mensagem '+r.fatura+') tem recibo de pagamento de '+r.stars+'★':r.motivo+' depois da tentativa';
-      if(confirm('FOI COBRADO: '+pq+'.\n\nNÃO pague de novo. Confira se o item chegou na conta do cliente. Marcar o pedido #'+id+' como entregue (o cliente recebe o e-mail)?'))
+    if(r.entregue){
+      if(confirm('ENTREGUE: a fatura deste pedido no bot do CounterFlame (mensagem '+r.fatura+') tem recibo — o CounterFlame registrou o pagamento de '+r.stars+'★.\n\nNÃO pague de novo. Marcar o pedido #'+id+' como entregue (o cliente recebe o e-mail)?'))
         await resolve('entregue');
-    }else if(r.cobrado===false){
-      if(confirm('Provavelmente NÃO foi cobrado: '+(r.semFatura?'a tentativa falhou antes de chegar à fatura':r.motivo+' e a fatura (mensagem '+r.fatura+') não tem recibo')+'.\n\nLiberar uma nova tentativa (o botão Pagar volta)? Se preferir, entregue na mão e toque em Marcar entregue.'))
-        await resolve('liberar');
     }else{
-      alert('NÃO DEU PARA CONFIRMAR se foi cobrado: '+(r.motivo||'sem prova')+(r.erroRecibo?' · recibo: '+r.erroRecibo:'')+'.\n\nConfira o histórico de Stars da conta no Telegram antes de pagar de novo. O pedido continua incerto.');
+      const perda=r.semFatura?'a tentativa falhou antes de chegar à fatura':r.cobrado===true?'o Telegram COBROU ('+r.motivo+') mas o CounterFlame não registrou'+(r.txId?'. Transação para disputa: '+r.txId:''):r.cobrado===false?'nada foi cobrado ('+r.motivo+')':'não deu para confirmar se cobrou ('+r.motivo+')';
+      if(confirm('NÃO ENTREGUE: a fatura (mensagem '+r.fatura+') não tem recibo — '+perda+'.\n\nLiberar uma nova tentativa (o botão Pagar volta)? Se preferir, entregue na mão e toque em Marcar entregue.'))
+        await resolve('liberar');
     }
   }catch(e){alert(e.message);}
   refreshOrders(false);loadStars();

@@ -107,30 +107,32 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
         db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ ...extra, ...tent }), id);
       } }, env);
     save('sent', r);
-    const provaTxt = { saldo: 'o saldo de Stars caiu exatamente o valor', historico: 'o histórico de Stars mostra 1 cobrança' }[r.prova] || 'a fatura tem recibo';
-    markDelivered(id, via, [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas ${provaTxt}: cobrado 1 vez)`, nota]);
+    markDelivered(id, via, [r.botReply && 'Bot do CF: ' + r.botReply, r.recuperado && `(o Telegram respondeu "${r.recuperado}", mas a fatura tem recibo: cobrado 1 vez)`, nota]);
+    if (extra.anterior) agendar(() => conferirAtraso(id, extra.anterior), ATRASO_MS);
     syncStarsReal(true);
     return { ok: true, ...r };
   } catch (e) {
     const msg = String(e?.errorMessage || e?.message || e).slice(0, 160);
     if (e?.safe) { save('erro', { erro: msg }); return { ok: false, why: 'não pagou: ' + msg }; }
-    save('incerto', { erro: msg, ...(e?.saldoDepois != null ? { saldoDepois: e.saldoDepois } : {}) });
+    save('incerto', { erro: msg, ...(e?.saldoDepois != null ? { saldoDepois: e.saldoDepois } : {}), ...(e?.txPerdida ? { txPerdida: e.txPerdida } : {}) });
     tgIncerto(id, msg);
     agendar(() => resolverIncerto(id), INCERTO_MS);
     return { ok: false, why: 'pagamento incerto: ' + msg, incerto: true };
   }
 }
 
-// ---- Pagamento incerto conferido sozinho (corrigido em 16/11/2026) ----
-// Antes: sem recibo, a loja pagava de novo com fatura nova. Mas o recibo nunca é achado e, nos 5 FORM_SUBMIT_DUPLICATE
-// registrados (#74, #116, #128, #156, #181), o saldo caiu exatamente o valor: a 1ª tentativa SEMPRE cobrou e
-// #116, #128 e #181 foram pagos 2 vezes. Agora, 2 min depois do erro (só leitura):
-//   recibo da fatura, ou saldo caiu exatamente o valor do pedido → foi cobrado 1 vez: marca entregue;
-//   saldo não mudou → provavelmente não cobrou: libera para o OPERADOR pagar/entregar (aviso com os botões);
-//   sem prova (não leu o saldo, ou ele mudou outro valor) → continua incerto e avisa o operador.
-// A loja NUNCA paga o mesmo pedido de novo sozinha.
-// nos testes o timer fica longo (não dispara): os testes chamam resolverIncerto direto
+// ---- Pagamento incerto conferido sozinho (regra de 17/11/2026) ----
+// Entregue = a fatura tem RECIBO (o bot do CF responde "Done…" a ele). Nos 7 FORM_SUBMIT_DUPLICATE (#74, #116, #128,
+// #156, #181, #214, #217) o Telegram cobrou, mas a fatura ficou sem recibo e o CounterFlame NÃO entregou: só a 2ª
+// cobrança entregou. (16/11 a loja passou a dar cobrança no histórico/saldo como entrega: #214 e #217 ficaram sem
+// entrega.) Agora, 2 min depois do erro (só leitura, depois paga):
+//   recibo → entregue;
+//   sem recibo → nada foi entregue: avisa a cobrança perdida (histórico/saldo, com o ID para disputa) e paga UMA vez
+//     de novo com fatura nova; 10 min depois confere se a fatura antiga ganhou recibo com atraso (entrega dupla);
+//   sem recibo na 2ª → libera para o operador (nunca a 3ª);
+//   não conseguiu ler o recibo → continua incerto (não dá para saber se entregou).
 const INCERTO_MS = env.NODE_ENV === 'test' ? 3_600_000 : 120_000;
+const ATRASO_MS = env.NODE_ENV === 'test' ? 3_600_000 : 600_000;
 const infoOf = (o) => { try { return o?.autopay_info ? JSON.parse(o.autopay_info) : {}; } catch { return {}; } };
 function agendar(fn, ms) {
   const t = setTimeout(() => Promise.resolve().then(fn).catch((e) => console.error('autopay (incerto):', e?.message || e)), ms);
@@ -184,33 +186,58 @@ async function resolverIncerto(id) {
   if (!o || o.status !== 'paid' || o.autopay !== 'incerto') return; // já resolvido (painel, entrega manual…)
   const info = infoOf(o);
   const head = `#${id} · ${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}`;
+  if (!info.invMsgId) return; // sem fatura registrada: fica com o operador
   let r = null, erroRecibo = null;
-  if (info.invMsgId) { try { r = await receiptOf(info.invMsgId, env); } catch (e) { erroRecibo = String(e?.message || e).slice(0, 80); } }
+  try { r = await receiptOf(info.invMsgId, env); } catch (e) { erroRecibo = String(e?.message || e).slice(0, 80); }
   let cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
-  let s = null;
-  const entregar = (resolvido, linha) => {
+  if (r?.paid) {
     db.prepare("UPDATE orders SET autopay='sent', autopay_info=? WHERE id=? AND autopay='incerto'")
-      .run(JSON.stringify({ ...info, stars: starsOf(o), resolvido, ...(r?.receiptMsgId ? { recibo: r.receiptMsgId } : {}), ...(s?.txId ? { txId: s.txId } : {}), em: Date.now() }), id);
-    markDelivered(id, 'auto', [linha]);
+      .run(JSON.stringify({ ...info, stars: starsOf(o), resolvido: 'recibo', recibo: r.receiptMsgId || null, em: Date.now() }), id);
+    markDelivered(id, 'auto', [`🔍 Recibo conferido sozinho: o CounterFlame registrou o pagamento (o Telegram tinha respondido "${info.erro}").`]);
     syncStarsReal(true);
-  };
-  if (r?.paid) return entregar('recibo', `🔍 Recibo conferido sozinho: a fatura foi cobrada 1 vez (o Telegram tinha respondido "${info.erro}").`);
-  s = await provaCobranca(o, info);
-  cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
-  if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
-  if (s.cobrado === true) return entregar(s.prova, `🔍 Conferido sozinho: ${s.motivo} depois da tentativa (o Telegram tinha respondido "${info.erro}") — cobrado 1 vez.`);
-  if (s.cobrado === false) {
-    db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=? AND autopay='incerto'")
-      .run(JSON.stringify({ ...info, erro: `conferido: ${s.motivo}, sem recibo (${info.erro})` }), id);
-    setMotivo(id, 'pagamento incerto: sem cobrança');
-    await tgFalha(id, `🔍 Conferido às ${hhmm()}: ${s.motivo} e a fatura não tem recibo (${info.erro}) — provavelmente NÃO cobrou. A loja não paga de novo sozinha: confira e pague ou entregue manualmente.`,
-      `🖐 Entrega MANUAL necessária ${head}: a tentativa provavelmente não cobrou — detalhes no aviso original.`);
     return;
   }
-  setMotivo(id, 'pagamento incerto: sem prova de cobrança');
-  await tgFalha(id, `🔍 Não deu para confirmar sozinho se cobrou: ${erroRecibo ? 'recibo não lido (' + erroRecibo + ')' : 'sem recibo'}; ${s.motivo}. Confira o saldo de Stars ou use "🔍 verificar cobrança" no painel ANTES de pagar de novo.`,
-    `🚨 Pagamento incerto ${head}: não deu para confirmar a cobrança — confira antes de pagar de novo.`);
+  if (erroRecibo) {
+    await tgFalha(id, `🔍 Não consegui ler o recibo (${erroRecibo}): não dá para saber se o CounterFlame registrou. Use "🔍 verificar cobrança" no painel antes de pagar de novo.`,
+      `🚨 Pagamento incerto ${head}: recibo não lido — confira antes de pagar de novo.`);
+    return;
+  }
+  // sem recibo: o CounterFlame não registrou → nada foi entregue. Houve cobrança perdida?
+  const s = await provaCobranca(o, info);
+  cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
+  const tx = s.txId || info.txPerdida || null;
+  const perda = s.cobrado === true ? `cobrou ${starsOf(o)}★ SEM entrega (${s.motivo}${tx ? '; transação ' + tx : ''})`
+    : s.cobrado === false ? `não cobrou (${s.motivo})` : `cobrança não confirmada (${s.motivo})`;
+  const novoInfo = { ...info, erro: `sem recibo: ${perda.slice(0, 200)}`, ...(s.cobrado === true ? { perdida: { stars: starsOf(o), tx, em: Date.now() } } : {}) };
+  db.prepare("UPDATE orders SET autopay='erro', autopay_info=? WHERE id=? AND autopay='incerto'").run(JSON.stringify(novoInfo), id);
+  if (s.cobrado === true) {
+    tgSend(`💸 Cobrança SEM entrega no pedido ${head}: o Telegram cobrou ${starsOf(o)}★ mas o CounterFlame não registrou (fatura sem recibo, "${info.erro}").`
+      + (tx ? `\nTransação para disputa no @BotFather: ${tx}` : ''), 'alertas');
+  }
+  if (info.retry) {
+    setMotivo(id, 'sem recibo 2x — entrega manual');
+    await tgFalha(id, `🔍 Conferido às ${hhmm()}: a 2ª tentativa também ficou sem recibo — ${perda}. A loja não tenta a 3ª: pague ou entregue manualmente.`,
+      `🖐 Entrega MANUAL necessária ${head}: 2 tentativas sem recibo — detalhes no aviso original.`);
+    return;
+  }
+  const r2 = await autopay(id, { via: 'auto', extra: { retry: 1, anterior: info.invMsgId, erro1: info.erro, ...(novoInfo.perdida ? { perdida: novoInfo.perdida } : {}) },
+    nota: `🔁 1ª tentativa sem recibo ("${info.erro}"): ${perda}. Pago de novo com fatura nova.` });
+  if (!r2.ok && !r2.incerto) {
+    setMotivo(id, 'sem recibo; 2ª tentativa: ' + r2.why);
+    await tgFalha(id, `🔍 1ª tentativa sem recibo (${perda}). 2ª tentativa não feita: ${r2.why} — pague ou entregue manualmente.`,
+      `🖐 Entrega MANUAL necessária ${head}: ${r2.why} — detalhes no aviso original.`);
+  }
+}
+// 2ª tentativa paga: a fatura da 1ª ganhou recibo com atraso? (o cliente receberia 2 vezes — só avisa)
+async function conferirAtraso(id, msgId) {
+  const r = await receiptOf(msgId, env);
+  if (!r.paid) return;
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ ...infoOf(o), entregaDupla: msgId }), id);
+  tgSend(`⚠️ Entrega DUPLA possível no pedido #${id} (${o.prod_nome || o.product} · ${starsOf(o)}★ · ${o.nickname}): a fatura da 1ª tentativa, `
+    + 'que estava sem recibo, ganhou recibo depois. O CounterFlame pode ter entregue 2 vezes.', 'alertas');
 }
 const hhmm = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
@@ -354,5 +381,5 @@ async function entregaAuto(id, attempt = 1) {
   }
 }
 
-return { vigiaPagamentos, resolverIncerto, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
+return { vigiaPagamentos, resolverIncerto, conferirAtraso, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine };
 }
