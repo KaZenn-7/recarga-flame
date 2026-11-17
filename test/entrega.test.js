@@ -784,3 +784,19 @@ test('cobrancasCF: só cobranças concluídas do bot do CF, valor exato, na jane
   assert.equal(cobrancasCF([t({})], 26, 90, 110).length, 1);
   assert.equal(cobrancasCF([t({ bot: 'outro' }), t({ stars: -27 }), t({ failed: true }), t({ refund: true }), t({ pending: true }), t({ date: 80 }), t({ date: 120 })], 26, 90, 110).length, 0);
 });
+
+test('mensagens do bot: só pela própria máquina; fatura casa com o pedido', async () => {
+  const id = db.prepare('SELECT id FROM orders ORDER BY id DESC LIMIT 1').get().id;
+  db.prepare('UPDATE orders SET autopay_info=? WHERE id=?').run(JSON.stringify({ invMsgId: 88001 }), id);
+  _setInvoiceChecker(async () => ({}));
+  let q;
+  SRV._setBotMsgReader(async (x) => { q = x; return [
+    { id: 88001, date: 1794893748, out: false, texto: 'Battle Pass, +1 levels', fatura: { stars: 35, titulo: 'x', recibo: null }, acao: null, respondeA: null },
+    { id: 88002, date: 1794893752, out: false, texto: 'Done, payment went through … Order CF-AAAAAA', fatura: null, acao: null, respondeA: null }] });
+  try {
+    assert.equal((await fetch(base + '/api/local/bot-mensagens', { headers: { 'X-Forwarded-For': '8.8.8.8' } })).status, 404);
+    const r = await (await fetch(base + '/api/local/bot-mensagens?desde=1794893700&ate=1794893800')).json();
+    assert.deepEqual(q, { desde: 1794893700, ate: 1794893800 });
+    assert.deepEqual(r.map((m) => [m.id, m.pedido]), [[88001, id], [88002, null]]);
+  } finally { SRV._setBotMsgReader(null); _setInvoiceChecker(null); }
+});

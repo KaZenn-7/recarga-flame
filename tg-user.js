@@ -231,6 +231,30 @@ async function lerHistorico(c, { desde = 0, ate = 0, limite = 200, paginas = 10 
   }
   return out;
 }
+// ---- Mensagens do chat com o bot do CF (só leitura) ----
+// Entre desde..ate (unix s), mais antigas primeiro: faturas, respostas ("Done… Order CF-…"), recibos. Serve para conferir
+// se o bot confirmou um pedido pago (ex.: FORM_SUBMIT_DUPLICATE). Volta no máximo 30 páginas de 100 mensagens.
+export function botMessages({ desde = 0, ate = 0 } = {}, env = process.env) {
+  return serial(async () => {
+    const c = await getClient(env);
+    const out = []; let offsetId = 0;
+    for (let page = 0; page < 30; page++) {
+      const msgs = await c.getMessages(CF_BOT, { limit: 100, ...(offsetId ? { offsetId } : {}) });
+      if (!msgs.length) break;
+      for (const m of msgs) {
+        if (ate && m.date > ate) continue;
+        if (desde && m.date < desde) return out.reverse();
+        const inv = m.media?.className === 'MessageMediaInvoice' ? m.media : null;
+        out.push({ id: m.id, date: m.date, out: !!m.out, texto: String(m.message || '').slice(0, 400),
+          fatura: inv ? { stars: Number(inv.totalAmount?.toString()), titulo: String(inv.title || '').slice(0, 80), recibo: inv.receiptMsgId || null } : null,
+          acao: m.action?.className || null, respondeA: m.replyTo?.replyToMsgId || null });
+      }
+      offsetId = msgs.at(-1).id;
+    }
+    return out.reverse();
+  });
+}
+
 // Cobranças do bot do CF de exatamente `stars`, concluídas (não falha/estorno/pendente), com data em desde..ate
 export const cobrancasCF = (tx, stars, desde, ate) => tx.filter((t) => t.bot === CF_BOT && t.stars === -stars
   && !t.failed && !t.refund && !t.pending && t.date >= desde && (!ate || t.date <= ate));
