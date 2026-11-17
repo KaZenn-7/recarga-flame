@@ -61,7 +61,12 @@
 - [ ] Consulta de viabilidade do endereço residencial (na abertura da ME).
 - [x] Onde compra USDT: P2P na Wallet do Telegram e na Binance.
 - [ ] Juntar os comprovantes de USDT desde 07/11/2026 e lançá-los no painel: "1 · Comprei USDT" para as compras de USDT e "+ USDT" em cada uma das 14 compras de Stars.
-- [ ] Ler os termos do Mercado Pago (https://www.mercadopago.com.br/ajuda/3264) sobre moeda virtual de jogo (risco de bloqueio/retenção). Chamar de intermediação não muda a regra.
+- [x] Termos do Mercado Pago lidos em 16/11/2026 (versão de 15/09/2026). Moeda/item de jogo **não aparece** como proibido: nem na lista de produtos proibidos (ajuda/3264) nem nas operações proibidas (cláusula 6.1). Riscos que restam:
+  - cláusula 6.1 (xiv): o MP pode barrar qualquer atividade "a seu exclusivo critério";
+  - cláusula 2.4: a atividade precisa corresponder à cadastrada na conta;
+  - cláusula 2.13.1: guardar a prova de entrega por 1 ano (a loja já guarda a resposta do bot);
+  - **cláusula 1.3.2: a conta serve só para "recursos próprios"**. É vedado usá-la como gestor de pagamentos de terceiros, salvo contas vinculadas ou a função de marketplace/intermediação via Pix (2.6.5.6). Isso conflita com tratar os repasses como "valores de terceiros" no modelo de intermediação. **Levar ao contador e ao MP antes da Fase 2.**
+- [ ] Pedir ao suporte do MP, por escrito, a confirmação de que a atividade é aceita (e, depois do CNPJ, qual produto usar no modelo de intermediação).
 - [ ] Contratar contador (ainda não tem); validar por escrito o modelo de intermediação e o CNAE/anexo.
 - [ ] Levar ao contador:
   - se compras e usos somam juntos para o limite de R$ 35 mil da DeCripto;

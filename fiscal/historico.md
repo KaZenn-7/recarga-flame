@@ -79,3 +79,9 @@
   2. ler os termos do MP;
   3. contratar o contador;
   4. conferir o relatório de novembro em 01/12.
+
+## 2026-11-16: termos do Mercado Pago
+- Lidos a lista de produtos proibidos (ajuda/3264) e os Termos e Condições (versão de 15/09/2026).
+- Venda de moeda ou item de jogo **não está proibida expressamente**. A cláusula 6.1 (ii) fala de "jogos on-line em desacordo com a legislação", mirando jogos de azar e apostas, não a venda de itens de um jogo comum.
+- Ponto novo e importante: pela cláusula 1.3.2, a conta é só para "recursos próprios", e é vedado atuar como gestor de pagamentos de terceiros. O modelo de intermediação (repasse = valor de terceiro) pode exigir a função de marketplace/intermediação do MP (2.6.5.6) ou contas vinculadas. Levar ao contador e ao MP antes de ativar a Fase 2.
+- Recomendação: pedir ao suporte do MP a confirmação por escrito.
