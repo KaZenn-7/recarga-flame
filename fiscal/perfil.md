@@ -4,7 +4,7 @@
 
 ## Situação jurídica
 - Hoje vende como **pessoa física, sem CNPJ**. Pendência nº 1: formalizar.
-- Estado: **São Paulo**. Mora em SP; falta confirmar se é a **capital** ou outra cidade do estado. A sede pode ser a residência, se a prefeitura aprovar a consulta de viabilidade. O município define o ISS e o emissor de NFS-e.
+- Município: **São Paulo (capital)**. A sede será a **residência**, sujeita à consulta de viabilidade e à inscrição no CCM (Cadastro de Contribuintes Mobiliários) para emitir NFS-e. No Simples, o ISS já vem dentro do DAS pela tabela (≈ 2% da receita na 1ª faixa do Anexo III), então mudar de cidade não traria economia relevante. Uma sede de fachada em cidade com ISS baixo traz risco de cobrança pela capital.
 - Infra: VPS na Europa e domínio .com.br no Registro.br. Isso não altera a tributação: vale o domicílio em SP.
 - Plano: **ME no Simples Nacional**, CNAE **7490-1/04** (intermediação de itens virtuais de jogos; não permitido no MEI), provavelmente Anexo III (confirmar com o contador).
 - Modelo de receita pretendido: **intermediação (conta alheia)**, com taxa = **preço atual − custo do repasse** (os preços finais não mudam). Depende de validação do contador por escrito. Ver `fiscal/plano-intermediacao.md`.
@@ -42,13 +42,16 @@
 - Gateway: Mercado Pago (conta PF; migrar para PJ após o CNPJ).
 - USDT comprado em **P2P na Wallet do Telegram ou na Binance**. Tratar como **sem exchange brasileira**: a DeCripto é obrigatória se o volume do mês (compras + usos, a confirmar) passar de R$ 35 mil. Diz que consegue os comprovantes das compras anteriores.
 - Em novembro/2026 o volume fica ≈ R$ 6,6 mil (R$ 3,3 mil comprados + R$ 3,3 mil usados). Se o ritmo de 15–16/11 se mantiver, **dezembro pode passar de R$ 35 mil**.
+- O dono compra o USDT e o usa na mesma hora. A "perda" que aparece no relatório é praticamente o ágio do P2P sobre a cotação de mercado.
+- Registros (Fase 1, no ar desde 16/11/2026): painel de Stars → seção USDT. O relatório mensal sai sozinho no dia 1º (Telegram, tópico resumo), ou sob demanda com `node tools/relatorio-fiscal.mjs AAAA-MM`.
 - Telegram Stars não são cripto: é crédito no app, e gastar não gera ganho de capital.
 - Gastar USDT para comprar Stars é **alienação de cripto**. O ganho ou perda é a variação da cotação entre a compra e o uso (tende a centavos). Registrar tudo.
 
 ## Pendências
-- [ ] Confirmar o município da sede (capital ou outra cidade de SP?) e fazer a consulta de viabilidade do endereço residencial.
+- [x] Município: São Paulo capital, sede na residência.
+- [ ] Consulta de viabilidade do endereço residencial (na abertura da ME).
 - [x] Onde compra USDT: P2P na Wallet do Telegram e na Binance.
-- [ ] Juntar os comprovantes de USDT desde 07/11/2026.
+- [ ] Juntar os comprovantes de USDT desde 07/11/2026 e lançá-los no painel (Stars → "+ Compra de USDT" e "+ USDT" em cada compra de Stars).
 - [ ] Verificar nos termos do Mercado Pago se a venda de moeda virtual de jogo é permitida (risco de bloqueio/retenção).
 - [ ] Contratar contador (ainda não tem); validar por escrito o modelo de intermediação e o CNAE/anexo.
 - [ ] Abrir a ME (Simples) e a conta PJ; migrar o recebimento.

@@ -6,7 +6,7 @@
 
 | Fase | O quê | Quando ativar |
 |---|---|---|
-| 1 | Registros: compras de USDT, compras de Stars, pedidos com custo de repasse, relatório mensal | **Agora** (vale em qualquer modelo) |
+| 1 | Registros: compras de USDT, compras de Stars, pedidos com custo de repasse, relatório mensal | ✅ **No ar desde 16/11/2026** (`src/fiscal.js`, migração 6) |
 | 2 | Checkout com dois valores + aceite dos termos de intermediação | Implementar atrás de uma flag (`MODELO_INTERMEDIACAO=false`) e ativar só com CNPJ + parecer do contador |
 | 3 | Conta PJ no Mercado Pago, emissão de NFS-e só da taxa, demonstrativo de repasse ao cliente | Depois de abrir a ME |
 
@@ -74,7 +74,7 @@ Na compra no bot, registre automaticamente a resposta do bot (texto, horário, I
 
 ### Regras de preço
 1. `custo_repasse` de cada pacote = stars do pacote × custo médio atual por star (R$). Recalcule quando o custo médio mudar e arredonde para cima, em centavos.
-2. `taxa` = modelo a definir com o dono: (a) % fixo sobre o repasse, (b) valor fixo por pedido, ou (c) `preço_atual − custo_repasse`, mantendo o preço final de hoje.
+2. `taxa` = **`preço_atual − custo_repasse`**, mantendo o preço final de hoje. Decidido pelo dono em 16/11/2026.
 3. **Proibido embutir margem no repasse.** O repasse é o custo real; todo o ganho fica na taxa.
 
 ### Tela de produto e checkout

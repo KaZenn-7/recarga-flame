@@ -53,3 +53,16 @@
 - **Decisão:** taxa de intermediação = preço atual − custo do repasse. Os preços continuam os mesmos.
 - Esclarecido: chamar a venda de "intermediação" não muda a política de itens proibidos do MP, que vale para o que é vendido. É preciso ler os termos.
 - Alerta: no ritmo de 15–16/11, a DeCripto pode ser exigida já em dezembro/2026.
+
+## 2026-11-16: sessão 3, Fase 1 implementada
+- Sede: SP capital, na residência. É possível escolher outro local, mas só se for onde a atividade realmente acontece (LC 116, art. 4º). No Simples, o ISS é fixo pela tabela do DAS: mudar de cidade quase não economiza e traz risco de autuação por sede de fachada.
+- Custo do USDT: o dono compra e usa na mesma hora. Sugeri comparar o ágio do P2P com uma compra no livro de ofertas (ordem limitada) e com uma exchange brasileira. Se a exchange reportar à Receita, a DeCripto deixa de ser obrigação dele.
+- **Fase 1 no ar** (commit 5e72c62, migração 6):
+  - tabela `usdt_compras`;
+  - USDT, cotação e comprovante em `stars_purchases`;
+  - custo médio ponderado do USDT;
+  - aviso no Telegram aos 80% e aos 100% de R$ 35 mil/mês;
+  - relatório automático no dia 1º;
+  - `tools/relatorio-fiscal.mjs`.
+- O custo da Star nos pedidos continua por **PEPS** (camadas das compras mais recentes que formam o saldo), não por custo médio. Levar ao contador.
+- Os CSVs e relatórios gerados ficam fora do git (têm ID de jogo de clientes).
