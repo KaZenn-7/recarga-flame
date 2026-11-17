@@ -159,6 +159,8 @@ CREATE INDEX IF NOT EXISTS events_dev ON events(dev, ev)`);
 )`);
     addCols(db, 'stars_purchases', ['usdt REAL', 'cotacao REAL', 'cotacao_fonte TEXT', 'comprovante TEXT']);
   } },
+  // fiscal: nome do vendedor de cada compra P2P de USDT (a DeCripto pode pedir a identificação da contraparte)
+  { v: 7, nome: 'usdt_vendedor', up(db) { addCols(db, 'usdt_compras', ['vendedor TEXT']); } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

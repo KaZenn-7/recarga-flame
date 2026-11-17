@@ -36,9 +36,9 @@ test('fiscal: compra de USDT, custo médio, Stars pagas em USDT e completar comp
     { plataforma: 'X', tipo: 'p2p', cents: 1000, usdt: 2, data: '99/99/2026' }];
   for (const b of bad) assert.equal((await adm('POST', '/api/admin/fiscal/usdt', b)).status, 400, JSON.stringify(b));
   // 100 USDT por R$ 560 e 100 por R$ 580 → médio R$ 5,70
-  await adm('POST', '/api/admin/fiscal/usdt', { plataforma: 'Binance P2P', tipo: 'p2p', cents: 56000, usdt: 100, comprovante: 'ord-1' });
+  await adm('POST', '/api/admin/fiscal/usdt', { plataforma: 'Binance P2P', tipo: 'p2p', cents: 56000, usdt: 100, comprovante: 'ord-1', vendedor: 'Fulano P2P' });
   let f = await fiscal();
-  assert.equal(f.saldo, 100); assert.equal(f.custoMedio, 560);
+  assert.equal(f.saldo, 100); assert.equal(f.custoMedio, 560); assert.equal(f.compras[0].vendedor, 'Fulano P2P');
   await adm('POST', '/api/admin/fiscal/usdt', { plataforma: 'Wallet do Telegram P2P', tipo: 'p2p', cents: 58000, usdt: 100 });
   f = await fiscal();
   assert.equal(f.saldo, 200); assert.equal(f.custoMedio, 570); assert.equal(f.compras.length, 2);
@@ -98,7 +98,7 @@ test('fiscal: relatório do mês, CSVs e rotina do dia 1º', async () => {
   const repasse = Math.round(o.prod_stars * o.star_cost * 100);
   assert.ok(linha.includes(',777001,') && linha.includes(',entregue,'));
   assert.ok(linha.includes((repasse / 100).toFixed(2)) && linha.includes(((o.cents - repasse) / 100).toFixed(2)));
-  assert.equal(r.csv.compras_usdt.split('\n')[0], 'id,data_hora_brt,plataforma,tipo_plataforma,brl_pago,usdt_recebido,custo_brl_por_usdt,comprovante');
+  assert.equal(r.csv.compras_usdt.split('\n')[0], 'id,data_hora_brt,plataforma,tipo_plataforma,brl_pago,usdt_recebido,custo_brl_por_usdt,vendedor_p2p,comprovante');
   assert.match(r.md, /Receita bruta pelos dois modelos/);
   assert.ok(r.resumo.recebido >= o.cents && r.resumo.taxa < r.resumo.recebido);
   // pedido pago e reembolsado sem entrega: reembolso, sem repasse

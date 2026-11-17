@@ -67,3 +67,4 @@
 - O custo da Star nos pedidos continua por **PEPS** (camadas das compras mais recentes que formam o saldo), não por custo médio. Levar ao contador.
 - Os CSVs e relatórios gerados ficam fora do git (têm ID de jogo de clientes).
 - Correção do dono: o USDT é sempre comprado em P2P (Wallet do Telegram ou Binance) e gasto no fragment.com para comprar as Stars. Ele não transfere para o Telegram. O painel passou a pedir o hash da compra no Fragment como comprovante.
+- Painel: o registro passou a ter 2 passos: (1) "Comprei USDT", pago em R$, com o vendedor P2P e o número da ordem; (2) "Comprei Stars", pago em USDT, com o custo pelo custo médio e o hash do Fragment. Migração 7: `usdt_compras.vendedor`. A compra de Stars só em R$ saiu do painel (a API continua aceitando).

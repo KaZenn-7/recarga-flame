@@ -195,7 +195,8 @@ function renderStars(){
     lims.appendChild(sv);row.appendChild(lims);B.appendChild(row);
   }
   const a=el('div','sacts');
-  const b1=el('button','pri','+ Registrar compra');b1.onclick=addRecarga;
+  const b0=el('button','pri','1 · Comprei USDT');b0.onclick=addUsdt;a.appendChild(b0);
+  const b1=el('button','pri','2 · Comprei Stars');b1.onclick=addRecarga;
   const b2=STARS.real?el('button',null,'↻ Ler agora'):el('button',null,STARS.configurado?'Conferir saldo':'Informar saldo');
   b2.onclick=STARS.real?syncNow:conferir;
   a.appendChild(b1);a.appendChild(b2);B.appendChild(a);
@@ -240,24 +241,22 @@ async function postStars(body){
   catch(e){alert(e.message);}
 }
 const fmtU=function(v){return Number(v).toLocaleString('pt-BR',{maximumFractionDigits:2});};
+// 2º passo: Stars compradas no Fragment com USDT. O custo em R$ = USDT × custo médio do USDT registrado (1º passo).
 async function addRecarga(){
-  const v=prompt('Quantas Stars você comprou?\n\n(Só para calcular o custo — o saldo continua vindo do Telegram.)','');if(v==null)return;
+  const v=prompt('Quantas Stars você comprou no Fragment?','');if(v==null)return;
   const st=parseInt(v.replace(/[^0-9]/g,''),10);if(!(st>0)){alert('Quantidade inválida.');return;}
-  const u=prompt('Pagou com quantos USDT? (registro fiscal; deixe vazio se não usou USDT)','');if(u==null)return;
-  const usdt=numBR(u);
-  if(u.trim()&&!(usdt>0)){alert('USDT inválido.');return;}
-  const temSaldo=usdt>0&&FISCAL&&FISCAL.custoMedio&&FISCAL.saldo+1e-6>=usdt;
-  let cents=0;
-  if(!temSaldo){
-    const c=prompt('Quanto você pagou por esses '+st+'★, em R$? (atualiza o custo por Star dos próximos pedidos)','');if(c==null)return;
-    cents=Math.round(numBR(c)*100);
-    if(!(cents>0)){alert('Informe o valor pago.');return;}
+  const u=prompt('Quantos USDT você pagou por esses '+fmtN(st)+'★?','');if(u==null)return;
+  const usdt=numBR(u);if(!(usdt>0)){alert('USDT inválido.');return;}
+  const saldo=FISCAL?FISCAL.saldo:0;
+  if(!(FISCAL&&FISCAL.custoMedio&&saldo+1e-6>=usdt)){
+    if(!confirm('O USDT registrado ('+fmtU(saldo)+') não cobre '+fmtU(usdt)+' USDT.\n\nRegistrar agora a compra de USDT (em R$)?'))return;
+    if(!(await addUsdt()))return;
+    if(!(FISCAL&&FISCAL.custoMedio&&FISCAL.saldo+1e-6>=usdt)){alert('Ainda falta USDT registrado ('+fmtU(FISCAL?FISCAL.saldo:0)+' de '+fmtU(usdt)+'). Registre a outra compra de USDT e tente de novo.');return;}
   }
-  if(!(usdt>0)){postStars({kind:'compra',stars:st,cents:cents,nota:''});return;}
   const cp=prompt('Comprovante da compra no Fragment (hash da transação ou link; opcional)','');if(cp==null)return;
   try{
-    const r=await api('/api/admin/fiscal/compra-stars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars:st,usdt:usdt,cents:cents||undefined,nota:'Fragment',comprovante:cp})});
-    if(temSaldo)alert('Registrado: '+fmtN(st)+'★ por '+brlFromCents(r.cents)+' (custo médio do seu USDT).');
+    const r=await api('/api/admin/fiscal/compra-stars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars:st,usdt:usdt,nota:'Fragment',comprovante:cp})});
+    alert('Registrado: '+fmtN(st)+'★ por '+fmtU(usdt)+' USDT = '+brlFromCents(r.cents)+' (custo médio do seu USDT).');
     await loadStars();
   }catch(e){alert(e.message);}
 }
@@ -277,13 +276,12 @@ function renderUsdt(B){
   B.appendChild(el('div','ssub','Saldo registrado: '+fmtU(F.saldo)+' USDT'+(F.custoMedio?' · custo médio R$ '+(F.custoMedio/100).toFixed(4).replace('.',',')+'/USDT':'')
     +' · cripto no mês (compras + uso): '+brlFromCents(F.mes.total)+' de '+brlFromCents(F.mes.limite)+' ('+pct+'%)'
     +(F.semLastro>0.005?' · ⚠️ '+fmtU(F.semLastro)+' USDT gastos sem compra registrada':'')));
-  const a=el('div','sacts');const b=el('button',null,'+ Compra de USDT');b.onclick=addUsdt;a.appendChild(b);B.appendChild(a);
   if(!F.compras.length)return;
   const t=el('table','smov');
   F.compras.forEach(function(c){
     const tr=document.createElement('tr');
     tr.appendChild(el('td','m',c.data));
-    tr.appendChild(el('td',null,fmtU(c.usdt)+' USDT por '+brlFromCents(c.cents)+' · '+c.plataforma+' ('+(TIPO_NM[c.tipo]||c.tipo)+')'));
+    tr.appendChild(el('td',null,fmtU(c.usdt)+' USDT por '+brlFromCents(c.cents)+' · '+c.plataforma+(c.tipo!=='p2p'?' ('+(TIPO_NM[c.tipo]||c.tipo)+')':'')+(c.vendedor?' · '+c.vendedor:'')));
     tr.appendChild(el('td','n','R$ '+(c.cents/100/c.usdt).toFixed(4).replace('.',',')));
     const td=document.createElement('td');const x=el('button','undo','apagar');x.onclick=function(){delUsdt(c);};td.appendChild(x);
     tr.appendChild(td);t.appendChild(tr);
@@ -291,21 +289,17 @@ function renderUsdt(B){
   B.appendChild(t);
 }
 async function addUsdt(){
-  const u=prompt('Quantos USDT você recebeu (líquido)?','');if(u==null)return;
-  const usdt=numBR(u);if(!(usdt>0)){alert('USDT inválido.');return;}
-  const c=prompt('Quanto pagou em R$ (com taxas)?','');if(c==null)return;
-  const cents=Math.round(numBR(c)*100);if(!(cents>0)){alert('Valor inválido.');return;}
-  const pl=prompt('Onde comprou (P2P)? 1 = Wallet do Telegram · 2 = Binance · ou escreva o nome','1');if(pl==null)return;
-  const plataforma=pl.trim()==='1'?'Wallet do Telegram P2P':pl.trim()==='2'?'Binance P2P':pl.trim();
-  let tipo='p2p';
-  if(pl.trim()!=='1'&&pl.trim()!=='2'){
-    const tp=prompt('Tipo: 1 = P2P · 2 = exchange brasileira · 3 = exchange estrangeira · 4 = carteira própria','1');if(tp==null)return;
-    tipo=['p2p','nacional','estrangeira','carteira_propria'][parseInt(tp,10)-1]||'p2p';
-  }
-  const d=prompt('Data e hora (dd/mm/aaaa hh:mm, horário de Brasília). Vazio = agora.','');if(d==null)return;
-  const cp=prompt('Comprovante (ID da ordem P2P, hash ou link; opcional)','');if(cp==null)return;
-  try{FISCAL=await api('/api/admin/fiscal/usdt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usdt:usdt,cents:cents,plataforma:plataforma,tipo:tipo,data:d,comprovante:cp})});renderStars();}
-  catch(e){alert(e.message);}
+  const c=prompt('1/6 · Quanto você pagou em R$ (com taxas)?','');if(c==null)return false;
+  const cents=Math.round(numBR(c)*100);if(!(cents>0)){alert('Valor inválido.');return false;}
+  const u=prompt('2/6 · Quantos USDT você recebeu (líquido)?','');if(u==null)return false;
+  const usdt=numBR(u);if(!(usdt>0)){alert('USDT inválido.');return false;}
+  const pl=prompt('3/6 · Onde foi o P2P? 1 = Wallet do Telegram · 2 = Binance','1');if(pl==null)return false;
+  const plataforma=pl.trim()==='2'?'Binance P2P':pl.trim()==='1'||!pl.trim()?'Wallet do Telegram P2P':pl.trim();
+  const vd=prompt('4/6 · Nome do vendedor (como aparece na ordem P2P; opcional)','');if(vd==null)return false;
+  const cp=prompt('5/6 · Número da ordem P2P (opcional)','');if(cp==null)return false;
+  const d=prompt('6/6 · Data e hora (dd/mm/aaaa hh:mm, Brasília). Vazio = agora.','');if(d==null)return false;
+  try{FISCAL=await api('/api/admin/fiscal/usdt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usdt:usdt,cents:cents,plataforma:plataforma,tipo:'p2p',vendedor:vd,data:d,comprovante:cp})});renderStars();return true;}
+  catch(e){alert(e.message);return false;}
 }
 async function delUsdt(c){
   if(!confirm('Apagar a compra de '+fmtU(c.usdt)+' USDT por '+brlFromCents(c.cents)+'?'))return;

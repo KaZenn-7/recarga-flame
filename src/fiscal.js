@@ -151,8 +151,8 @@ export function relatorioMes(db, mes, { root = process.cwd(), simulador = true }
   const pedidos = csv(['pedido_id', 'data_hora_brt', 'mp_payment_id', 'valor_pago_cliente_brl', 'id_jogo_cliente', 'pacote', 'stars_gastas', 'custo_repasse_brl', 'taxa_intermediacao_brl', 'status_entrega', 'prova_entrega', 'reembolso_brl', 'data_reembolso', 'aceite_termos_versao'],
     peds.map(({ o, repasse, reemb, taxa, prova }) => [o.id, brt(o.paid_at), o.mp_id, reais(o.cents), o.game_id, o.prod_nome || o.product, comprado(o) ? o.prod_stars : 0, reais(repasse), reais(taxa), STATUS(o), prova,
       reemb ? reais(reemb) : '', reemb && o.refund_at ? brt(o.refund_at) : '', '']));
-  const compras_usdt = csv(['id', 'data_hora_brt', 'plataforma', 'tipo_plataforma', 'brl_pago', 'usdt_recebido', 'custo_brl_por_usdt', 'comprovante'],
-    comprasUsdt.map((c) => [c.id, brt(c.created_at), c.plataforma, c.tipo, reais(c.cents), c.usdt, (c.cents / 100 / c.usdt).toFixed(4), c.comprovante]));
+  const compras_usdt = csv(['id', 'data_hora_brt', 'plataforma', 'tipo_plataforma', 'brl_pago', 'usdt_recebido', 'custo_brl_por_usdt', 'vendedor_p2p', 'comprovante'],
+    comprasUsdt.map((c) => [c.id, brt(c.created_at), c.plataforma, c.tipo, reais(c.cents), c.usdt, (c.cents / 100 / c.usdt).toFixed(4), c.vendedor || '', c.comprovante]));
   const porId = Object.fromEntries(usosMes.map((u) => [u.id, u]));
   const compras_stars = csv(['id', 'data_hora_brt', 'usdt_gasto', 'custo_brl_usdt_gasto', 'cotacao_brl_usdt_no_uso', 'fonte_cotacao', 'valor_alienacao_brl', 'ganho_perda_brl', 'stars_recebidas', 'custo_brl_por_star', 'comprovante'],
     starsMes.map((s) => { const u = porId[s.id]; return [s.id, brt(s.created_at), u ? u.usdt : '', u ? reais(u.custoUso) : '', u?.cotacao ?? '', u?.cotacao_fonte ?? '', u ? reais(u.valor) : '', u ? reais(u.ganho) : '', s.stars, (s.cents / 100 / s.stars).toFixed(5), s.comprovante || s.nota || '']; }));
@@ -198,7 +198,7 @@ export function initFiscal({ env, db, app, admin, guard, tgSend, getSetting, set
   function info() {
     const livro = usdtLivro(db), mes = mesAtual();
     const compras = db.prepare('SELECT * FROM usdt_compras ORDER BY created_at DESC, id DESC LIMIT 20').all()
-      .map((c) => ({ id: c.id, data: brt(c.created_at), plataforma: c.plataforma, tipo: c.tipo, cents: c.cents, usdt: c.usdt, comprovante: c.comprovante || '' }));
+      .map((c) => ({ id: c.id, data: brt(c.created_at), plataforma: c.plataforma, tipo: c.tipo, cents: c.cents, usdt: c.usdt, comprovante: c.comprovante || '', vendedor: c.vendedor || '' }));
     return { saldo: livro.saldo, custoMedio: livro.custoMedio, semLastro: livro.semLastro, compras, tipos: TIPOS_USDT,
       mes: { ...volumeCripto(db, mes, livro), limite: DECRIPTO_CENTS } };
   }
@@ -214,8 +214,8 @@ export function initFiscal({ env, db, app, admin, guard, tgSend, getSetting, set
     if (!(cents > 0 && cents <= 100_000_000)) return res.status(400).json({ error: 'Informe quanto pagou (R$).' });
     if (!(usdt > 0 && usdt <= 1_000_000)) return res.status(400).json({ error: 'Quantidade de USDT inválida.' });
     if (quando === undefined) return res.status(400).json({ error: 'Data inválida (use dd/mm/aaaa hh:mm).' });
-    db.prepare('INSERT INTO usdt_compras (created_at, plataforma, tipo, cents, usdt, comprovante) VALUES (COALESCE(?, CURRENT_TIMESTAMP),?,?,?,?,?)')
-      .run(quando, plataforma, tipo, cents, usdt, txt(b.comprovante, 200));
+    db.prepare('INSERT INTO usdt_compras (created_at, plataforma, tipo, cents, usdt, comprovante, vendedor) VALUES (COALESCE(?, CURRENT_TIMESTAMP),?,?,?,?,?,?)')
+      .run(quando, plataforma, tipo, cents, usdt, txt(b.comprovante, 200), txt(b.vendedor, 80));
     avisoDecripto();
     res.json(info());
   });
