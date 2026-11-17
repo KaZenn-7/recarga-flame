@@ -97,3 +97,4 @@
   1. sacar o saldo do MP com frequência;
   2. preparar o plano B (mesmas perguntas, por escrito, à Woovi e a um banco PJ);
   3. continuar operando, com o risco registrado.
+- Plano B: mensagens para a Woovi e para um banco PJ enviadas ao dono no Telegram. Woovi: contato por "Falar com vendas" (cadastro gratuito) ou Instagram/LinkedIn. Banco: só depois do CNPJ, ou pelo chat do app PF se ele já for cliente. Pergunta-chave para os dois: é possível receber o valor total na conta no modelo de intermediação?

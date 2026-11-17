@@ -77,7 +77,9 @@
   - **cláusula 1.3.2: a conta serve só para "recursos próprios"**. É vedado usá-la como gestor de pagamentos de terceiros, salvo contas vinculadas ou a função de marketplace/intermediação via Pix (2.6.5.6). Isso conflita com tratar os repasses como "valores de terceiros" no modelo de intermediação. **Levar ao contador e ao MP antes da Fase 2.**
 - [x] Suporte do MP consultado em 16/11/2026 (`fiscal/mercadopago-resposta-2026-11-16.md`): **não confirmou nem proibiu**. A conta está cadastrada como "outras atividades de serviços pessoais", e o MP não sugeriu outra categoria. O marketplace/split exige que cada vendedor tenha conta no MP, então **não serve** para a intermediação (o fornecedor é o bot do jogo).
 - [ ] Reduzir a exposição no MP enquanto a situação for cinzenta: sacar o saldo para o banco com frequência e manter a prova de entrega (já automática).
-- [ ] Deixar um plano B pronto: fazer as mesmas perguntas, por escrito, à Woovi e a um banco PJ com Pix por API.
+- [ ] Deixar um plano B pronto: as mensagens adaptadas para a Woovi e para um banco PJ foram enviadas ao dono no Telegram em 16/11/2026. Canais:
+  - **Woovi**: "Falar com vendas" em woovi.com (leva ao cadastro gratuito em app.woovi.com, que não obriga a usar) ou DM no Instagram @woovibr / LinkedIn. Não há e-mail nem WhatsApp de vendas publicados.
+  - **Banco PJ** (ex.: Inter Empresas): sem canal para quem ainda não é cliente. A API Pix só é contratada com a conta PJ aberta (precisa do CNPJ). Até lá, perguntar pelo chat do app PF do banco, se tiver conta, ou deixar para a abertura da ME.
 - [ ] Contratar contador (ainda não tem); validar por escrito o modelo de intermediação e o CNAE/anexo.
 - [ ] Levar ao contador:
   - se compras e usos somam juntos para o limite de R$ 35 mil da DeCripto;
