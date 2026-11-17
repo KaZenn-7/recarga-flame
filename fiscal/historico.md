@@ -85,3 +85,5 @@
 - Venda de moeda ou item de jogo **não está proibida expressamente**. A cláusula 6.1 (ii) fala de "jogos on-line em desacordo com a legislação", mirando jogos de azar e apostas, não a venda de itens de um jogo comum.
 - Ponto novo e importante: pela cláusula 1.3.2, a conta é só para "recursos próprios", e é vedado atuar como gestor de pagamentos de terceiros. O modelo de intermediação (repasse = valor de terceiro) pode exigir a função de marketplace/intermediação do MP (2.6.5.6) ou contas vinculadas. Levar ao contador e ao MP antes de ativar a Fase 2.
 - Recomendação: pedir ao suporte do MP a confirmação por escrito.
+- Mensagem para o suporte do MP enviada ao dono no chat privado do bot da loja. Orientação: app → Ajuda → Fale Conosco → atendente; guardar a resposta.
+- Plano B de gateway pesquisado (taxas em `perfil.md`). Recomendação: esperar a resposta do MP; se for negativa, avaliar primeiro a Woovi e o Pix por API de um banco PJ. O Asaas sai caro no ticket médio de R$ 26,50.

@@ -40,7 +40,16 @@
   - refazer com o relatório de novembro fechado (01/12) e de novo no fim de dezembro.
 
 ## Pagamentos e cripto
-- Gateway: Mercado Pago (conta PF; migrar para PJ após o CNPJ).
+- Gateway: Mercado Pago (conta PF; migrar para PJ após o CNPJ). Pix a 0,99%, ≈ R$ 0,26 no pedido médio de R$ 26,50.
+- **Plano B, se o MP recusar** (taxas de nov/2026 vindas de comparativos; confirmar nos sites oficiais):
+  - Woovi: 0,80% ou R$ 0,85 fixo;
+  - Pagar.me: ~0,99%;
+  - Efí: 1,19%;
+  - Asaas: R$ 1,99 fixo por Pix, ruim para o ticket de R$ 26,50 (7,5%);
+  - após o CNPJ, Pix por API do banco PJ (Inter, Sicoob, BB), com tarifa baixa ou zero a confirmar.
+  - Primeiras opções: **Woovi** e **Pix por API de um banco PJ**. Pedir a qualquer novo gateway a mesma confirmação por escrito, porque nenhum diz claramente se aceita moeda de jogo.
+  - A regra de "recursos próprios" vem da regulação das contas de pagamento, não é exclusiva do MP: a intermediação vai exigir produto de marketplace/split (há na Efí, na Pagar.me e no Asaas).
+  - Trocar de gateway exige mexer em `src/mercadopago.js` (Pix, webhook e reembolsos).
 - USDT comprado **sempre em P2P**, às vezes na Wallet do Telegram, às vezes na Binance. É gasto direto no **fragment.com** para comprar as Stars, sem passar pelo saldo do Telegram. A compra no Fragment é a alienação do USDT; o hash da transação serve de comprovante. Tratar como **sem exchange brasileira**: a DeCripto é obrigatória se o volume do mês (compras + usos, a confirmar) passar de R$ 35 mil. Diz que consegue os comprovantes das compras anteriores.
 - Em novembro/2026 o volume fica ≈ R$ 6,6 mil (R$ 3,3 mil comprados + R$ 3,3 mil usados). Se o ritmo de 15–16/11 se mantiver, **dezembro pode passar de R$ 35 mil**.
 - O dono compra o USDT e o usa na mesma hora. A "perda" que aparece no relatório é praticamente o ágio do P2P sobre a cotação de mercado.
@@ -66,7 +75,7 @@
   - cláusula 2.4: a atividade precisa corresponder à cadastrada na conta;
   - cláusula 2.13.1: guardar a prova de entrega por 1 ano (a loja já guarda a resposta do bot);
   - **cláusula 1.3.2: a conta serve só para "recursos próprios"**. É vedado usá-la como gestor de pagamentos de terceiros, salvo contas vinculadas ou a função de marketplace/intermediação via Pix (2.6.5.6). Isso conflita com tratar os repasses como "valores de terceiros" no modelo de intermediação. **Levar ao contador e ao MP antes da Fase 2.**
-- [ ] Pedir ao suporte do MP, por escrito, a confirmação de que a atividade é aceita (e, depois do CNPJ, qual produto usar no modelo de intermediação).
+- [ ] Enviar ao suporte do MP a mensagem pronta (mandada ao dono no Telegram em 16/11/2026): app → Ajuda → Fale Conosco → chat com atendente (pode pedir código de atendimento). Perguntas: (1) a atividade é permitida? (2) qual categoria cadastrar? (3) qual produto usar no modelo de intermediação (marketplace, split ou conta vinculada)? **Guardar a resposta** (print ou e-mail).
 - [ ] Contratar contador (ainda não tem); validar por escrito o modelo de intermediação e o CNAE/anexo.
 - [ ] Levar ao contador:
   - se compras e usos somam juntos para o limite de R$ 35 mil da DeCripto;
