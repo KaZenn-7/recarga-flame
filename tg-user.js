@@ -137,6 +137,16 @@ export function checkInvoice(startParam, env = process.env) {
   return serial(async () => fetchInvoice(await getClient(env), startParam));
 }
 
+// O GramJS repete sozinho um pedido que volta com erro interno do Telegram (ServerError/RPC_CALL_FAIL), 2 s depois
+// (client/users.js invoke, requestRetries=5). No pagamento isso gera o FORM_SUBMIT_DUPLICATE: o 1º envio cobrou mas
+// ficou sem recibo e o CounterFlame não entregou (7 casos, 13–17/11/2026). O envio da cobrança roda com 1 tentativa
+// só: o erro real fica registrado e nada é reenviado por cima do 1º (a conferência do recibo decide depois).
+export async function semRepetir(c, fn) {
+  const antes = c._requestRetries;
+  c._requestRetries = 1;
+  try { return await fn(); } finally { c._requestRetries = antes; }
+}
+
 // Pagamento: confere a fatura de novo e paga SÓ se valor/moeda/conta baterem.
 // Erros antes do envio têm e.safe = true (nada foi cobrado). Depois do envio, qualquer falha é "incerta".
 // onInvoice(msgId) é chamado ANTES de cobrar: o servidor grava o nº da mensagem da fatura no pedido,
@@ -171,14 +181,16 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice }
     ctx.sent = true; // daqui em diante, tempo esgotado = incerto
     let r;
     try {
-      r = await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice })); // ← COBRA
+      r = await semRepetir(c, () => c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice }))); // ← COBRA (1 envio só)
     } catch (e) {
+      // com 1 tentativa só, erro interno do Telegram (ServerError/RPC_CALL_FAIL) chega como "Request was unsuccessful"
+      if (/Request was unsuccessful/.test(String(e?.message))) e.errorMessage = 'TELEGRAM_INTERNO (erro interno do Telegram; envio não repetido)';
       // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
       // FORM_SUBMIT_DUPLICATE). ENTREGA só se prova pelo recibo da fatura (o bot do CF responde "Done…" a ele).
       // 17/11/2026: nos 7 FORM_SUBMIT_DUPLICATE (#74…#217) o Telegram COBROU (histórico de Stars) mas a fatura ficou
       // sem recibo e o CounterFlame NÃO entregou nem registrou. Histórico/saldo só dizem se houve cobrança perdida.
       let paid = null;
-      for (let i = 0; i < 6 && paid !== true; i++) {
+      for (let i = 0; i < 15 && paid !== true; i++) { // até 30 s: dá tempo ao Telegram de concluir o 1º envio
         await sleep(2000);
         try { paid = (await receiptOf(c, inv.msgId)).paid; } catch { /* tenta de novo */ }
       }
@@ -230,6 +242,14 @@ async function lerHistorico(c, { desde = 0, ate = 0, limite = 200, paginas = 10 
   }
   return out;
 }
+// ---- Conta separada (só leitura): ID e usuário — o CounterFlame precisa do ID para estornar (refundStarPayment) ----
+export function contaPropria(env = process.env) {
+  return serial(async () => {
+    const me = await (await getClient(env)).getMe();
+    return { id: me.id?.toString() || null, username: me.username || null };
+  });
+}
+
 // ---- Mensagens do chat com o bot do CF (só leitura) ----
 // Entre desde..ate (unix s), mais antigas primeiro: faturas, respostas ("Done… Order CF-…"), recibos. Serve para conferir
 // se o bot confirmou um pedido pago (ex.: FORM_SUBMIT_DUPLICATE). Volta no máximo 30 páginas de 100 mensagens.

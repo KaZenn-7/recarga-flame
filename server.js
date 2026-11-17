@@ -7,7 +7,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import Database from 'better-sqlite3';
 import { migrate } from './src/db.js';
-import { invoicePaid, starsTransactions, botMessages } from './tg-user.js';
+import { invoicePaid, starsTransactions, botMessages, contaPropria } from './tg-user.js';
 import { initLogin } from './src/login.js';
 import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
@@ -257,6 +257,8 @@ let starsTxReader = starsTransactions;           // trocável nos testes
 const _setStarsTxReader = (fn) => { starsTxReader = fn || starsTransactions; };
 let botMsgReader = botMessages;                  // trocável nos testes
 const _setBotMsgReader = (fn) => { botMsgReader = fn || botMessages; };
+let contaReader = contaPropria;                  // trocável nos testes
+const _setContaReader = (fn) => { contaReader = fn || contaPropria; };
 // (paidKeyboard/tgFalha/paidText/tgIncerto/setMotivo/stopping são declarados mais abaixo: vão como funções que repassam)
 const { vigiaPagamentos, resolverIncerto, conferirAtraso, provaCobranca, chkOn, _setInvoiceChecker, _setInvoicePayer, getSetting, setSetting, autopayMode, autopayOn, autoMode, autopayMax, autopayDay, autopay24, canAutopay, canApprove, carrinhoAprovavel, aprovarCarrinho, autopay, chkOf, chkLine, conferir, saldoLine } = initAutopay({ env, db, PRODUCTS, riskOf, starsOf, STARS_LOW, starsFila, REAL, starsEff, syncStarsReal,
   sessionDown, markDelivered, paidKeyboard: (o) => paidKeyboard(o), tgFalha: (...a) => tgFalha(...a), paidText: (o) => paidText(o),
@@ -1024,6 +1026,12 @@ app.get('/api/health', (req, res, next) => {
 });
 // Histórico de Stars da conta separada (só leitura, só da própria VPS, como /api/health): IDs das transações para
 // disputa no @BotFather. ?desde=&ate= em unix s (padrão: últimas 72 h). Cada saída vem com o pedido da fatura (msgId).
+// ID e usuário da conta separada (só da própria VPS): para o pedido de estorno ao CounterFlame.
+app.get('/api/local/conta', async (req, res, next) => {
+  if (!local(req)) return next();
+  if (!chkOn()) return res.status(400).json({ error: 'Conta de usuário não configurada.' });
+  try { res.json(await contaReader(env)); } catch (e) { res.status(502).json({ error: String(e?.message || e).slice(0, 120) }); }
+});
 // Mensagens do chat com o bot do CF (só leitura, só da própria VPS): ?desde=&ate= em unix s (padrão: últimas 2 h).
 // Cada fatura vem com o pedido da loja que a gerou (invMsgId/anterior).
 app.get('/api/local/bot-mensagens', async (req, res, next) => {
@@ -1109,4 +1117,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { fiscalTick, _setCotacao, _setBotMsgReader, _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { fiscalTick, _setCotacao, _setContaReader, _setBotMsgReader, _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, conferirAtraso, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

@@ -800,3 +800,22 @@ test('cobrança perdida pelo histórico: ID da transação no aviso; outro pedid
     assert.equal(v.cobrado, null); assert.match(v.motivo, /pendente/);
   } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); SRV._setStarsTxReader(null); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
+
+test('pagamento sem a repetição automática do GramJS: 1 tentativa durante o envio, valor de volta depois (mesmo com erro)', async () => {
+  const { semRepetir } = await import('../tg-user.js');
+  const c = { _requestRetries: 5 };
+  let durante;
+  assert.equal(await semRepetir(c, async () => { durante = c._requestRetries; return 'ok'; }), 'ok');
+  assert.equal(durante, 1); assert.equal(c._requestRetries, 5);
+  await assert.rejects(semRepetir(c, async () => { throw new Error('RPC_CALL_FAIL'); }), /RPC_CALL_FAIL/);
+  assert.equal(c._requestRetries, 5);
+});
+
+test('conta separada: ID só pela própria máquina', async () => {
+  _setInvoiceChecker(async () => ({}));
+  SRV._setContaReader(async () => ({ id: '123456789', username: 'conta_loja' }));
+  try {
+    assert.equal((await fetch(base + '/api/local/conta', { headers: { 'X-Forwarded-For': '8.8.8.8' } })).status, 404);
+    assert.deepEqual(await (await fetch(base + '/api/local/conta')).json(), { id: '123456789', username: 'conta_loja' });
+  } finally { SRV._setContaReader(null); _setInvoiceChecker(null); }
+});
