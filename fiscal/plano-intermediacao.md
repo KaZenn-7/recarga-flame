@@ -72,6 +72,8 @@ Na compra no bot, registre automaticamente a resposta do bot (texto, horário, I
 
 ## Fase 2: checkout de intermediação (atrás da flag)
 
+> ⚠️ 16/11/2026: o MP não confirmou nenhum produto para esse modelo. O marketplace/split exige conta MP do vendedor, e a conta comum é só para "recursos próprios" (Termos, cláusula 1.3.2). Só implementar depois que o contador resolver como os repasses ficam no MP, ou com outro gateway que tenha produto adequado.
+
 ### Regras de preço
 1. `custo_repasse` de cada pacote = stars do pacote × custo médio atual por star (R$). Recalcule quando o custo médio mudar e arredonde para cima, em centavos.
 2. `taxa` = **`preço_atual − custo_repasse`**, mantendo o preço final de hoje. Decidido pelo dono em 16/11/2026.
@@ -87,7 +89,7 @@ Na compra no bot, registre automaticamente a resposta do bot (texto, horário, I
 - Publicar `fiscal/termos-intermediacao-rascunho.md` **só depois de revisado pelo contador/advogado**. Versionar (v1, v2…).
 
 ## Fase 3: depois do CNPJ
-- Mercado Pago em conta PJ (o recebimento deixa de ir para o CPF).
+- Mercado Pago em conta PJ (o recebimento deixa de ir para o CPF). O MP avisou que é preciso **nova chave Pix e novas credenciais**: trocar `MP_ACCESS_TOKEN` e `MP_WEBHOOK_SECRET` no `.env` e recadastrar o webhook `/webhook/mercadopago`. Testar com um Pix real de valor baixo.
 - Emitir **NFS-e apenas da taxa de intermediação**, pelo emissor do município da sede ou o padrão nacional. Integrar por API se o volume justificar.
 - Enviar ao cliente um **demonstrativo de repasse** (valor do pacote repassado + taxa), separado da nota.
 - Contabilidade: os repasses ficam como valores de terceiros (passivo/conta de repasse), e só a taxa é receita. Exportar os CSVs mensais para o contador.

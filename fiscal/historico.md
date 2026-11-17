@@ -87,3 +87,13 @@
 - Recomendação: pedir ao suporte do MP a confirmação por escrito.
 - Mensagem para o suporte do MP enviada ao dono no chat privado do bot da loja. Orientação: app → Ajuda → Fale Conosco → atendente; guardar a resposta.
 - Plano B de gateway pesquisado (taxas em `perfil.md`). Recomendação: esperar a resposta do MP; se for negativa, avaliar primeiro a Woovi e o Pix por API de um banco PJ. O Asaas sai caro no ticket médio de R$ 26,50.
+
+## 2026-11-16: resposta do Mercado Pago
+- O MP **não confirmou nem proibiu** a atividade. Texto completo e leitura em `fiscal/mercadopago-resposta-2026-11-16.md`.
+- A conta está cadastrada como "outras atividades de serviços pessoais". Não há categoria para moedas de jogos, e o MP não alterou nada.
+- O marketplace/split do MP exige que os vendedores tenham conta no MP. **Não serve** para a intermediação, porque o fornecedor é o bot do jogo, pago em Stars. A Fase 2 fica bloqueada até o contador resolver como os repasses ficam no MP, ou até haver outro gateway com produto adequado.
+- Na migração para PJ: nova chave Pix e novas credenciais (anotado na Fase 3 do plano).
+- Recomendações:
+  1. sacar o saldo do MP com frequência;
+  2. preparar o plano B (mesmas perguntas, por escrito, à Woovi e a um banco PJ);
+  3. continuar operando, com o risco registrado.

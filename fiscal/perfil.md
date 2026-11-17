@@ -40,7 +40,7 @@
   - refazer com o relatório de novembro fechado (01/12) e de novo no fim de dezembro.
 
 ## Pagamentos e cripto
-- Gateway: Mercado Pago (conta PF; migrar para PJ após o CNPJ). Pix a 0,99%, ≈ R$ 0,26 no pedido médio de R$ 26,50.
+- Gateway: Mercado Pago (conta PF, categoria "outras atividades de serviços pessoais"; migrar para PJ após o CNPJ, com nova chave Pix e novas credenciais da integração). Pix a 0,99%, ≈ R$ 0,26 no pedido médio de R$ 26,50.
 - **Plano B, se o MP recusar** (taxas de nov/2026 vindas de comparativos; confirmar nos sites oficiais):
   - Woovi: 0,80% ou R$ 0,85 fixo;
   - Pagar.me: ~0,99%;
@@ -75,7 +75,9 @@
   - cláusula 2.4: a atividade precisa corresponder à cadastrada na conta;
   - cláusula 2.13.1: guardar a prova de entrega por 1 ano (a loja já guarda a resposta do bot);
   - **cláusula 1.3.2: a conta serve só para "recursos próprios"**. É vedado usá-la como gestor de pagamentos de terceiros, salvo contas vinculadas ou a função de marketplace/intermediação via Pix (2.6.5.6). Isso conflita com tratar os repasses como "valores de terceiros" no modelo de intermediação. **Levar ao contador e ao MP antes da Fase 2.**
-- [ ] Enviar ao suporte do MP a mensagem pronta (mandada ao dono no Telegram em 16/11/2026): app → Ajuda → Fale Conosco → chat com atendente (pode pedir código de atendimento). Perguntas: (1) a atividade é permitida? (2) qual categoria cadastrar? (3) qual produto usar no modelo de intermediação (marketplace, split ou conta vinculada)? **Guardar a resposta** (print ou e-mail).
+- [x] Suporte do MP consultado em 16/11/2026 (`fiscal/mercadopago-resposta-2026-11-16.md`): **não confirmou nem proibiu**. A conta está cadastrada como "outras atividades de serviços pessoais", e o MP não sugeriu outra categoria. O marketplace/split exige que cada vendedor tenha conta no MP, então **não serve** para a intermediação (o fornecedor é o bot do jogo).
+- [ ] Reduzir a exposição no MP enquanto a situação for cinzenta: sacar o saldo para o banco com frequência e manter a prova de entrega (já automática).
+- [ ] Deixar um plano B pronto: fazer as mesmas perguntas, por escrito, à Woovi e a um banco PJ com Pix por API.
 - [ ] Contratar contador (ainda não tem); validar por escrito o modelo de intermediação e o CNAE/anexo.
 - [ ] Levar ao contador:
   - se compras e usos somam juntos para o limite de R$ 35 mil da DeCripto;
