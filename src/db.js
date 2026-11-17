@@ -150,6 +150,15 @@ CREATE INDEX IF NOT EXISTS orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS orders_coupon ON orders(coupon);
 CREATE INDEX IF NOT EXISTS events_dev ON events(dev, ev)`);
   } },
+  // fiscal (Fase 1 de fiscal/plano-intermediacao.md): compras de USDT e o USDT gasto em cada compra de Stars
+  // (gastar USDT = alienação de cripto: guarda a cotação de mercado no uso para o ganho/perda)
+  { v: 6, nome: 'fiscal', up(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS usdt_compras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  plataforma TEXT NOT NULL, tipo TEXT NOT NULL, cents INTEGER NOT NULL, usdt REAL NOT NULL, comprovante TEXT DEFAULT ''
+)`);
+    addCols(db, 'stars_purchases', ['usdt REAL', 'cotacao REAL', 'cotacao_fonte TEXT', 'comprovante TEXT']);
+  } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

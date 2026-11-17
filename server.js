@@ -18,6 +18,7 @@ import { tgApi, tgSend, hhmmSP, initAvisos, orderDest, POLL } from './src/telegr
 import { initMercadoPago } from './src/mercadopago.js';
 import { initAutopay } from './src/autopay.js';
 import { initStars } from './src/stars.js';
+import { initFiscal } from './src/fiscal.js';
 import { initCheckout } from './src/checkout.js';
 import { initCarrinho } from './src/carrinho.js';
 
@@ -566,6 +567,8 @@ function painelOrders() {
 }
 app.get('/api/admin/orders', admin, (req, res) => res.json(painelOrders()));
 rotasStars({ app, admin, guard, chkOn, autopayOn, autopayMode, autopayMax, autopayDay, autopay24 });
+// fiscal (Fase 1): compras de USDT, USDT gasto em Stars, relatório mensal — só painel, nada visível ao cliente
+const { fiscalTick, _setCotacao } = initFiscal({ env, db, app, admin, guard, tgSend, getSetting, setSetting, refreshStarCost });
 app.post('/api/admin/orders/:id/check', admin, async (req, res) => {
   if (!guard(req, res)) return;
   if (!chkOn()) return res.status(400).json({ error: 'Conta de usuário não configurada.' });
@@ -1083,8 +1086,9 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(summaryTick, 60_000); // resumo diário à 00h (do dia que terminou)
   // virada do mês: congela as faixas do mês fechado; 1º dia útil: comissões a pagar no Telegram
   setInterval(() => { try { freezeTick(); fechamentoTick(); lembreteDadosTick(); } catch (e) { console.error('fechamento', e.message); } }, 60_000);
+  setInterval(() => { try { fiscalTick(); } catch (e) { console.error('fiscal', e.message); } }, 60_000); // dia 1º: relatório fiscal do mês anterior
 }
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { fiscalTick, _setCotacao, _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, resolverIncerto, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

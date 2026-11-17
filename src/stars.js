@@ -192,7 +192,7 @@ function rotasStars({ app, admin, guard, chkOn, autopayOn, autopayMode, autopayM
     const c = db.prepare('SELECT SUM(stars) st, SUM(cents) c FROM stars_purchases').get();
     const fmtD = (t) => new Date(t.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit' });
     const compras = db.prepare('SELECT * FROM stars_purchases ORDER BY created_at DESC, id DESC LIMIT 20').all()
-      .map((p) => ({ id: p.id, stars: p.stars, cents: p.cents, nota: p.nota || '', data: fmtD(p.created_at), unit: p.cents / p.stars / 100 }));
+      .map((p) => ({ id: p.id, stars: p.stars, cents: p.cents, nota: p.nota || '', data: fmtD(p.created_at), unit: p.cents / p.stars / 100, usdt: p.usdt || null }));
     return { configurado: n > 0, saldo, fila: starsFila(), low: STARS_LOW, movs,
       custoMedio: c.st ? c.c / c.st / 100 : null, custoConfig: STAR_COST, custoAtual: STAR_NOW, taxaMP: MP_FEE, previsao: starsForecast(), custoFonte: STAR_INFO.fonte, compras,
       real: realOn() ? { ativo: real, at: REAL.at || null, err: REAL.err, manual: starsSaldo().s } : null,

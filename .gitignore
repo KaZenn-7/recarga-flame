@@ -25,3 +25,7 @@ docs/acordo/gerados/
 
 # prospecção de criadores (tem e-mails públicos de terceiros)
 data/
+
+# fiscal: CSVs e relatórios gerados (têm ID de jogo de clientes; a fonte é o banco)
+fiscal/registros/20*/
+fiscal/relatorios/
