@@ -96,6 +96,7 @@ input:focus{outline:0;border-color:#45454c}
 .cp input{font-size:12px}
 .cp button{flex-shrink:0;padding:0 15px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:9px;font-weight:600;cursor:pointer}
 .note{font-size:12.5px;color:var(--dim);margin-top:14px;text-align:center}
+.avisonc{margin:16px 0 0;padding:11px 13px;border-radius:10px;background:rgba(227,179,65,.1);border:1px solid rgba(227,179,65,.45);font-size:13px;line-height:1.55;color:var(--txt)}
 .note.warnbox{color:var(--txt);background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:11px 13px;text-align:left}
 .hint{font-size:12px;color:var(--dim);margin:6px 0 0}
 .sug{font-size:13px;color:var(--gold);margin:7px 0 0}.sug b{color:var(--txt);word-break:break-all}
@@ -325,6 +326,7 @@ input:focus{outline:0;border-color:#45454c}
       <button class="btn btn-sec hide" id="outro">Fazer outro pedido</button>
     </div>
     <div class="linkp"><span>Salve o link deste pedido para acompanhar de outro aparelho.</span><button id="copLink">Copiar link</button></div>
+    <p class="avisonc hide" id="avisoNc">⚠️ O item não apareceu no jogo? Fale com a gente imediatamente. Até resolvermos, não compre nem venda skins no jogo (isso muda o seu saldo de Coins) e não faça uma nova compra na Recarga Flame. Se isso acontecer, o suporte do jogo pode não conseguir localizar a entrega e, nesse caso, não há reembolso.</p>
     <div class="sup"><span id="supTxt">Dúvida ou problema com o pedido? Fale com a gente:</span>
       <div class="supb"><a class="mail" id="supMail" href="/suporte">Suporte</a><a class="wa" id="supWa" href="https://wa.me/5511954854560?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20Recarga%20Flame." target="_blank" rel="noopener">WhatsApp</a></div>
     </div>
@@ -678,6 +680,7 @@ function posPago(status,entrega){
   $('st').classList.toggle('hide',!!p);$('afternote').classList.toggle('hide',!!p);
   $('supTxt').textContent=k==='delivered'?'Não apareceu no jogo? Fale com a gente:':['refund','refunded','reversed'].includes(k)?'Dúvidas sobre a devolução? Fale com a gente:':'Dúvida ou problema com o pedido? Fale com a gente:';
   $('outro').classList.toggle('btn-go',k==='delivered');$('outro').classList.toggle('btn-sec',k!=='delivered');
+  $('avisoNc').classList.toggle('hide',k!=='delivered');
   if(!p)return;
   $('hero').className='hero '+p[0];$('heroIc').textContent=p[1];$('heroT').textContent=p[2];$('heroX').textContent=p[3];
   const li=$('trk').children;

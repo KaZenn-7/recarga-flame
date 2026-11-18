@@ -28,6 +28,10 @@ async function sendMail(to, subject, html, text, replyTo = MAIL_REPLY_TO, fromAd
   } catch (e) { console.error('Falha ao enviar e-mail:', e.message); return false; }
 }
 
+// Aviso de "não chegou" (operador, 17/11/2026): mexer no saldo de Coins ou comprar de novo antes de falar com o suporte
+// pode impedir o suporte do jogo de localizar a entrega. Mesmo texto da tela do pedido, dos Termos e de /item-nao-chegou.
+const AVISO_NAO_CHEGOU = 'O item não apareceu no jogo? Fale com a gente imediatamente. Até resolvermos, não compre nem venda skins no jogo (isso muda o seu saldo de Coins) e não faça uma nova compra na Recarga Flame. Se isso acontecer, o suporte do jogo pode não conseguir localizar a entrega e, nesse caso, não há reembolso.';
+const avisoHtml = `<tr><td style="padding:0 22px 16px"><div style="background:rgba(227,179,65,.1);border:1px solid rgba(227,179,65,.45);border-radius:10px;padding:12px 14px;color:#f4f4f5;font-size:13px;line-height:1.55">⚠️ ${AVISO_NAO_CHEGOU}</div></td></tr>`;
 function deliveredEmail(o) {
   const nome = o.prod_nome || PRODUCTS[o.product]?.nome || o.product;
   const valor = (o.cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -39,6 +43,7 @@ function deliveredEmail(o) {
     `Seu pedido #${o.id} (${nome}, ${valor}) foi entregue na conta ID ${o.game_id}.`,
     'Abra o CounterFlame para conferir.', '',
     `Acompanhar o pedido: ${link}`,
+    '⚠️ ' + AVISO_NAO_CHEGOU, '',
     'Algum problema? É só responder este e-mail (suporte@recargaflame.com.br).', '',
     'Recarga Flame — revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.',
   ].join('\n');
@@ -56,6 +61,7 @@ function deliveredEmail(o) {
 <tr><td style="padding:12px 14px;color:#9b9ba3;border-top:1px solid #2a2a2e">Valor</td><td align="right" style="padding:12px 14px;font-weight:700;border-top:1px solid #2a2a2e">${valor}</td></tr>
 </table></td></tr>
 <tr><td style="padding:0 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">Ver pedido</a></td></tr>
+${avisoHtml}
 <tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">Algum problema? É só responder este e-mail ou escrever para
 <a href="mailto:suporte@recargaflame.com.br" style="color:#9b9ba3">suporte@recargaflame.com.br</a>.<br><br>
 Recarga Flame é uma revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.</td></tr>
@@ -83,6 +89,7 @@ function carrinhoEntregueEmail(car, itens) {
     ...itens.map((o) => `• #${o.id} ${nomeDe(o)} (${brl(o.cents)}): ${st(o)}`), '',
     `Conta: ${o0.nickname} · ID ${o0.game_id} · total pago ${brl(car.cents)}`,
     `Acompanhar: ${link}`,
+    '⚠️ ' + AVISO_NAO_CHEGOU, '',
     'Algum problema? É só responder este e-mail (suporte@recargaflame.com.br).', '',
     'Recarga Flame — revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.',
   ].join('\n');
@@ -101,6 +108,7 @@ ${itens.map(linha).join('\n')}
 <tr><td style="padding:12px 14px;color:#9b9ba3;border-top:1px solid #2a2a2e">Total pago · conta ${esc(o0.nickname)} · ID ${esc(o0.game_id)}</td><td align="right" style="padding:12px 14px;font-weight:700;border-top:1px solid #2a2a2e">${brl(car.cents)}</td></tr>
 </table></td></tr>
 <tr><td style="padding:14px 22px 20px"><a href="${link}" style="display:block;text-align:center;background:#ff5a1f;color:#160a04;font-weight:700;text-decoration:none;padding:13px;border-radius:9px">Ver pedido</a></td></tr>
+${avisoHtml}
 <tr><td style="padding:0 22px 22px;color:#6c6c74;font-size:12.5px;line-height:1.5">Algum problema? É só responder este e-mail ou escrever para
 <a href="mailto:suporte@recargaflame.com.br" style="color:#9b9ba3">suporte@recargaflame.com.br</a>.<br><br>
 Recarga Flame é uma revenda independente, sem vínculo com a Valve nem com a equipe oficial do CounterFlame.</td></tr>
