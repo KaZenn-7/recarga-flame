@@ -164,6 +164,9 @@ async function syncPayment(mpId) {
     // todos os itens do Pix numa transação; só avisa na transição pending→paid (webhook + polling podem chegar juntos)
     const up = db.prepare("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP, payer_acct=? WHERE id=? AND status='pending'");
     const pagos = db.transaction(() => itens.filter((o) => up.run(pp.acct, o.id).changes))();
+    // carrinho: conferência/pagamento dos itens mais caros primeiro — se o bot do CF falhar, tende a ser nos últimos
+    // da sequência (17/11/2026), e a perda é o valor do item que falhou
+    if (car) pagos.sort((a, b) => (b.prod_stars || 0) - (a.prod_stars || 0) || a.id - b.id);
     for (const o of pagos) {
       orderEv(o, 'paid');
       const oo = { ...o, payer_acct: pp.acct };

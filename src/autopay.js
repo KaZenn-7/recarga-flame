@@ -120,6 +120,7 @@ async function autopay(id, { aprovar = false, via = aprovar ? 'aprovado' : 'toqu
     if (e?.safe) { save('erro', { erro: msg }); return { ok: false, why: 'não pagou: ' + msg }; }
     // diagnóstico da falha: tempo de resposta do envio, espera do intervalo, classe/código do erro
     const diag = { ...(e?.envioMs != null ? { envioMs: e.envioMs } : {}), ...(e?.esperaMs != null ? { esperaMs: e.esperaMs } : {}),
+      ...(e?.esperaBotMs != null ? { esperaBotMs: e.esperaBotMs } : {}),
       ...(e?.code != null ? { codigo: e.code } : {}), classe: e?.constructor?.name || null };
     save('incerto', { erro: msg, ...diag, ...(e?.saldoDepois != null ? { saldoDepois: e.saldoDepois } : {}), ...(e?.txPerdida ? { txPerdida: e.txPerdida } : {}) });
     tgIncerto(id, msg);

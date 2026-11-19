@@ -120,7 +120,7 @@ async function fetchInvoice(c, startParam) {
     if (inv) {
       const info = texts.find((t) => /Account:/i.test(t)) || '';
       return {
-        msgId: inv.id,
+        msgId: inv.id, date: inv.date,
         currency: inv.media.currency,
         stars: Number(inv.media.totalAmount?.toString()),
         desc: String(inv.media.description || '').slice(0, 120),
@@ -141,7 +141,7 @@ async function invoiceById(c, msgId) {
   const info = String(txt?.message || '');
   if (!/Account:/i.test(info)) return null;
   return {
-    msgId: inv.id, currency: inv.media.currency, stars: Number(inv.media.totalAmount?.toString()),
+    msgId: inv.id, date: inv.date, currency: inv.media.currency, stars: Number(inv.media.totalAmount?.toString()),
     desc: String(inv.media.description || '').slice(0, 120), produto: info.split('\n')[0].trim().slice(0, 120),
     account: (/Account:\s*(.+)/i.exec(info)?.[1] || '').trim().slice(0, 64), reusada: true,
   };
@@ -166,6 +166,30 @@ export async function semRepetir(c, fn) {
 // anterior (~8% de erro nesse caso × ~3% com 10 s ou mais). Medir por ~1 semana; ver docs/auditoria.
 export const INTERVALO_MS = process.env.NODE_ENV === 'test' ? 0 : 10_000;
 let ultimoEnvio = 0;
+// Bot do CF ainda processando o pedido anterior (entrega, "Done", recompensa "Открылась ступень…")? Pagamentos feitos
+// até 15 s depois de uma mensagem dessas falharam 15% (3 de 20) contra 2,9% dos demais (13–18/11/2026); itens de
+// carrinho, pagos em sequência, falharam 8% contra 1,6% dos avulsos. Antes de cobrar, espera o bot ficar BOT_QUIETO_S
+// sem mandar nada (respostas de fatura não contam), até ESPERA_BOT_MAX_MS.
+export const BOT_QUIETO_S = process.env.NODE_ENV === 'test' ? 0 : 20;
+const ESPERA_BOT_MAX_MS = 60_000;
+// fatura com pelo menos FATURA_MIN_S de idade antes de cobrar (sugestão do operador, 18/11/2026: não pagar no mesmo
+// instante em que o bot responde o /start). Custa poucos segundos; os dados de envio dizem depois se ajudou.
+export const FATURA_MIN_S = process.env.NODE_ENV === 'test' ? 0 : 5;
+export const esperaFatura = (dataFatura, agoraMs = Date.now(), min = FATURA_MIN_S) =>
+  (dataFatura ? Math.max(0, dataFatura * 1000 + min * 1000 - agoraMs) : 0);
+// segundos desde a última mensagem do bot que indica processamento (ignora as minhas, faturas e "Invoice for …")
+export function idadeBot(msgs, agoraS = Date.now() / 1000) {
+  const m = msgs.find((x) => !x.out && x.media?.className !== 'MessageMediaInvoice' && !/Invoice for/i.test(String(x.message || '')));
+  return m ? agoraS - m.date : Infinity;
+}
+async function esperarBotQuieto(c) {
+  const t0 = Date.now();
+  for (;;) {
+    const falta = BOT_QUIETO_S - idadeBot(await c.getMessages(CF_BOT, { limit: 8 }));
+    if (falta <= 0 || Date.now() - t0 >= ESPERA_BOT_MAX_MS) return Date.now() - t0;
+    await sleep(Math.min(falta * 1000 + 300, ESPERA_BOT_MAX_MS - (Date.now() - t0)));
+  }
+}
 export const esperaEnvio = (ultimo, agora = Date.now(), min = INTERVALO_MS) => Math.max(0, ultimo + min - agora);
 
 // Pagamento: confere a fatura de novo e paga SÓ se valor/moeda/conta baterem.
@@ -194,8 +218,13 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice, 
       throw safe(String(e?.errorMessage || e?.message || e)); // nada foi enviado ainda
     }
     const before = inv.msgId;
-    const espera = esperaEnvio(ultimoEnvio);
-    if (espera) await sleep(espera);               // dentro da fila: nenhuma outra cobrança passa na frente
+    const esperaIntervalo = esperaEnvio(ultimoEnvio);
+    if (esperaIntervalo) await sleep(esperaIntervalo); // dentro da fila: nenhuma outra cobrança passa na frente
+    let esperaBot = 0;
+    try { esperaBot = await esperarBotQuieto(c); } catch { /* sem leitura: segue com o intervalo mínimo */ }
+    const esperaFat = esperaFatura(inv.date);
+    if (esperaFat) await sleep(esperaFat);
+    const espera = esperaIntervalo + esperaBot + esperaFat;
     let saldoAntes = null;
     try { saldoAntes = await balanceOf(c); } catch { /* sem prova pelo saldo; segue pelo recibo */ }
     if (ctx.dead) throw safe('tempo esgotado antes de cobrar');
@@ -212,7 +241,7 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice, 
       envioMs = ultimoEnvio - t0;
     } catch (e) {
       ultimoEnvio = Date.now();
-      Object.assign(e, { envioMs: Date.now() - t0, esperaMs: espera });
+      Object.assign(e, { envioMs: Date.now() - t0, esperaMs: espera, esperaBotMs: esperaBot });
       // com 1 tentativa só, erro interno do Telegram (ServerError/RPC_CALL_FAIL) chega como "Request was unsuccessful"
       if (/Request was unsuccessful/.test(String(e?.message))) e.errorMessage = 'TELEGRAM_INTERNO (erro interno do Telegram; envio não repetido)';
       // Erro DEPOIS do envio: a resposta pode ter se perdido e o pedido ter sido reenviado (o Telegram responde
@@ -243,7 +272,7 @@ export function payInvoice({ startParam, expectStars, expectAccount, onInvoice, 
       const msgs = (await c.getMessages(CF_BOT, { limit: 6 })).filter((m) => m.id > before && !m.out && m.message);
       botReply = msgs.at(0)?.message?.slice(0, 200) || '';
     }
-    return { stars: expectStars, account: inv.account, produto: inv.produto, botReply, envioMs, esperaMs: espera };
+    return { stars: expectStars, account: inv.account, produto: inv.produto, botReply, envioMs, esperaMs: espera, esperaBotMs: esperaBot };
   });
 }
 

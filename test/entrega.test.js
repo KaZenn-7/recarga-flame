@@ -910,3 +910,24 @@ test('pagamento usa a fatura da conferência (1ª tentativa); a 2ª tentativa ab
     assert.deepEqual(pedidos, [7777, null]);          // 1ª: fatura da conferência; 2ª: fatura nova
   } finally { _setInvoiceChecker(null); _setInvoicePayer(null); _setReceiptChecker(null); db.prepare('DELETE FROM stars_perdidas').run(); await adm('POST', '/api/admin/autopay', { mode: 0 }); }
 });
+
+test('bot do CF quieto antes de cobrar: só conta mensagem de processamento (não faturas nem as minhas)', async () => {
+  const { idadeBot } = await import('../tg-user.js');
+  const agora = 1_000_000;
+  const fatura = { out: false, date: agora - 1, media: { className: 'MessageMediaInvoice' } };
+  const textoFatura = { out: false, date: agora - 1, message: 'Battle Pass, +25 levels\nAccount: x\nInvoice for 499 ★ is below.' };
+  const minha = { out: true, date: agora, message: '/start' };
+  const done = { out: false, date: agora - 5, message: 'Done, payment went through' };
+  const recompensa = { out: false, date: agora - 3, message: 'Открылась ступень «700 ₽» — забери grand_case.' };
+  assert.equal(idadeBot([minha, fatura, textoFatura, recompensa, done], agora), 3);   // a recompensa de 3 s atrás
+  assert.equal(idadeBot([minha, fatura, textoFatura, done], agora), 5);
+  assert.equal(idadeBot([minha, fatura, textoFatura], agora), Infinity);              // só faturas: bot quieto
+});
+
+test('fatura com pelo menos 5 s antes de cobrar', async () => {
+  const { esperaFatura } = await import('../tg-user.js');
+  assert.equal(esperaFatura(1000, 1_000_000, 5), 5_000);   // acabou de chegar → espera 5 s
+  assert.equal(esperaFatura(1000, 1_003_000, 5), 2_000);   // chegou há 3 s → espera 2 s
+  assert.equal(esperaFatura(1000, 1_009_000, 5), 0);       // fatura da conferência, antiga → não espera
+  assert.equal(esperaFatura(undefined, 1_000_000, 5), 0);
+});
