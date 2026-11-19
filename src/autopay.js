@@ -174,7 +174,8 @@ async function provaHistorico(o, info = infoOf(o)) {
   const outros = db.prepare("SELECT * FROM orders WHERE id<>? AND autopay='sent' AND autopay_at BETWEEN ? AND ?")
     .all(o.id, info.envioEm * 1000, (ate + 30) * 1000).filter((x) => starsOf(x) === stars).length;
   const deste = achadas.length - outros;
-  if (deste === 1) return { cobrado: true, motivo: 'o histórico de Stars mostra 1 cobrança de ' + stars + '★', txId: achadas[0].id };
+  // a cobrança deste envio é a 1ª depois dele (as de outros pedidos vêm depois, a fila paga um de cada vez)
+  if (deste === 1) return { cobrado: true, motivo: 'o histórico de Stars mostra 1 cobrança de ' + stars + '★', txId: achadas.slice().sort((x, y) => x.date - y.date)[0].id };
   if (deste === 0 && !achadas.length && Date.now() / 1000 > ate) return { cobrado: false, motivo: 'o histórico de Stars não mostra cobrança' };
   return { cobrado: null, motivo: `o histórico mostra ${achadas.length} cobrança(s) de ${stars}★ na janela e ${outros} de outro(s) pedido(s)` };
 }
@@ -229,7 +230,7 @@ async function resolverIncerto(id) {
   const s = await provaCobranca(o, info);
   cur = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   if (cur.status !== 'paid' || cur.autopay !== 'incerto') return;
-  const tx = s.txId || info.txPerdida || null;
+  const tx = info.txPerdida || s.txId || null;   // o da hora do erro (dentro da fila) é o mais confiável
   const perda = s.cobrado === true ? `cobrou ${starsOf(o)}★ SEM entrega (${s.motivo}${tx ? '; transação ' + tx : ''})`
     : s.cobrado === false ? `não cobrou (${s.motivo})` : `cobrança não confirmada (${s.motivo})`;
   const novoInfo = { ...info, erro: `sem recibo: ${perda.slice(0, 200)}`, ...(s.cobrado === true ? { perdida: { stars: starsOf(o), tx, em: Date.now() } } : {}) };
@@ -256,7 +257,7 @@ async function resolverIncerto(id) {
     return;
   }
   // diagnóstico da 1ª tentativa (a 2ª grava os dela por cima): tempo de resposta, espera, classe/código do erro
-  const tentativa1 = Object.fromEntries(Object.entries({ fatura: info.invMsgId, erro: info.erro, envioEm: info.envioEm, envioMs: info.envioMs,
+  const tentativa1 = Object.fromEntries(Object.entries({ fatura: info.invMsgId, erro: info.erro, txPerdida: info.txPerdida, envioEm: info.envioEm, envioMs: info.envioMs,
     esperaMs: info.esperaMs, classe: info.classe, codigo: info.codigo }).filter(([, v]) => v != null));
   const r2 = await autopay(id, { via: 'auto', extra: { retry: 1, anterior: info.invMsgId, erro1: info.erro, tentativa1, ...(novoInfo.perdida ? { perdida: novoInfo.perdida } : {}) },
     nota: `🔁 1ª tentativa sem recibo ("${info.erro}"): ${perda}. Pago de novo com fatura nova.` });

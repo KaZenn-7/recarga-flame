@@ -787,13 +787,13 @@ test('cobrança perdida pelo histórico: ID da transação no aviso; outro pedid
     assert.equal(row(a).status, 'delivered'); assert.equal(i.perdida.tx, 'tx' + (envio + 5) + '-26');
     assert.ok(tgSent.slice(t0).some((m) => m.text.includes('Transação para disputa no @BotFather: tx' + (envio + 5) + '-26')));
 
-    // 2) 2 cobranças de 26★ na janela, 1 de outro pedido pago nesse meio tempo → a outra é deste
+    // 2) 2 cobranças de 26★ na janela, 1 de outro pedido pago DEPOIS (#323/#324, 18/11) → a deste é a 1ª depois do envio
     envio = agora() - 120; falhar = 1;
     const d = await novo('171714');
     await adm('POST', '/api/admin/orders/' + d + '/autopay');
     const outro = await novo('171719');
     db.prepare("UPDATE orders SET status='delivered', autopay='sent', autopay_at=? WHERE id=?").run((envio + 20) * 1000, outro);
-    tx = [cf(envio + 4), cf(envio + 20)];
+    tx = [cf(envio + 20), cf(envio + 4)];                          // histórico vem do mais novo para o mais antigo
     const p = await SRV.provaCobranca(row(d));
     assert.equal(p.cobrado, true); assert.equal(p.txId, 'tx' + (envio + 4) + '-26');
 
