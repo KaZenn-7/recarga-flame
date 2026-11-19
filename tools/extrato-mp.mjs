@@ -5,7 +5,7 @@
 //   node tools/extrato-mp.mjs --arquivo backups/extrato-mp/<arquivo>.csv   (analisa um já baixado)
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
-import { lerCsv, incomuns, textoMov, nomeMov, mpRelatorio, prontoDesde, guardar } from '../src/extrato-mp.js';
+import { lerCsv, incomuns, textoMov, nomeMov, mpRelatorio, nomes, prontoNovo, cobre, guardar } from '../src/extrato-mp.js';
 
 process.chdir(new URL('..', import.meta.url).pathname);
 const db = new Database(process.env.DB_PATH || 'loja.db', { readonly: true });
@@ -17,11 +17,16 @@ else {
   const dias = Number(process.argv[2]) || 7;
   const api = mpRelatorio(process.env.MP_ACCESS_TOKEN);
   const t0 = Date.now();
-  await api.pedir(Date.now() - dias * 86_400_000, Date.now());
+  const antes = nomes(await api.lista());
+  const de = Date.now() - dias * 86_400_000, ate = Date.now();
+  // já há relatório de hoje cobrindo esses dias? o MP não gera outro igual: usa esse
+  nome = cobre(await api.lista(), de, ate);
+  if (nome) console.log('já existe relatório de hoje para esse período:', nome);
+  else await api.pedir(de, ate);
   process.stdout.write(`pedindo o extrato de ${dias} dias ao Mercado Pago`);
-  while (!nome && Date.now() - t0 < 15 * 60_000) { await new Promise((r) => setTimeout(r, 15_000)); process.stdout.write('.'); nome = prontoDesde(await api.lista(), t0); }
+  while (!nome && Date.now() - t0 < 30 * 60_000) { await new Promise((r) => setTimeout(r, 15_000)); process.stdout.write('.'); nome = prontoNovo(await api.lista(), antes); }
   console.log('');
-  if (!nome) { console.error('não ficou pronto em 15 min — tente de novo mais tarde'); process.exit(1); }
+  if (!nome) { console.error('não ficou pronto em 30 min — tente de novo mais tarde'); process.exit(1); }
   txt = await api.baixar(nome);
   console.log('salvo em', guardar(nome, txt));
 }

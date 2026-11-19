@@ -71,10 +71,20 @@ export function mpRelatorio(token, fetchFn = fetch) {
     },
   };
 }
-// relatório pedido depois de `desdeMs` já pronto? → nome do arquivo
-export const prontoDesde = (lista, desdeMs) => (Array.isArray(lista) ? lista : [])
-  .filter((x) => x.file_name && (!x.status || x.status === 'enabled') && Date.parse(x.date_created || x.generation_date || 0) >= desdeMs - 60_000)
-  .sort((a, b) => Date.parse(b.date_created || 0) - Date.parse(a.date_created || 0))[0]?.file_name || null;
+// o relatório pedido já está pronto? → nome do arquivo novo (que não estava na lista antes de pedir). Não dá para usar a
+// data (o MP grava date_created com o fuso errado: hora UTC marcada como -04:00) nem o id (o que o MP devolve ao pedir
+// não é o mesmo da lista) — 19/11/2026.
+export const nomes = (lista) => new Set((Array.isArray(lista) ? lista : []).map((x) => x.file_name).filter(Boolean));
+// o MP não gera de novo um período (dia inteiro) que já tem relatório no mesmo dia: aceita o pedido e não cria arquivo.
+// Sem arquivo novo, vale o relatório pronto mais recente que cobre os dias pedidos.
+const dia = (d) => new Date(new Date(d).getTime() - 3 * 3600_000).toISOString().slice(0, 10);
+export const cobre = (lista, de, ate) => (Array.isArray(lista) ? lista : [])
+  .filter((x) => x.file_name && (!x.status || x.status === 'enabled') && x.begin_date && x.end_date
+    && dia(x.begin_date) <= dia(de) && dia(new Date(x.end_date).getTime() - 1000) >= dia(ate))
+  .sort((a, b) => String(b.file_name).localeCompare(String(a.file_name)))[0]?.file_name || null;
+export const prontoNovo = (lista, antes) => (Array.isArray(lista) ? lista : [])
+  .filter((x) => x.file_name && !antes.has(x.file_name) && (!x.status || x.status === 'enabled'))
+  .sort((a, b) => String(b.file_name).localeCompare(String(a.file_name)))[0]?.file_name || null;
 export function guardar(nome, txt, raiz = process.cwd()) {
   const dir = path.join(raiz, PASTA);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -88,14 +98,18 @@ export function initExtratoMp({ env, db, tgSend, getSetting, setSetting, fetchFn
   const api = mpRelatorio(env.MP_ACCESS_TOKEN, fetchFn);
   const hojeSP = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
   let rodando = null;
-  async function checar({ dias = 3, esperaMs = 20 * 60_000, passoMs = 60_000 } = {}) {
+  async function checar({ dias = 3, esperaMs = 30 * 60_000, passoMs = 60_000 } = {}) {
     const t0 = Date.now();
-    await api.pedir(Date.now() - dias * 86_400_000, Date.now());
-    let nome = null;
+    const antes = nomes(await api.lista());
+    const de = Date.now() - dias * 86_400_000, ate = Date.now();
+    await api.pedir(de, ate);
+    let nome = null, lista = [];
     while (!nome && Date.now() - t0 < esperaMs) {
       await new Promise((r) => setTimeout(r, passoMs));
-      nome = prontoDesde(await api.lista(), t0);
+      lista = await api.lista();
+      nome = prontoNovo(lista, antes);
     }
+    nome ||= cobre(lista, de, ate);
     if (!nome) throw new Error('o relatório não ficou pronto em ' + Math.round(esperaMs / 60_000) + ' min');
     const txt = await api.baixar(nome);
     guardar(nome, txt, raiz);
