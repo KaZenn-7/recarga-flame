@@ -72,3 +72,40 @@ test('extrato: sem arquivo novo (o MP não repete o mesmo período), usa o pront
   assert.equal(cobre(lista, ate - 9 * 86_400_000, ate), null);               // 10/11: nenhum cobre
   assert.equal(cobre(lista, ate - 3 * 86_400_000, ate + 86_400_000), null);  // amanhã ainda não tem
 });
+
+test('checagem diária sem bloquear: relatório que demora 2 h é baixado; falha de rede no meio só tenta de novo', async () => {
+  const db = banco();
+  const cfg = new Map();
+  const avisos = [];
+  let pedidos = 0, pronto = false, caiRede = false;
+  const fetchFn = async (url, o = {}) => {
+    if (o.method === 'POST') { pedidos++; return new Response('{"id":1}', { status: 202 }); }
+    if (url.endsWith('/list')) {
+      if (caiRede) throw new Error('fetch failed');
+      return new Response(JSON.stringify([{ file_name: 'velho.csv', status: 'enabled' }, ...(pronto ? [{ file_name: 'novo.csv', status: 'enabled' }] : [])]));
+    }
+    return new Response(CSV);
+  };
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-extrato-'));
+  const ex = initExtratoMp({ env: { MP_ACCESS_TOKEN: 't' }, db, tgSend: (t, a) => avisos.push([a, t]), getSetting: (k, d) => cfg.get(k) ?? d, setSetting: (k, v) => cfg.set(k, String(v)), fetchFn, raiz });
+  const h = (hm) => new Date(`2026-11-23T${hm}:00-03:00`);
+  try {
+    assert.equal(ex.extratoTick(h('08:00')), undefined);              // antes das 8h30: nada
+    await ex.extratoTick(h('08:30')); assert.equal(pedidos, 1);       // pede
+    assert.equal(ex.extratoTick(h('08:32')), undefined);              // < 5 min: não consulta
+    await ex.extratoTick(h('09:00'));                                 // ainda não ficou pronto
+    caiRede = true; await ex.extratoTick(h('09:30')); caiRede = false; // rede caiu: sem aviso, segue tentando
+    assert.equal(avisos.length, 0); assert.equal(cfg.get('extrato_dia'), undefined);
+    pronto = true; await ex.extratoTick(h('10:30'));                  // pronto 2 h depois: baixa e avisa
+    assert.equal(pedidos, 1, 'não pede de novo');
+    assert.equal(avisos.filter((a) => a[0] === 'alertas').length, 2);
+    assert.equal(cfg.get('extrato_dia'), '2026-11-23');
+    assert.equal(ex.extratoTick(h('11:00')), undefined);              // dia feito
+    // outro dia, nunca fica pronto: desiste em 8 h e avisa no Sistema
+    pronto = false;
+    await ex.extratoTick(new Date('2026-11-24T08:30:00-03:00'));
+    await ex.extratoTick(new Date('2026-11-24T16:31:00-03:00'));
+    assert.match(avisos.at(-1)[1], /não ficou pronto em 8 h/); assert.equal(avisos.at(-1)[0], 'sistema');
+    assert.equal(cfg.get('extrato_dia'), '2026-11-24');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});

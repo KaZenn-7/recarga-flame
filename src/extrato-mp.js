@@ -94,9 +94,12 @@ export function guardar(nome, txt, raiz = process.cwd()) {
 }
 
 // ---- checagem diária: às 8h30 pede o extrato dos últimos 3 dias e avisa no tópico Alertas o que fugir da rotina ----
+// O MP leva de 3 min a ~2h30 para gerar (20–23/11/2026 passou de 30 min e a checagem desistia). Por isso o tick não
+// espera: pede, guarda o pedido em settings (extrato_pedido, sobrevive a restart) e consulta a lista a cada 5 min por até 8 h.
+export const PASSO_MS = 5 * 60_000, DESISTE_MS = 8 * 3600_000;
 export function initExtratoMp({ env, db, tgSend, getSetting, setSetting, fetchFn = fetch, raiz = process.cwd() }) {
   const api = mpRelatorio(env.MP_ACCESS_TOKEN, fetchFn);
-  const hojeSP = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const hojeSP = (agora = Date.now()) => new Date(agora - 3 * 3600_000).toISOString().slice(0, 10);
   let rodando = null;
   async function checar({ dias = 3, esperaMs = 30 * 60_000, passoMs = 60_000 } = {}) {
     const t0 = Date.now();
@@ -111,6 +114,9 @@ export function initExtratoMp({ env, db, tgSend, getSetting, setSetting, fetchFn
     }
     nome ||= cobre(lista, de, ate);
     if (!nome) throw new Error('o relatório não ficou pronto em ' + Math.round(esperaMs / 60_000) + ' min');
+    return processar(nome);
+  }
+  async function processar(nome) {
     const txt = await api.baixar(nome);
     guardar(nome, txt, raiz);
     const vistos = new Set(JSON.parse(getSetting('extrato_vistos', '[]')));
@@ -122,13 +128,40 @@ export function initExtratoMp({ env, db, tgSend, getSetting, setSetting, fetchFn
     setSetting('extrato_vistos', JSON.stringify([...vistos].slice(-500)));
     return { arquivo: nome, novos: novos.length };
   }
+  // 1 passo por chamada (o servidor chama a cada minuto): pedir → consultar a cada 5 min → baixar e avisar → dia feito
   function extratoTick(agora = new Date()) {
-    const sp = new Date(agora.getTime() - 3 * 3600_000);
+    const t = agora.getTime(), hoje = hojeSP(t);
+    const sp = new Date(t - 3 * 3600_000);
     if (sp.getUTCHours() * 60 + sp.getUTCMinutes() < 8 * 60 + 30) return;
-    if (getSetting('extrato_dia', '') === hojeSP() || rodando) return;
-    setSetting('extrato_dia', hojeSP());
-    rodando = checar().catch((e) => { console.error('extrato MP:', e.message); tgSend(`⚠️ Não consegui ler o extrato do Mercado Pago hoje: ${String(e.message).slice(0, 120)}`, 'sistema'); })
-      .finally(() => { rodando = null; });
+    if (getSetting('extrato_dia', '') === hoje || rodando) return;
+    let p = null;
+    try { p = JSON.parse(getSetting('extrato_pedido', 'null')); } catch { /* pedido corrompido: pede de novo */ }
+    const falhou = (e) => { console.error('extrato MP:', e.message); tgSend(`⚠️ Não consegui ler o extrato do Mercado Pago hoje: ${String(e.message).slice(0, 120)}`, 'sistema'); };
+    const fim = () => { setSetting('extrato_dia', hoje); setSetting('extrato_pedido', 'null'); };
+    if (!p || p.dia !== hoje) {
+      // pede (falhou ao pedir: avisa e tenta de novo amanhã)
+      rodando = (async () => {
+        const antes = [...nomes(await api.lista())];
+        const de = t - 3 * 86_400_000;
+        await api.pedir(de, t);
+        setSetting('extrato_pedido', JSON.stringify({ dia: hoje, em: t, de, ate: t, antes, consulta: t }));
+      })().catch((e) => { fim(); falhou(e); }).finally(() => { rodando = null; });
+      return rodando;
+    }
+    if (t - p.consulta < PASSO_MS) return;
+    rodando = (async () => {
+      const lista = await api.lista();
+      const nome = prontoNovo(lista, new Set(p.antes)) || cobre(lista, p.de, p.ate);
+      if (nome) { await processar(nome); fim(); return; }
+      if (t - p.em >= DESISTE_MS) { fim(); throw new Error(`o relatório não ficou pronto em ${DESISTE_MS / 3600_000} h`); }
+      setSetting('extrato_pedido', JSON.stringify({ ...p, consulta: t }));
+    })().catch((e) => {
+      // falha de rede numa consulta: tenta de novo no próximo passo; só desiste (e avisa) depois do prazo
+      if (getSetting('extrato_dia', '') === hoje) return falhou(e);
+      setSetting('extrato_pedido', JSON.stringify({ ...p, consulta: t }));
+      if (t - p.em >= DESISTE_MS) { fim(); falhou(e); } else console.error('extrato MP (tenta de novo em 5 min):', e.message);
+    }).finally(() => { rodando = null; });
+    return rodando;
   }
   return { checarExtrato: checar, extratoTick };
 }
