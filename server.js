@@ -133,7 +133,11 @@ const safeEq = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
 const SITE_URL = 'https://recargaflame.com.br';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const validId = (id) => /^\d{1,12}$/.test(id);
-const limit = (max) => rateLimit({ windowMs: 60_000, limit: max, standardHeaders: true, legacyHeaders: false });
+// Limites por IP para visitantes. O painel logado fica de fora: a lista de pedidos puxa um avatar por pedido e, ao
+// rolar/atualizar, passava de 30 avatares e 120 /api por minuto → 429 (fotos sumindo, abas com "Erro na operação"; 24/11).
+let painelLogado = () => false; // ligado depois do login (sessionOk)
+const limit = (max) => rateLimit({ windowMs: 60_000, limit: max, standardHeaders: true, legacyHeaders: false,
+  skip: (req) => painelLogado(req), message: { error: 'Muitas requisições. Aguarde um minuto e tente de novo.' } });
 const mpHeaders = { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` };
 
 // Conta no CounterFlame. 404 e 400 (ID que o jogo não aceita) = conta não encontrada (null), sem erro no log.
@@ -303,7 +307,8 @@ function entregaState(o) {
 }
 
 // ---- Login do painel (senha + código pelo Telegram, sessão, anti-brute-force, middleware admin): src/login.js ----
-const { admin, getCookie, adminFails, challenges, rotasLogin } = initLogin({ env, db, safeEq, limit, guard });
+const { admin, sessionOk, getCookie, adminFails, challenges, rotasLogin } = initLogin({ env, db, safeEq, limit, guard });
+painelLogado = (req) => !!sessionOk(req);
 
 // ---- E-mail ao cliente (Resend; e-mail de pedido entregue): src/email.js ----
 const { sendMail, deliveredEmail, carrinhoEntregueEmail } = initEmail({ env, PRODUCTS, esc });
@@ -432,7 +437,8 @@ app.get('/api/player/:id', limit(15), async (req, res) => {
 const AVATAR_PADRAO = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#1c1c1f"/>'
   + '<circle cx="32" cy="25" r="11" fill="#45454c"/><path d="M12 56c2-11 10-17 20-17s18 6 20 17" fill="#45454c"/></svg>');
 const semAvatar = new Map(); // id → expira (ms)
-const avatarPadrao = (res) => res.set({ 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=21600' }).send(AVATAR_PADRAO);
+// cache de 6 h só quando a conta não tem foto (404); se o CounterFlame falhou/demorou, não guarda (tenta de novo depois)
+const avatarPadrao = (res, guardar = true) => res.set({ 'Content-Type': 'image/svg+xml', 'Cache-Control': guardar ? 'public, max-age=21600' : 'no-store' }).send(AVATAR_PADRAO);
 app.get('/api/player/:id/avatar', limit(30), async (req, res) => {
   const id = req.params.id;
   if (!validId(id)) return res.sendStatus(400);
@@ -441,13 +447,13 @@ app.get('/api/player/:id/avatar', limit(30), async (req, res) => {
     const r = await fetch(`${CF_BASE}/api/users/${id}/avatar`, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) {
       if (r.status === 404) { if (semAvatar.size > 5000) semAvatar.clear(); semAvatar.set(id, Date.now() + 6 * 3600_000); }
-      return avatarPadrao(res);
+      return avatarPadrao(res, r.status === 404);
     }
     const buf = Buffer.from(await r.arrayBuffer());
     res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
     res.set('Cache-Control', 'public, max-age=3600');
     res.send(buf);
-  } catch { avatarPadrao(res); }
+  } catch { avatarPadrao(res, false); }
 });
 
 // ---- Checkout (pedido + Pix, status, cancelar, webhook do MP, lembretes/expiração do Pix): src/checkout.js ----

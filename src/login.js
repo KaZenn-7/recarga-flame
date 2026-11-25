@@ -173,5 +173,5 @@ function admin(req, res, next) {
   });
   }
 
-  return { admin, getCookie, adminFails, challenges, rotasLogin };
+  return { admin, sessionOk, getCookie, adminFails, challenges, rotasLogin };
 }

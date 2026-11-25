@@ -167,3 +167,17 @@ test('sessões ativas: lista com aparelho, encerra outra (cookie dela para de va
   const fim = await (await fetch(base + '/api/admin/sessoes', { headers: A })).json();
   assert.equal(fim.length, 1); assert.ok(fim[0].atual);
 });
+
+test('limite por IP: painel logado não toma 429 (avatares + abas); visitante continua limitado, com erro em JSON', async () => {
+  const ip = freshIP(), ip2 = freshIP();
+  for (let i = 0; i < 130; i++) {
+    const r = await fetch(base + '/api/player/123/avatar', { headers: { ...ip, Cookie: COOKIE } });
+    assert.notEqual(r.status, 429, 'avatar no painel logado não pode bater no limite (pedido ' + i + ')');
+  }
+  const ord = await fetch(base + '/api/admin/orders', { headers: { ...ip, Cookie: COOKIE, 'x-painel': '1' } });
+  assert.equal(ord.status, 200);
+  let r;
+  for (let i = 0; i < 31; i++) r = await fetch(base + '/api/player/123/avatar', { headers: ip2 });
+  assert.equal(r.status, 429, 'visitante: 31º avatar no minuto → 429');
+  assert.match((await r.json()).error, /Aguarde um minuto/);
+});
