@@ -10,6 +10,7 @@ const ACTS={
     api('/api/admin/perdas/'+t.dataset.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({estornada:v})}).then(loadAna).catch(function(e){alert(e.message);});},
   perdaTx:t=>{navigator.clipboard.writeText(t.dataset.tx).then(function(){t.textContent='copiado ✓';},function(){prompt('ID da transação:',t.dataset.tx);});},
   openSess:()=>openSess(), closeSess:()=>$$('sessmodal').classList.remove('on'),
+  toggleMnt:()=>toggleMnt(),
   endSess:t=>endSess({id:t.dataset.id}), endOutras:()=>{if(confirm('Encerrar todas as outras sessões? Os outros aparelhos vão precisar entrar de novo.'))endSess({outras:true});},
   setView:t=>setView(t.dataset.v), closeStars:()=>closeStars(), closeBack:()=>closeBack(), yesBack:()=>yesBack(),
   openCup:()=>openCup(), irParaFaixas:()=>irParaFaixas(), closeCup:()=>closeCup(), saveCup:()=>saveCup(),
@@ -1055,4 +1056,22 @@ $$('smodal').onclick=function(e){if(e.target.id==='smodal')closeStars();};
 document.addEventListener('keydown',function(e){if(e.key!=='Escape')return;const m=document.querySelector('.modal.on');if(m)m.classList.remove('on');});
 $$('sessmodal').onclick=function(e){if(e.target.id==='sessmodal')$$('sessmodal').classList.remove('on');};
 loadStars();
+/* ---- modo manutenção: botão 🛠 no topo + faixa vermelha enquanto ligado ---- */
+let MNT=null;
+function showMnt(){
+  const b=$$('mntBtn'),bar=$$('mntBar');if(!MNT)return;
+  b.classList.toggle('mnt',MNT.on);b.title=MNT.on?'Manutenção LIGADA (toque para desligar)':'Modo manutenção';
+  bar.style.display=MNT.on?'':'none';
+  if(MNT.on)bar.textContent='🛠 Loja em MANUTENÇÃO'+(MNT.desde?' desde '+new Date(MNT.desde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+': clientes veem a página de manutenção e não fazem pedido novo. Você (logado) vê a loja normal. Toque em 🛠 para desligar.';
+}
+async function loadMnt(){try{MNT=await api('/api/admin/manutencao');showMnt();}catch{/* tenta de novo no próximo ciclo */}}
+async function toggleMnt(){
+  if(!MNT)await loadMnt();
+  if(!MNT)return;
+  const on=!MNT.on;
+  if(on&&!confirm('Ligar o MODO MANUTENÇÃO?\n\nOs clientes vão ver a página "Estamos em manutenção, voltamos em breve" e não vão conseguir fazer pedidos novos.\n\nPix já gerado, entregas e o painel continuam funcionando.'))return;
+  if(!on&&!confirm('Desligar a manutenção e reabrir a loja?'))return;
+  try{MNT=await api('/api/admin/manutencao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on})});showMnt();}catch(e){alert(e.message);}
+}
+loadMnt();setInterval(function(){if(!document.hidden)loadMnt();},60000);
 

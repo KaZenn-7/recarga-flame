@@ -12,6 +12,7 @@ import { initLogin } from './src/login.js';
 import { initEmail } from './src/email.js';
 import { painelHtml } from './views/painel.js';
 import { LOGIN_HTML } from './views/login.js';
+import { MANUTENCAO_HTML } from './views/manutencao.js';
 import { homeHtml, pageHtml } from './seo-home.js';
 import { initParceiros } from './src/parceiros.js';
 import { tgApi, tgSend, hhmmSP, initAvisos, orderDest, POLL } from './src/telegram.js';
@@ -340,6 +341,7 @@ function scriptHashes(html) {
 let CSP_HASHES = [...new Set(CSP_PAGINAS.flatMap((f) => scriptHashes(fs.readFileSync(f, 'utf8'))))];
 const addCspHtml = (html) => { CSP_HASHES = [...new Set([...CSP_HASHES, ...scriptHashes(html)])]; };
 addCspHtml(LOGIN_HTML); // página de login (views/login.js)
+addCspHtml(MANUTENCAO_HTML); // página de manutenção (views/manutencao.js)
 const cspLoja = () => `default-src 'self'; script-src 'self' ${CSP_HASHES.join(' ')}; style-src 'self' 'unsafe-inline'; `
   + "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 app.use((req, res, next) => {
@@ -362,6 +364,20 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '10kb' }));
+// Modo manutenção (painel → 🛠): a vitrine e as páginas da loja mostram a página de manutenção (503 + Retry-After: o
+// Google entende como parada temporária) e pedido/carrinho novo é recusado. Continuam funcionando: Pix já gerado,
+// webhook do MP, entregas, status do pedido, suporte, parceiros, painel e login. O operador logado vê a loja normal.
+const emManutencao = () => getSetting('manutencao', '') === '1';
+const LIVRE_MNT = /^\/(api\/|webhook\/|painel|login|logout|img\/|favicon|robots\.txt|sitemap\.xml|suporte|parceiro\/|termos-de-uso|politica-de-privacidade)/;
+app.use((req, res, next) => {
+  if (!emManutencao() || painelLogado(req)) return next();
+  if (req.method === 'POST' && /^\/api\/(orders|carrinho)\/?$/.test(req.path)) {
+    return res.status(503).set('Retry-After', '3600').json({ error: 'A loja está em manutenção. Voltamos em breve! Se você já pagou um pedido, ele será entregue.' });
+  }
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || LIVRE_MNT.test(req.path)) return next();
+  if (path.extname(req.path) && !req.path.endsWith('.html')) return next(); // css, js, imagens, manifest…
+  res.status(503).set({ 'Retry-After': '3600', 'Cache-Control': 'no-store' }).type('html').send(MANUTENCAO_HTML);
+});
 // Prévia do link (WhatsApp/Telegram) personalizada no link de cupom: /?cupom=AQUILA (o /aquila redireciona para cá).
 const INDEX_HTML = fs.readFileSync(path.join('public', 'index.html'), 'utf8');
 // Home sempre renderizada aqui: vitrine de preços e dados estruturados vêm dos produtos ativos (seo-home.js).
@@ -724,6 +740,17 @@ app.post('/api/admin/autopay/limites', admin, (req, res) => {
   if (!Number.isInteger(dia) || dia < max || dia > 1_000_000) return res.status(400).json({ error: 'Máximo em 24h: precisa ser pelo menos o máximo por pedido (até 1.000.000★).' });
   setSetting('autopay_max', max); setSetting('autopay_day', dia);
   res.json({ ok: true, max, dia });
+});
+app.get('/api/admin/manutencao', admin, (req, res) => res.json({ on: emManutencao(), desde: Number(getSetting('manutencao_desde', 0)) || null }));
+app.post('/api/admin/manutencao', admin, (req, res) => {
+  if (!guard(req, res)) return;
+  const on = req.body?.on === true;
+  if (on === emManutencao()) return res.json({ on, desde: Number(getSetting('manutencao_desde', 0)) || null });
+  setSetting('manutencao', on ? '1' : '');
+  setSetting('manutencao_desde', on ? Date.now() : '');
+  tgSend(on ? '🛠️ Modo MANUTENÇÃO ligado pelo painel: a loja mostra a página de manutenção e não aceita pedido novo. Pix já gerado, entregas e o painel seguem funcionando.'
+    : '✅ Modo manutenção desligado: a loja voltou ao normal.', 'sistema').catch(() => {});
+  res.json({ on, desde: on ? Date.now() : null });
 });
 app.post('/api/admin/autopay', admin, (req, res) => {
   if (!guard(req, res)) return;

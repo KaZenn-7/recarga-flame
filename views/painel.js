@@ -103,6 +103,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 @media(max-width:400px){#htitle{display:none}}
 @media(max-width:480px){.prow.cup{flex-wrap:wrap}.prow.cup .pi{flex:1 1 100%}.prow.cup .rt{flex:1;flex-direction:row;align-items:center;justify-content:space-between}.prow.cup .ops button{white-space:nowrap;padding:7px 9px}}
 .sbar{margin:10px 14px 0;padding:10px 12px;border-radius:9px;background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.4);font-size:13px;display:flex;align-items:center;gap:10px}
+.mntbar{background:rgba(248,81,73,.14);border-color:rgba(248,81,73,.5);color:#ffb4ae;font-weight:600}.htop .rf.mnt{color:#fff;background:#b62324;border-color:#f85149}
 .sbar span{flex:1}.sbar button{border:0;border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;background:var(--gold);color:#160a04;cursor:pointer}
 .nost{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(227,179,65,.18);color:var(--gold);vertical-align:1px}
 .serr{color:var(--red)}
@@ -223,7 +224,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
 }
 </style></head><body>
 <header>
-  <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" data-act="openStars" title="Saldo de Stars">★ …</button><button class="rf" id="rfBtn" style="margin-left:6px" data-act="refreshView">Atualizar</button><button class="rf" style="margin-left:6px" data-act="openSess" title="Sessões ativas" aria-label="Sessões ativas">🔒</button><button class="rf" style="margin-left:6px" data-act="logout">Sair</button></div>
+  <div class="htop"><img class="mark" src="/img/brand-mark.png" alt="" width="26" height="26"><b id="htitle">Painel</b><button class="rf st" id="stBtn" data-act="openStars" title="Saldo de Stars">★ …</button><button class="rf" id="mntBtn" style="margin-left:6px" data-act="toggleMnt" title="Modo manutenção" aria-label="Modo manutenção">🛠</button><button class="rf" id="rfBtn" style="margin-left:6px" data-act="refreshView">Atualizar</button><button class="rf" style="margin-left:6px" data-act="openSess" title="Sessões ativas" aria-label="Sessões ativas">🔒</button><button class="rf" style="margin-left:6px" data-act="logout">Sair</button></div>
   <div class="nav">
     <button id="navPed" class="on" data-act="setView" data-v="pedidos">Pedidos</button>
     <button id="navProd" data-act="setView" data-v="produtos">Produtos</button>
@@ -237,6 +238,7 @@ main{max-width:620px;margin:0 auto;padding:6px 16px 48px}
   </div>
   <div id="hdrCup" style="display:none"><div class="tabs" id="cupTabs"></div></div>
 </header>
+<div id="mntBar" class="sbar mntbar" role="status" style="display:none"></div>
 <div id="sbarBox"></div>
 <main id="viewPed"></main>
 <div class="modal" id="smodal">

@@ -181,3 +181,44 @@ test('limite por IP: painel logado não toma 429 (avatares + abas); visitante co
   assert.equal(r.status, 429, 'visitante: 31º avatar no minuto → 429');
   assert.match((await r.json()).error, /Aguarde um minuto/);
 });
+
+test('modo manutenção: painel liga/desliga; cliente vê a página (503) e não faz pedido; status, webhook, suporte e painel seguem', async () => {
+  const sem = (u, o = {}) => fetch(base + u, { ...o, headers: { ...freshIP(), ...(o.headers || {}) } });
+  const ped = await (await postJ('/api/orders', { product: 'c1000', gameId: '123456', email: 'mnt@x.com' })).json();
+  assert.ok(ped.token, 'pedido criado antes da manutenção');
+  assert.equal((await (await adm('GET', '/api/admin/manutencao')).json()).on, false);
+  assert.equal((await fetch(base + '/api/admin/manutencao', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: COOKIE }, body: '{"on":true}' })).status, 403, 'sem x-painel/origem: recusa');
+  const tg0 = tgSent.length;
+  const on = await (await adm('POST', '/api/admin/manutencao', { on: true })).json();
+  assert.equal(on.on, true); assert.ok(on.desde);
+  assert.match(tgSent.slice(tg0).map((m) => m.text).join('\n'), /MANUTENÇÃO ligado/);
+  try {
+    for (const u of ['/', '/index.html', '/comprar-coins-counterflame', '/como-funciona', '/aquila']) {
+      const r = await sem(u);
+      assert.equal(r.status, 503, u); assert.equal(r.headers.get('retry-after'), '3600');
+      assert.match(await r.text(), /Estamos em manutenção[\s\S]*todo pedido pago será entregue/, u);
+    }
+    const novo = await postJ('/api/orders', { product: 'c1000', gameId: '123456', email: 'mnt@x.com' });
+    assert.equal(novo.status, 503); assert.match((await novo.json()).error, /manutenção/);
+    assert.equal((await postJ('/api/carrinho', { itens: ['c1000'], gameId: '123456', email: 'mnt@x.com' })).status, 503);
+    assert.equal((await sem('/api/orders/' + ped.token)).status, 200, 'status do pedido continua');
+    assert.equal((await sem('/api/products')).status, 200);
+    assert.equal((await sem('/suporte')).status, 200);
+    assert.equal((await sem('/img/brand-mark.png')).status, 200);
+    assert.equal((await sem('/login')).status, 200);
+    assert.notEqual((await sem('/webhook/mercadopago', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 503);
+    // operador logado vê a loja normal
+    const home = await sem('/', { headers: { Cookie: COOKIE } });
+    assert.equal(home.status, 200); assert.doesNotMatch(await home.text(), /Estamos em manutenção/);
+    // CSP libera o script da página de manutenção
+    const r = await sem('/');
+    const h = r.headers.get('content-security-policy'), html = await r.text();
+    const crypto = await import('node:crypto');
+    const js = /<script>([\s\S]*?)<\/script>/.exec(html)[1];
+    assert.ok(h.includes(`'sha256-${crypto.createHash('sha256').update(js).digest('base64')}'`), 'hash do script na CSP');
+  } finally {
+    const off = await (await adm('POST', '/api/admin/manutencao', { on: false })).json();
+    assert.equal(off.on, false);
+  }
+  assert.equal((await sem('/')).status, 200, 'desligado: loja normal');
+});
