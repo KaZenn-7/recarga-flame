@@ -312,7 +312,7 @@ const { admin, sessionOk, getCookie, adminFails, challenges, rotasLogin } = init
 painelLogado = (req) => !!sessionOk(req);
 
 // ---- E-mail ao cliente (Resend; e-mail de pedido entregue): src/email.js ----
-const { sendMail, deliveredEmail, carrinhoEntregueEmail } = initEmail({ env, PRODUCTS, esc });
+const { sendMail, deliveredEmail, carrinhoEntregueEmail, voltouEmail } = initEmail({ env, PRODUCTS, esc });
 // Carrinho: um e-mail só, quando nenhum item está mais pendente/pago (todos entregues, ou parte entregue e o resto
 // cancelado/devolvido). Chamado na entrega, no reembolso e na varredura de 5 min; a marca no carrinho garante 1 envio.
 function emailCarrinho(cid) {
@@ -741,16 +741,51 @@ app.post('/api/admin/autopay/limites', admin, (req, res) => {
   setSetting('autopay_max', max); setSetting('autopay_day', dia);
   res.json({ ok: true, max, dia });
 });
-app.get('/api/admin/manutencao', admin, (req, res) => res.json({ on: emManutencao(), desde: Number(getSetting('manutencao_desde', 0)) || null }));
+// "Me avise quando voltar" (página de manutenção): guarda o e-mail só enquanto a loja está em manutenção; ao desligar,
+// manda 1 aviso para cada um (com intervalo, limite do Resend) e apaga o e-mail. Falhou 3 vezes → apaga sem enviar.
+const AVISO_MAX = 5000, AVISO_INTERVALO_MS = env.NODE_ENV === 'test' ? 0 : 600;
+const nAvisos = () => db.prepare('SELECT COUNT(*) n FROM aviso_volta').get().n;
+app.post('/api/avisar-volta', limit(5), (req, res) => {
+  if (!emManutencao()) return res.status(409).json({ error: 'A loja já está funcionando! Atualize a página.' });
+  const email = String(req.body?.email ?? '').trim();
+  if (email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'E-mail inválido.' });
+  if (nAvisos() >= AVISO_MAX) return res.status(503).json({ error: 'Lista cheia no momento. Tente de novo mais tarde.' });
+  db.prepare('INSERT OR IGNORE INTO aviso_volta (email) VALUES (?)').run(email);
+  res.json({ ok: true });
+});
+let avisando = null;
+function avisarVolta() {
+  if (avisando || emManutencao()) return avisando;
+  avisando = (async () => {
+    let ok = 0, pulados = 0, desistiu = 0;
+    for (;;) {
+      if (emManutencao()) break; // religou a manutenção no meio: para (o resto sai no próximo desligar)
+      const r = db.prepare('SELECT email, tentativas FROM aviso_volta ORDER BY created_at, email LIMIT 1 OFFSET ?').get(pulados);
+      if (!r) break;
+      const m = voltouEmail();
+      if (await sendMail(r.email, m.subject, m.html, m.text)) { db.prepare('DELETE FROM aviso_volta WHERE email=?').run(r.email); ok++; }
+      else if (r.tentativas >= 2) { db.prepare('DELETE FROM aviso_volta WHERE email=?').run(r.email); desistiu++; } // 3ª falha: apaga
+      else { db.prepare('UPDATE aviso_volta SET tentativas=tentativas+1 WHERE email=?').run(r.email); pulados++; } // tenta no próximo reinício
+      if (AVISO_INTERVALO_MS) await new Promise((s) => setTimeout(s, AVISO_INTERVALO_MS));
+    }
+    const falha = pulados + desistiu;
+    if (ok || falha) tgSend(`📩 Aviso "a loja voltou": ${ok} e-mail${ok === 1 ? '' : 's'} enviado${ok === 1 ? '' : 's'}${falha ? `; ${falha} falharam${pulados ? ` (${pulados} tentam de novo no próximo reinício)` : ''}` : ''}.`, 'sistema').catch(() => {});
+    return { ok, pulados, desistiu };
+  })().finally(() => { avisando = null; });
+  return avisando;
+}
+app.get('/api/admin/manutencao', admin, (req, res) => res.json({ on: emManutencao(), desde: Number(getSetting('manutencao_desde', 0)) || null, avisos: nAvisos() }));
 app.post('/api/admin/manutencao', admin, (req, res) => {
   if (!guard(req, res)) return;
   const on = req.body?.on === true;
-  if (on === emManutencao()) return res.json({ on, desde: Number(getSetting('manutencao_desde', 0)) || null });
+  if (on === emManutencao()) return res.json({ on, desde: Number(getSetting('manutencao_desde', 0)) || null, avisos: nAvisos() });
   setSetting('manutencao', on ? '1' : '');
   setSetting('manutencao_desde', on ? Date.now() : '');
+  const n = nAvisos();
   tgSend(on ? '🛠️ Modo MANUTENÇÃO ligado pelo painel: a loja mostra a página de manutenção e não aceita pedido novo. Pix já gerado, entregas e o painel seguem funcionando.'
-    : '✅ Modo manutenção desligado: a loja voltou ao normal.', 'sistema').catch(() => {});
-  res.json({ on, desde: on ? Date.now() : null });
+    : `✅ Modo manutenção desligado: a loja voltou ao normal.${n ? ` Avisando ${n} pessoa${n === 1 ? '' : 's'} por e-mail.` : ''}`, 'sistema').catch(() => {});
+  if (!on) avisarVolta();
+  res.json({ on, desde: on ? Date.now() : null, avisos: n });
 });
 app.post('/api/admin/autopay', admin, (req, res) => {
   if (!guard(req, res)) return;
@@ -1167,8 +1202,9 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(() => { try { freezeTick(); fechamentoTick(); lembreteDadosTick(); } catch (e) { console.error('fechamento', e.message); } }, 60_000);
   setInterval(() => { try { fiscalTick(); } catch (e) { console.error('fiscal', e.message); } }, 60_000); // dia 1º: relatório fiscal do mês anterior
   setInterval(() => { try { extratoTick(); } catch (e) { console.error('extrato MP', e.message); } }, 60_000); // 8h30: movimentos fora da rotina no MP
+  setTimeout(() => { if (!emManutencao() && nAvisos()) avisarVolta(); }, 30_000).unref(); // reinício no meio do envio: retoma
 }
 
 refreshStarCost(false); // custo por Star a partir das recargas (depois de tudo declarado)
 
-export { checarExtrato, extratoTick, fiscalTick, _setCotacao, _setContaReader, _setBotMsgReader, _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, pausado, resolverIncerto, conferirAtraso, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };
+export { avisarVolta, checarExtrato, extratoTick, fiscalTick, _setCotacao, _setContaReader, _setBotMsgReader, _setStarsTxReader, _setPlayerTtl, registrarDeploy, saude, lembreteDadosMsg, lembreteDadosTick, vigiaPagamentos, erroNaoTratado, gracefulStop, _resetStopping, app, db, makePartnerCtx, freezeClosedMonths, fechamentoMsg, fechamentoTick, primeiroDiaUtil, enviarExtratos, extratoEmail, _setRefundCaller, reembolsar, remindPending, starsForecast, riskOf, RISK, refreshStarCost, handleTgUpdate, entregaState, dailySummary, summaryTick, _setReceiptChecker, _setStarsReader, _setInvoiceChecker, _setInvoicePayer, conferir, autopay, pausado, resolverIncerto, conferirAtraso, provaCobranca, syncStarsReal, loadProducts, PRODUCTS, adminFails, challenges, expirePending, deliveredEmail, sendMail, floorCents, profitCents };

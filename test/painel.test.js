@@ -1,7 +1,7 @@
 // Painel: login com código pelo Telegram, sessão, produtos (CRUD e validações) e rate limit do admin.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setupStore, mock, tgSent, lastCode, base, adminFails, db, COOKIE, login, freshIP, postJ, adm, pagar } from './helpers.js';
+import { setupStore, ateQue, mock, tgSent, mailSent, lastCode, base, adminFails, db, SRV, COOKIE, login, freshIP, postJ, adm, pagar } from './helpers.js';
 
 setupStore();
 
@@ -221,4 +221,31 @@ test('modo manutenção: painel liga/desliga; cliente vê a página (503) e não
     assert.equal(off.on, false);
   }
   assert.equal((await sem('/')).status, 200, 'desligado: loja normal');
+});
+
+test('manutenção: "me avise quando voltar" guarda o e-mail, avisa 1x ao desligar e apaga; falha tenta de novo e desiste na 3ª', async () => {
+  const av = (email) => postJ('/api/avisar-volta', { email });
+  assert.equal((await av('a@x.com')).status, 409, 'loja aberta: não guarda');
+  await adm('POST', '/api/admin/manutencao', { on: true });
+  try {
+    assert.equal((await av('não-é-email')).status, 400);
+    for (const e of ['volta1@x.com', 'VOLTA1@x.com', 'volta2@x.com', 'falha@x.com']) assert.equal((await av(e)).status, 200, e);
+    assert.equal((await (await adm('GET', '/api/admin/manutencao')).json()).avisos, 3, 'mesmo e-mail (maiúsculas) conta 1x');
+    const pg = await (await fetch(base + '/', { headers: freshIP() })).text();
+    assert.match(pg, /Quer saber quando voltarmos\?[\s\S]*id="avf"/);
+  } finally {
+    mock.mailFail.add('falha@x.com');
+    const m0 = mailSent.length, t0 = tgSent.length;
+    const off = await (await adm('POST', '/api/admin/manutencao', { on: false })).json();
+    assert.equal(off.avisos, 3);
+    await ateQue(() => tgSent.slice(t0).some((m) => /📩/.test(m.text))); // espera o envio que o desligar disparou
+    const envio = mailSent.slice(m0);
+    assert.deepEqual(envio.map((m) => m.to[0]).sort(), ['volta1@x.com', 'volta2@x.com']);
+    assert.match(envio[0].subject, /voltou/); assert.match(envio[0].text, /aviso único/);
+    assert.match(tgSent.slice(t0).map((m) => m.text).join('\n'), /2 e-mails enviados; 1 falharam \(1 tentam de novo/);
+    assert.deepEqual(db.prepare('SELECT email, tentativas FROM aviso_volta').all(), [{ email: 'falha@x.com', tentativas: 1 }]);
+    await SRV.avisarVolta(); await SRV.avisarVolta();   // 2ª e 3ª falha: desiste e apaga
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM aviso_volta').get().n, 0, 'nenhum e-mail fica guardado');
+    mock.mailFail.clear();
+  }
 });

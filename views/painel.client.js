@@ -1062,7 +1062,8 @@ function showMnt(){
   const b=$$('mntBtn'),bar=$$('mntBar');if(!MNT)return;
   b.classList.toggle('mnt',MNT.on);b.title=MNT.on?'Manutenção LIGADA (toque para desligar)':'Modo manutenção';
   bar.style.display=MNT.on?'':'none';
-  if(MNT.on)bar.textContent='🛠 Loja em MANUTENÇÃO'+(MNT.desde?' desde '+new Date(MNT.desde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+': clientes veem a página de manutenção e não fazem pedido novo. Você (logado) vê a loja normal. Toque em 🛠 para desligar.';
+  if(MNT.on)bar.textContent='🛠 Loja em MANUTENÇÃO'+(MNT.desde?' desde '+new Date(MNT.desde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+': clientes veem a página de manutenção e não fazem pedido novo. Você (logado) vê a loja normal. Toque em 🛠 para desligar.'
+    +(MNT.avisos?' · 📩 '+MNT.avisos+(MNT.avisos===1?' pessoa pediu':' pessoas pediram')+' aviso por e-mail quando voltar.':'');
 }
 async function loadMnt(){try{MNT=await api('/api/admin/manutencao');showMnt();}catch{/* tenta de novo no próximo ciclo */}}
 async function toggleMnt(){
@@ -1070,7 +1071,7 @@ async function toggleMnt(){
   if(!MNT)return;
   const on=!MNT.on;
   if(on&&!confirm('Ligar o MODO MANUTENÇÃO?\n\nOs clientes vão ver a página "Estamos em manutenção, voltamos em breve" e não vão conseguir fazer pedidos novos.\n\nPix já gerado, entregas e o painel continuam funcionando.'))return;
-  if(!on&&!confirm('Desligar a manutenção e reabrir a loja?'))return;
+  if(!on&&!confirm('Desligar a manutenção e reabrir a loja?'+(MNT.avisos?'\n\n📩 '+MNT.avisos+(MNT.avisos===1?' pessoa vai':' pessoas vão')+' receber o e-mail "A Recarga Flame voltou!".':'')))return;
   try{MNT=await api('/api/admin/manutencao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on})});showMnt();}catch(e){alert(e.message);}
 }
 loadMnt();setInterval(function(){if(!document.hidden)loadMnt();},60000);

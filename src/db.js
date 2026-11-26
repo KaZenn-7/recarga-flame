@@ -170,6 +170,12 @@ CREATE INDEX IF NOT EXISTS events_dev ON events(dev, ev)`);
 )`);
     db.exec('CREATE INDEX IF NOT EXISTS stars_perdidas_em ON stars_perdidas(cobrado_em)');
   } },
+  // "me avise quando voltar" (página de manutenção): o e-mail fica só até o aviso sair e então é apagado
+  { v: 9, nome: 'aviso_volta', up(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS aviso_volta (
+  email TEXT PRIMARY KEY COLLATE NOCASE, tentativas INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+  } },
 ];
 
 // Aplica as migrações pendentes, em ordem. Devolve a versão final.

@@ -32,6 +32,7 @@ export const mock = {
   lastBody: null,  // corpo do último pagamento criado no MP
   tgFailChat: null, // chat_id em que o Telegram falso recusa tudo
   refunds: [],     // reembolsos pedidos ao MP ({ url, body, key })
+  mailFail: new Set(), // destinatários em que o Resend falso recusa o envio
 };
 export const cfCalls = [];              // consultas de conta ao CounterFlame
 export const tgSent = [];               // mensagens enviadas ao Telegram
@@ -43,7 +44,9 @@ globalThis.fetch = async (url, opts) => {
   const u = String(url);
   // Resend (e-mail ao cliente)
   if (u === 'https://api.resend.com/emails') {
-    mailSent.push({ auth: opts.headers.Authorization, ...JSON.parse(opts.body) });
+    const b = JSON.parse(opts.body);
+    if (mock.mailFail.has(b.to?.[0])) return new Response('{"message":"falha"}', { status: 500 });
+    mailSent.push({ auth: opts.headers.Authorization, ...b });
     return new Response('{"id":"x"}', { status: 200, headers: { 'content-type': 'application/json' } });
   }
   // Telegram (código de login, notificações)
