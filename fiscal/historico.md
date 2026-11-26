@@ -102,3 +102,14 @@
 ## 2026-11-17 — briefing para o contador
 - Criado o briefing para o contador (Claude Docs, privado): situação, números, decisões, 12 perguntas, Mercado Pago e próximos passos. A mensagem de apresentação foi enviada ao dono no Telegram para ele repassar.
 - Números atualizados até 17/11, 20h30: 214 pedidos, R$ 5.807,30 recebidos, custo dos pacotes R$ 4.131,31, lucro ≈ R$ 1.035 sem as cobranças em dobro. Intermediação ≈ R$ 1.675,99.
+
+## 2026-11-26 — parecer preliminar do contador
+- Recebido o parecer preliminar (`fiscal/Parecer_Preliminar_Recarga_Flame.pdf`). Conclusão: **revenda por conta própria**; receita bruta = total pago pelo cliente; comércio tende ao Anexo I; 7490-1/04 só numa intermediação real, com Anexo III ou V pelo fator "r".
+- Outros pontos do parecer:
+  - Período como PF: risco de equiparação a PJ; reconstituir e regularizar, sem confiar só no IRPF ou no carnê-leão.
+  - DeCripto: somar compras e usos (o painel já faz isso). A Binance depende da entidade contratante. Guardar CPF/CNPJ do vendedor, comprovante do Pix e hash.
+  - PEPS ou custo médio: qualquer um, desde que consistente e conciliado.
+  - Parceiros: contrato + nota ou RPA.
+  - Gateway: a confirmação escrita deve descrever o fluxo completo.
+- Decisão: Fase 2 (checkout de intermediação) suspensa; a flag segue desligada.
+- Números até 26/11, 12h24: 520 pedidos entregues, R$ 13.889,07 recebidos, custo dos pacotes R$ 9.963,02, comissões ≈ R$ 1.094,80, lucro ≈ R$ 2.693,74 (19,4%). Ritmo de 19 a 25/11 ≈ R$ 935/dia.

@@ -1,13 +1,15 @@
 # Perfil fiscal da loja
 
-> Mantido pelo Claude. Atualize sempre que algo mudar. Última atualização: 2026-11-17
+> Mantido pelo Claude. Atualize sempre que algo mudar. Última atualização: 2026-11-26
 
 ## Situação jurídica
 - Hoje vende como **pessoa física, sem CNPJ**. Pendência nº 1: formalizar.
 - Município: **São Paulo (capital)**. A sede será a **residência**, sujeita à consulta de viabilidade e à inscrição no CCM (Cadastro de Contribuintes Mobiliários) para emitir NFS-e. No Simples, o ISS já vem dentro do DAS pela tabela (≈ 2% da receita na 1ª faixa do Anexo III), então mudar de cidade não traria economia relevante. Uma sede de fachada em cidade com ISS baixo traz risco de cobrança pela capital.
 - Infra: VPS na Europa e domínio .com.br no Registro.br. Isso não altera a tributação: vale o domicílio em SP.
-- Plano: **ME no Simples Nacional**, CNAE **7490-1/04** (intermediação de itens virtuais de jogos; não permitido no MEI), provavelmente Anexo III (confirmar com o contador).
-- Modelo de receita pretendido: **intermediação (conta alheia)**, com taxa = **preço atual − custo do repasse** (os preços finais não mudam). Depende de validação do contador por escrito. Ver `fiscal/plano-intermediacao.md`.
+- Plano: **ME no Simples Nacional**. CNAE a definir com o contador. Pelo parecer preliminar (`fiscal/Parecer_Preliminar_Recarga_Flame.pdf`, 26/11/2026), o fluxo atual é **revenda por conta própria**: comércio, tende ao **Anexo I**, com receita bruta = **total pago pelo cliente**. O 7490-1/04 só cabe numa intermediação real, e vai para o Anexo III ou V pelo fator "r" (Anexo III só com folha + pró-labore ≥ 28% da receita).
+- Modelo de receita: **revenda**, até prova em contrário. A intermediação (receita = só a taxa) exigiria um fornecedor identificado que contrate a loja como agente, contrato, termos do site, fluxo financeiro segregado e nota do fornecedor ao consumidor. Hoje o fornecedor é o bot de um jogo não oficial, então isso é improvável. A flag `MODELO_INTERMEDIACAO` continua desligada. Ver `fiscal/plano-intermediacao.md`.
+- Estimativa (simulador, ritmo de 19 a 25/11 ≈ R$ 935/dia ≈ R$ 28 mil/mês ≈ R$ 336 mil/ano): revenda no Anexo I ≈ **R$ 18,6 mil/ano** (5,53%). A intermediação, se fosse possível: Anexo V sem pró-labore ≈ R$ 14,7 mil; Anexo III com ≈ R$ 26,5 mil/ano de pró-labore ≈ R$ 5,7 mil de DAS + INSS. Esse ritmo fica perto do teto da ME (R$ 360 mil): acima disso vira EPP, ainda no Simples.
+- Período como PF desde 08/11/2026: o contador avisa que a atividade habitual pode tornar a PF uma **empresa individual equiparada a PJ**; não basta lançar no IRPF 2027 nem no carnê-leão. Reconstituir o período com extratos e definir uma eventual regularização. Abrir o CNPJ logo.
 
 ## O que vende
 - Pacotes de moedas (coins) do jogo **Counter Flame** (jogo mobile russo não oficial, estilo CS2), entregues na conta do cliente pelo **ID do jogo**.
@@ -81,7 +83,16 @@
 - [ ] Deixar um plano B pronto: as mensagens adaptadas para a Woovi e para um banco PJ foram enviadas ao dono no Telegram em 16/11/2026. Canais:
   - **Woovi**: "Falar com vendas" em woovi.com (leva ao cadastro gratuito em app.woovi.com, que não obriga a usar) ou DM no Instagram @woovibr / LinkedIn. Não há e-mail nem WhatsApp de vendas publicados.
   - **Banco PJ** (ex.: Inter Empresas): sem canal para quem ainda não é cliente. A API Pix só é contratada com a conta PJ aberta (precisa do CNPJ). Até lá, perguntar pelo chat do app PF do banco, se tiver conta, ou deixar para a abertura da ME.
-- [ ] Contratar contador (ainda não tem); validar por escrito o modelo de intermediação e o CNAE/anexo.
+- [x] Contador consultado: briefing enviado em 17/11/2026; parecer preliminar recebido em 26/11/2026 (`fiscal/Parecer_Preliminar_Recarga_Flame.pdf`).
+- [ ] Seguir a sequência do parecer (seção 5.2):
+  1. identificar a entidade que fornece os pacotes e guardar os termos do jogo, do bot e do Fragment;
+  2. definir revenda × agente por escrito e escolher CNAE, anexo e documento fiscal;
+  3. consulta de viabilidade (IPTU/SQL e regras do condomínio);
+  4. conta PJ e aprovação formal do meio de pagamento;
+  5. separar PF e PJ (contas, carteiras, USDT);
+  6. reconstituir o período desde 08/11/2026;
+  7. checar a DeCripto antes do fim de dezembro.
+- [ ] Formalizar os parceiros: contrato ou termo de afiliação + nota fiscal (parceiro PJ) ou RPA (parceiro PF). Um Pix sozinho não documenta a comissão.
 - [ ] Levar ao contador:
   - se compras e usos somam juntos para o limite de R$ 35 mil da DeCripto;
   - se o envio mensal da IN 2.291 já está ativo ou ainda vale a IN 1.888;

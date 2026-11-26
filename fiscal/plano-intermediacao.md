@@ -72,6 +72,8 @@ Na compra no bot, registre automaticamente a resposta do bot (texto, horário, I
 
 ## Fase 2: checkout de intermediação (atrás da flag)
 
+> **Suspensa (26/11/2026).** O parecer preliminar do contador conclui que o fluxo atual é revenda por conta própria. A intermediação só se sustenta com um fornecedor identificado que contrate a loja como agente, além de contratos, fluxo financeiro e documentos fiscais coerentes. Não implementar sem um novo parecer.
+
 > ⚠️ 16/11/2026: o MP não confirmou nenhum produto para esse modelo. O marketplace/split exige conta MP do vendedor, e a conta comum é só para "recursos próprios" (Termos, cláusula 1.3.2). Só implementar depois que o contador resolver como os repasses ficam no MP, ou com outro gateway que tenha produto adequado.
 
 ### Regras de preço
