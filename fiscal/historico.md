@@ -113,3 +113,9 @@
   - Gateway: a confirmação escrita deve descrever o fluxo completo.
 - Decisão: Fase 2 (checkout de intermediação) suspensa; a flag segue desligada.
 - Números até 26/11, 12h24: 520 pedidos entregues, R$ 13.889,07 recebidos, custo dos pacotes R$ 9.963,02, comissões ≈ R$ 1.094,80, lucro ≈ R$ 2.693,74 (19,4%). Ritmo de 19 a 25/11 ≈ R$ 935/dia.
+
+## 2026-11-27 — perguntas ao contador e decisão de abrir como revenda
+- O contador é o Franklin. O dono perguntou se dá para sair da revenda. Análise: o caminho com o fornecedor como mandante é inviável (o bot de um jogo não oficial não assina contrato). O caminho possível é **o cliente como mandante**: repasse pelo custo real sem margem, checkout com item e taxa separados, valor do repasse rastreável por pedido, nota só da taxa e reembolso integral se a entrega falhar.
+- Estimativa com ≈ R$ 336 mil/ano: revenda no Anexo I ≈ R$ 18,6 mil; intermediação no Anexo V ≈ R$ 14,7 mil; no Anexo III (pró-labore ≈ R$ 2,2 mil/mês + INSS) ≈ R$ 8,6 mil. A economia de R$ 4 a 10 mil/ano não compensa por enquanto: preço variável para o cliente, refazer checkout e gateway, a regra de "recursos próprios" e o risco de reclassificação com multa a partir de 75%.
+- Decisão: **abrir como revenda agora** e reavaliar a intermediação em meados de 2027, com o volume real.
+- Mensagem ao Franklin enviada ao dono no Telegram, com as perguntas a–h: o modelo com o cliente como mandante; mudar no meio de 2027; sede (casa, sem estabelecimento ou escritório virtual); honorários por item.

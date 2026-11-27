@@ -1,6 +1,6 @@
 # Perfil fiscal da loja
 
-> Mantido pelo Claude. Atualize sempre que algo mudar. Última atualização: 2026-11-26
+> Mantido pelo Claude. Atualize sempre que algo mudar. Última atualização: 2026-11-27
 
 ## Situação jurídica
 - Hoje vende como **pessoa física, sem CNPJ**. Pendência nº 1: formalizar.
@@ -92,6 +92,12 @@
   5. separar PF e PJ (contas, carteiras, USDT);
   6. reconstituir o período desde 08/11/2026;
   7. checar a DeCripto antes do fim de dezembro.
+- [ ] Resposta do contador (Franklin) às perguntas enviadas em 27/11/2026 (texto entregue ao dono no Telegram):
+  - (a–e) modelo em que **o cliente é o mandante** (compra por conta e ordem dele, repasse pelo custo real sem margem, taxa separada, nota só da taxa): se sustenta? O saldo único de Stars comprado antes derruba o modelo? CNAE, anexo e pró-labore do fator "r"? Contrato com o cliente? O repasse configura gestão de recursos de terceiros?
+  - (f) reavaliar em meados de 2027 e migrar se a economia compensar: pode ser no meio do ano ou só na virada? Abrir como revenda atrapalha depois?
+  - (g) sede: precisa ser a casa? Dá para registrar sem estabelecimento fixo (endereço fiscal + forma de atuação "internet") ou usar escritório virtual? Custos e efeito nos impostos.
+  - (h) honorários por item: abertura, mensalidade (o que inclui e até que volume), regularização do período PF, DeCripto, RPA dos parceiros e extras.
+- [ ] Decisão do dono (27/11/2026): **abrir como revenda** (comércio, Anexo I) e não atrasar o CNPJ. A intermediação com o cliente como mandante fica para reavaliar em **meados de 2027**: economia estimada de R$ 4 a 10 mil/ano com ≈ R$ 336 mil/ano, que hoje não compensa mudar checkout, termos e gateway.
 - [ ] Formalizar os parceiros: contrato ou termo de afiliação + nota fiscal (parceiro PJ) ou RPA (parceiro PF). Um Pix sozinho não documenta a comissão.
 - [ ] Levar ao contador:
   - se compras e usos somam juntos para o limite de R$ 35 mil da DeCripto;
